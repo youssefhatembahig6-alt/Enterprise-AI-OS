@@ -4,3 +4,6 @@
 *.pdf binary
 *.ico binary
 *.woff2 binary
+*.gz binary
+# Source baseline bytes are verified by SHA-256; never normalize them.
+backend/fixtures/business/** -text

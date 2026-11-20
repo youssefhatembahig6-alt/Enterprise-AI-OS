@@ -34,6 +34,20 @@ docker compose run --rm --user "$(id -u):$(id -g)" -v "$PWD/var:/app/var" migrat
 
 Seeding refuses unless `EAIOS_ENV` is `development` (or `test`, for the test suite), and it never runs on startup.
 
+## NileTech business data (M1)
+
+The NileTech sales baseline (`niletech-0.1.6`) is imported explicitly, after the M0 seed. It is never imported on startup and is refused unless `EAIOS_ENV` is `development` or `test`.
+
+```bash
+python3 scripts/dev.py business-data-report   # verify source, print fingerprint/counts/anomalies (read-only)
+python3 scripts/dev.py import-business-data   # verify, then load into tenant "niletech" (owner role)
+```
+
+- Both commands use the vendored subset in `backend/fixtures/business/niletech-0.1.6`, after checking every hash against the original source manifest.
+- To verify against the original archive instead, run `python -m app.cli business-data-report --zip ../reference-data/niletech-0.1.6.zip` from `backend/`. That checks all 103 archive entries.
+- Re-running the import inserts nothing. It fails without changing anything if the stored rows drift from the source, or if the tenant already holds a different dataset.
+- Provenance, ID mapping, the reporting definition and the known source anomalies are in `backend/fixtures/business/niletech-0.1.6/README.md`. The worked Q1 2026 example is in `docs/data/sales-report-q1-2026.md`.
+
 ## Restart
 
 ```bash

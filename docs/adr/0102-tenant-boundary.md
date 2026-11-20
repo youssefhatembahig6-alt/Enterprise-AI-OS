@@ -14,7 +14,7 @@ Status: accepted for M0, pending planning-agent review. Source: [specification](
 
 Row-Level Security does not apply to table owners or BYPASSRLS roles, so isolation is demonstrated only with `eaios_app`. RLS is *enabled* but not *forced*: the owner role is the privileged migration role and deliberately bypasses it.
 
-**Tenant-owned tables** (each has `tenant_id NOT NULL`, RLS enabled and policy `tenant_isolation` with `USING` and `WITH CHECK (tenant_id = app_current_tenant_id())`): `users`, `roles`, `role_capabilities`, `user_roles`, `groups`, `group_memberships`, `resources`, `resource_grants`, `sessions`.
+**Tenant-owned tables** (each has `tenant_id NOT NULL`, RLS enabled and policy `tenant_isolation` with `USING` and `WITH CHECK (tenant_id = app_current_tenant_id())`): `users`, `roles`, `role_capabilities`, `user_roles`, `groups`, `group_memberships`, `resources`, `resource_grants`, `sessions`; since M1 also `sales_customers`, `sales_products`, `sales_orders`, `sales_order_lines`, `sales_invoices` and `business_dataset_imports`. These sales tables are read-only (SELECT) for the application role and are written only by the owner-role import, with composite `(tenant_id, …)` foreign keys.
 
 Special cases: `tenants` — RLS, the app may SELECT only its current tenant and cannot insert or update. `audit_events` — RLS, the app may only INSERT, with `tenant_id` equal to the current tenant or NULL (pre-authentication events); it has no SELECT privilege.
 

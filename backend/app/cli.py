@@ -9,7 +9,9 @@ import argparse
 import json
 import os
 import sys
+from datetime import date
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import create_engine, pool
 
@@ -62,6 +64,75 @@ def cmd_seed_dev(args: argparse.Namespace) -> None:
         print("seed: no new users; existing passwords unchanged")
 
 
+def _business_source(args: argparse.Namespace) -> Any:
+    from app.business_data.source import verify_vendored, verify_zip
+
+    return verify_zip(Path(args.zip)) if args.zip else verify_vendored()
+
+
+def cmd_business_report(args: argparse.Namespace) -> None:
+    """Verify the source and print provenance, counts, fingerprint and anomalies."""
+
+    from app.business_data.model import dataset_fingerprint, normalize, source_anomalies
+
+    source = _business_source(args)
+    dataset = normalize(source)
+    manifest = source.manifest
+    report = {
+        "source_form": source.form,
+        "provenance": {
+            k: manifest[k]
+            for k in ("tenant", "generator_version", "source_revision", "seed", "reference_date")
+        },
+        "source_manifest_sha256": source.manifest_sha256,
+        "source_content_fingerprint": manifest["content_fingerprint"],
+        "source_key_counts": {
+            k: manifest["row_counts"][k]
+            for k in ("companies", "users", "documents", "orders", "invoices")
+        },
+        "normalized_row_counts": dataset.row_counts(),
+        "normalized_fingerprint": dataset_fingerprint(dataset),
+        "source_anomalies": source_anomalies(
+            dataset, date.fromisoformat(manifest["reference_date"])
+        ).counts,
+    }
+    print(json.dumps(report, indent=2, sort_keys=True))
+
+
+def cmd_import_business_data(args: argparse.Namespace) -> None:
+    from app.business_data.loader import ImportRefused, import_sales_dataset
+    from app.business_data.model import normalize
+
+    source = _business_source(args)
+    dataset = normalize(source)
+    engine = create_engine(_owner_url(), poolclass=pool.NullPool)
+    try:
+        result = import_sales_dataset(
+            engine, source, dataset, environment=os.environ.get("EAIOS_ENV", "development")
+        )
+    except ImportRefused as exc:
+        sys.exit(f"refused: {exc}")
+    finally:
+        engine.dispose()
+    print("business-data: source verified (" + source.form + ")")
+    print("business-data: inserted rows", json.dumps(result.inserted, sort_keys=True))
+    print("business-data: tenant row counts", json.dumps(result.row_counts, sort_keys=True))
+    print("business-data: fingerprint", result.database_fingerprint, "(matches source)")
+
+
+def cmd_vendor_business_data(args: argparse.Namespace) -> None:
+    from app.business_data.source import VENDORED_DIR, vendor_subset
+
+    out = Path(args.output) if args.output else VENDORED_DIR
+    manifest = vendor_subset(Path(args.zip), out)
+    from app.business_data.model import dataset_fingerprint, normalize
+    from app.business_data.source import verify_vendored
+
+    manifest["normalized_fingerprint"] = dataset_fingerprint(normalize(verify_vendored(out)))
+    (out / "vendor-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    print(f"vendored {len(manifest['vendored_tables'])} tables to {out}")
+
+
 def cmd_export_openapi(args: argparse.Namespace) -> None:
     from app.config import Settings
     from app.main import create_app
@@ -92,6 +163,17 @@ def main(argv: list[str] | None = None) -> None:
         help="regenerate passwords for fixture users (development only)",
     )
     seed.set_defaults(func=cmd_seed_dev)
+    for name, func, help_text in (
+        ("business-data-report", cmd_business_report, "verify the NileTech source; print report"),
+        ("import-business-data", cmd_import_business_data, "import NileTech sales (owner role)"),
+    ):
+        command = sub.add_parser(name, help=help_text)
+        command.add_argument("--zip", help="original export ZIP (default: vendored subset)")
+        command.set_defaults(func=func)
+    vendor = sub.add_parser("vendor-business-data", help="write the verified sales subset")
+    vendor.add_argument("--zip", required=True)
+    vendor.add_argument("--output", help="default: fixtures/business/niletech-0.1.6")
+    vendor.set_defaults(func=cmd_vendor_business_data)
     export = sub.add_parser("export-openapi", help="write the OpenAPI schema")
     export.add_argument("--output", default=str(BACKEND_ROOT.parent / "docs/openapi.json"))
     export.set_defaults(func=cmd_export_openapi)
