@@ -1,0 +1,203 @@
+# Enterprise AI OS — M0 development stack.
+#   docker compose up --build        (see docs/runbook.md)
+# Only the API (8000) and frontend (3000) are published, bound to 127.0.0.1.
+# Data services are reachable only on the internal network. No model service
+# runs here: models are external (Colab GPU) and are not required for M0.
+# Memory limits total ~2.7 GB; see docs/contracts/runtime.md.
+name: eaios
+
+x-backend-env: &backend-env
+  EAIOS_ENV: ${EAIOS_ENV:-development}
+  DATABASE_URL: postgresql+psycopg://eaios_app:${EAIOS_APP_DB_PASSWORD:?set in .env}@postgres:5432/eaios
+  REDIS_URL: redis://:${REDIS_PASSWORD:?set in .env}@redis:6379/0
+  QDRANT_URL: http://qdrant:6333
+  S3_ENDPOINT_URL: http://storage:8333
+  JWT_SECRET: ${JWT_SECRET:?set in .env}
+  JWT_ISSUER: ${JWT_ISSUER:-eaios-api}
+  JWT_AUDIENCE: ${JWT_AUDIENCE:-eaios-web}
+  ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+  LLM_BASE_URL: ${LLM_BASE_URL:-}
+  PASSWORD_VERIFY_CONCURRENCY: ${PASSWORD_VERIFY_CONCURRENCY:-2}
+  PASSWORD_VERIFY_QUEUE_TIMEOUT_SECONDS: ${PASSWORD_VERIFY_QUEUE_TIMEOUT_SECONDS:-5}
+
+services:
+  postgres:
+    image: postgres:17.6-bookworm
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set in .env}
+      EAIOS_OWNER_DB_PASSWORD: ${EAIOS_OWNER_DB_PASSWORD:?set in .env}
+      EAIOS_APP_DB_PASSWORD: ${EAIOS_APP_DB_PASSWORD:?set in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-init-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d eaios"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 512m
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4.5-alpine
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes --maxmemory 96mb --maxmemory-policy noeviction"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set in .env}
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?set in .env}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 128m
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 512m
+    restart: unless-stopped
+
+  storage:
+    image: chrislusf/seaweedfs:3.96
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-master.volumeSizeLimitMB=64", "-volume.max=8"]
+    volumes:
+      - storage-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    mem_limit: 256m
+    restart: unless-stopped
+
+  # One-shot: applies Alembic migrations with the privileged owner role.
+  migrate:
+    build:
+      context: ./backend
+      target: runtime
+    image: eaios-backend:m0
+    command: ["python", "-m", "app.cli", "migrate"]
+    environment:
+      EAIOS_ENV: ${EAIOS_ENV:-development}
+      EAIOS_APP_DB_ROLE: eaios_app
+      MIGRATION_DATABASE_URL: postgresql+psycopg://eaios_owner:${EAIOS_OWNER_DB_PASSWORD:?set in .env}@postgres:5432/eaios
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 256m
+    restart: "no"
+
+  api:
+    image: eaios-backend:m0
+    build:
+      context: ./backend
+      target: runtime
+    environment: *backend-env
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 384m
+    restart: unless-stopped
+
+  worker:
+    image: eaios-backend:m0
+    command: ["celery", "-A", "app.tasks.worker:celery_app", "worker", "--concurrency=2", "--loglevel=INFO", "-Q", "default"]
+    environment: *backend-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.worker:celery_app inspect ping -d celery@$$HOSTNAME --timeout 10 >/dev/null"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 20s
+    mem_limit: 384m
+    restart: unless-stopped
+
+  scheduler:
+    image: eaios-backend:m0
+    command: ["celery", "-A", "app.tasks.worker:celery_app", "beat", "--loglevel=INFO", "--schedule", "/tmp/celerybeat-schedule"]
+    environment: *backend-env
+    depends_on:
+      worker:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/celerybeat-schedule"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    mem_limit: 160m
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    image: eaios-web:m0
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    mem_limit: 64m
+    restart: unless-stopped
+
+  # Test profile only: runs the backend suite inside the network against the real
+  # PostgreSQL and Redis. Creates and drops its own database and roles.
+  backend-tests:
+    profiles: ["test"]
+    build:
+      context: ./backend
+      target: test
+    image: eaios-backend-tests:m0
+    environment:
+      TEST_DATABASE_ADMIN_URL: postgresql+psycopg://postgres:${POSTGRES_SUPERUSER_PASSWORD:?set in .env}@postgres:5432/postgres
+      TEST_REDIS_URL: redis://:${REDIS_PASSWORD:?set in .env}@redis:6379/15
+      EAIOS_REQUIRE_INTEGRATION: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 512m
+    restart: "no"
+
+volumes:
+  postgres-data:
+  redis-data:
+  qdrant-data:
+  storage-data:

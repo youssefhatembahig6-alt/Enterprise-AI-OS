@@ -1,0 +1,282 @@
+# Synthetic M0 foundation fixtures. Tenant names, people and marker strings live
+# only here (and in tests that load this file); application code has no
+# tenant-specific branches. No passwords are stored here: the explicit dev seed
+# generates them and writes them to a git-ignored, owner-only file.
+#
+# Capabilities used:  resource.read, resource.admin   (see app/security/policy.py)
+# Attributes used:    clearance (public < internal < confidential < restricted),
+#                     country (ISO 3166-1 alpha-2), department (lowercase key)
+
+version = 1
+
+[[tenants]]
+slug = "niletech"
+name = "NileTech Solutions"
+
+  [[tenants.roles]]
+  key = "reader"
+  name = "Reader"
+  capabilities = ["resource.read"]
+
+  [[tenants.roles]]
+  key = "department_admin"
+  name = "Department administrator"
+  capabilities = ["resource.admin"]
+
+  [[tenants.roles]]
+  key = "access_admin"
+  name = "Tenant access administrator"
+  capabilities = ["resource.admin"]
+
+  [[tenants.groups]]
+  key = "all-staff"
+  name = "All staff"
+
+  [[tenants.groups]]
+  key = "finance-team"
+  name = "Finance team"
+
+  [[tenants.users]]
+  key = "finance-reader"
+  email = "finance.reader@niletech.example"
+  display_name = "Finance Reader"
+  status = "active"
+  clearance = "confidential"
+  country = "EG"
+  department = "finance"
+  roles = [{ role = "reader" }]
+  groups = ["all-staff", "finance-team"]
+
+  [[tenants.users]]
+  key = "sales-reader"
+  email = "sales.reader@niletech.example"
+  display_name = "Sales Reader (unauthorized for finance)"
+  status = "active"
+  clearance = "internal"
+  country = "AE"
+  department = "sales"
+  roles = [{ role = "reader" }]
+  groups = ["all-staff"]
+
+  [[tenants.users]]
+  key = "denied-reader"
+  email = "denied.reader@niletech.example"
+  display_name = "Finance Reader with explicit deny"
+  status = "active"
+  clearance = "confidential"
+  country = "EG"
+  department = "finance"
+  roles = [{ role = "reader" }]
+  groups = ["all-staff", "finance-team"]
+
+  [[tenants.users]]
+  key = "board-member"
+  email = "board.member@niletech.example"
+  display_name = "Board Member (direct grant)"
+  status = "active"
+  clearance = "restricted"
+  country = "EG"
+  department = "finance"
+  roles = [{ role = "reader" }]
+  groups = ["all-staff"]
+
+  [[tenants.users]]
+  key = "finance-admin"
+  email = "finance.admin@niletech.example"
+  display_name = "Finance Department Admin"
+  status = "active"
+  clearance = "internal"
+  country = "EG"
+  department = "finance"
+  roles = [{ role = "department_admin", scope_department = "finance" }]
+  groups = []
+
+  [[tenants.users]]
+  key = "access-admin"
+  email = "access.admin@niletech.example"
+  display_name = "Tenant Access Admin"
+  status = "active"
+  clearance = "internal"
+  country = "EG"
+  department = "it"
+  roles = [{ role = "access_admin" }]
+  groups = []
+
+  [[tenants.users]]
+  key = "inactive-reader"
+  email = "inactive.reader@niletech.example"
+  display_name = "Inactive Reader"
+  status = "inactive"
+  clearance = "confidential"
+  country = "EG"
+  department = "finance"
+  roles = [{ role = "reader" }]
+  groups = ["all-staff", "finance-team"]
+
+  [[tenants.resources]]
+  key = "company-overview"
+  title = "Company overview NILETECH-PUBLIC-MARKER-1001"
+  classification = "public"
+  department = "marketing"
+  department_restricted = false
+  allowed_countries = ["*"]
+  grants = [{ group = "all-staff", effect = "allow" }]
+
+  [[tenants.resources]]
+  key = "hr-policies"
+  title = "HR policies NILETECH-INTERNAL-MARKER-2002"
+  classification = "internal"
+  department = "hr"
+  department_restricted = false
+  allowed_countries = ["*"]
+  grants = [{ group = "all-staff", effect = "allow" }]
+
+  [[tenants.resources]]
+  key = "finance-report"
+  title = "Quarterly finance report NILETECH-FINANCE-SECRET-7421"
+  classification = "confidential"
+  department = "finance"
+  department_restricted = true
+  allowed_countries = ["EG"]
+  grants = [
+    { group = "finance-team", effect = "allow" },
+    { user = "denied-reader", effect = "deny" },
+  ]
+
+  [[tenants.resources]]
+  key = "payroll-report"
+  title = "Payroll report NILETECH-RESTRICTED-MARKER-9090"
+  classification = "restricted"
+  department = "finance"
+  department_restricted = true
+  allowed_countries = ["EG"]
+  grants = [{ user = "board-member", effect = "allow" }]
+
+# Second tenant: exists only to prove isolation. It mirrors the shape of the
+# first tenant with different identifiers and markers.
+[[tenants]]
+slug = "isolation-test"
+name = "Isolation Test Tenant"
+
+  [[tenants.roles]]
+  key = "reader"
+  name = "Reader"
+  capabilities = ["resource.read"]
+
+  [[tenants.roles]]
+  key = "department_admin"
+  name = "Department administrator"
+  capabilities = ["resource.admin"]
+
+  [[tenants.groups]]
+  key = "all-staff"
+  name = "All staff"
+
+  [[tenants.groups]]
+  key = "finance-team"
+  name = "Finance team"
+
+  [[tenants.users]]
+  key = "finance-reader"
+  email = "finance.reader@isolation.example"
+  display_name = "Second Tenant Finance Reader"
+  status = "active"
+  clearance = "restricted"
+  country = "EG"
+  department = "finance"
+  roles = [{ role = "reader" }]
+  groups = ["all-staff", "finance-team"]
+
+  [[tenants.users]]
+  key = "sales-reader"
+  email = "sales.reader@isolation.example"
+  display_name = "Second Tenant Sales Reader"
+  status = "active"
+  clearance = "public"
+  country = "AE"
+  department = "sales"
+  roles = [{ role = "reader" }]
+  groups = ["all-staff"]
+
+  [[tenants.users]]
+  key = "denied-reader"
+  email = "denied.reader@isolation.example"
+  display_name = "Second Tenant Denied Reader"
+  status = "active"
+  clearance = "restricted"
+  country = "EG"
+  department = "finance"
+  roles = [{ role = "reader" }]
+  groups = ["all-staff", "finance-team"]
+
+  [[tenants.users]]
+  key = "board-member"
+  email = "board.member@isolation.example"
+  display_name = "Second Tenant Board Member"
+  status = "active"
+  clearance = "restricted"
+  country = "AE"
+  department = "finance"
+  roles = [{ role = "reader" }]
+  groups = []
+
+  [[tenants.users]]
+  key = "finance-admin"
+  email = "finance.admin@isolation.example"
+  display_name = "Second Tenant Finance Admin"
+  status = "active"
+  clearance = "internal"
+  country = "EG"
+  department = "finance"
+  roles = [{ role = "department_admin", scope_department = "finance" }]
+  groups = []
+
+  [[tenants.users]]
+  key = "inactive-reader"
+  email = "inactive.reader@isolation.example"
+  display_name = "Second Tenant Inactive Reader"
+  status = "inactive"
+  clearance = "restricted"
+  country = "EG"
+  department = "finance"
+  roles = [{ role = "reader" }]
+  groups = ["all-staff", "finance-team"]
+
+  [[tenants.resources]]
+  key = "company-overview"
+  title = "Company overview ISOLATION-PUBLIC-MARKER-3003"
+  classification = "public"
+  department = "marketing"
+  department_restricted = false
+  allowed_countries = ["*"]
+  grants = [{ group = "all-staff", effect = "allow" }]
+
+  [[tenants.resources]]
+  key = "hr-policies"
+  title = "HR policies ISOLATION-INTERNAL-MARKER-4004"
+  classification = "internal"
+  department = "hr"
+  department_restricted = false
+  allowed_countries = ["*"]
+  grants = [{ group = "all-staff", effect = "allow" }]
+
+  [[tenants.resources]]
+  key = "finance-report"
+  title = "Finance report ISOLATION-FINANCE-SECRET-5005"
+  classification = "confidential"
+  department = "finance"
+  department_restricted = true
+  allowed_countries = ["EG", "AE"]
+  grants = [
+    { group = "finance-team", effect = "allow" },
+    { user = "denied-reader", effect = "deny" },
+  ]
+
+  [[tenants.resources]]
+  key = "payroll-report"
+  title = "Payroll report ISOLATION-RESTRICTED-MARKER-6006"
+  classification = "restricted"
+  department = "finance"
+  department_restricted = true
+  allowed_countries = ["EG"]
+  grants = [{ user = "board-member", effect = "allow" }]

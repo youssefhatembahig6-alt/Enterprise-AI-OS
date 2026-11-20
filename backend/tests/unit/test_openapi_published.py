@@ -1,0 +1,35 @@
+"""The committed OpenAPI file matches the implemented endpoints (no drift)."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from app.config import Settings
+from app.main import create_app
+
+PUBLISHED = Path(__file__).resolve().parents[3] / "docs" / "openapi.json"
+
+
+@pytest.mark.skipif(not PUBLISHED.exists(), reason="docs/ not present (container build)")
+def test_published_openapi_matches_app() -> None:
+    settings = Settings(
+        DATABASE_URL="postgresql+psycopg://openapi@localhost/none",
+        REDIS_URL="redis://localhost:6379/0",
+        QDRANT_URL="http://localhost:6333",
+        S3_ENDPOINT_URL="http://localhost:8333",
+        JWT_SECRET="openapi-export-only-not-a-real-secret-000",
+    )
+    generated = create_app(settings).openapi()
+    assert json.loads(PUBLISHED.read_text()) == generated, (
+        "docs/openapi.json is stale: run python scripts/dev.py openapi"
+    )
+    assert set(generated["paths"]) == {
+        "/health",
+        "/ready",
+        "/api/v1/auth/login",
+        "/api/v1/auth/logout",
+        "/api/v1/me",
+    }

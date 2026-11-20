@@ -1,0 +1,185 @@
+# Expected reference-policy decisions over foundation.toml.
+# user / resource are "<tenant-slug>/<key>". reason is the private reason code.
+# The same cases are evaluated in memory (unit test) and against data loaded
+# from PostgreSQL through the real application role (integration test).
+
+[[cases]]
+user = "niletech/finance-reader"
+resource = "niletech/finance-report"
+action = "resource.read"
+expect = "allow"
+reason = "allow"
+note = "group grant + department + country + clearance all satisfied"
+
+[[cases]]
+user = "niletech/sales-reader"
+resource = "niletech/finance-report"
+action = "resource.read"
+expect = "deny"
+reason = "deny.attribute_department"
+note = "unauthorized reader: wrong department"
+
+[[cases]]
+user = "niletech/sales-reader"
+resource = "niletech/company-overview"
+action = "resource.read"
+expect = "allow"
+reason = "allow"
+note = "public resource still needs tenant, role and grant"
+
+[[cases]]
+user = "niletech/sales-reader"
+resource = "niletech/hr-policies"
+action = "resource.read"
+expect = "allow"
+reason = "allow"
+
+[[cases]]
+user = "niletech/denied-reader"
+resource = "niletech/finance-report"
+action = "resource.read"
+expect = "deny"
+reason = "deny.explicit_deny"
+note = "explicit user deny beats the finance-team group allow"
+
+[[cases]]
+user = "niletech/denied-reader"
+resource = "niletech/hr-policies"
+action = "resource.read"
+expect = "allow"
+reason = "allow"
+note = "a deny on one resource does not affect others"
+
+[[cases]]
+user = "niletech/finance-reader"
+resource = "niletech/payroll-report"
+action = "resource.read"
+expect = "deny"
+reason = "deny.no_grant"
+
+[[cases]]
+user = "niletech/board-member"
+resource = "niletech/payroll-report"
+action = "resource.read"
+expect = "allow"
+reason = "allow"
+note = "direct user grant"
+
+[[cases]]
+user = "niletech/board-member"
+resource = "niletech/finance-report"
+action = "resource.read"
+expect = "deny"
+reason = "deny.no_grant"
+note = "high clearance alone grants nothing"
+
+[[cases]]
+user = "niletech/inactive-reader"
+resource = "niletech/company-overview"
+action = "resource.read"
+expect = "deny"
+reason = "deny.inactive_subject"
+
+[[cases]]
+user = "niletech/finance-admin"
+resource = "niletech/finance-report"
+action = "resource.admin"
+expect = "allow"
+reason = "allow"
+note = "scoped admin inside own department"
+
+[[cases]]
+user = "niletech/finance-admin"
+resource = "niletech/finance-report"
+action = "resource.read"
+expect = "deny"
+reason = "deny.missing_capability"
+note = "admin metadata rights do not confer content access"
+
+[[cases]]
+user = "niletech/finance-admin"
+resource = "niletech/hr-policies"
+action = "resource.admin"
+expect = "deny"
+reason = "deny.capability_out_of_scope"
+
+[[cases]]
+user = "niletech/access-admin"
+resource = "niletech/hr-policies"
+action = "resource.admin"
+expect = "allow"
+reason = "allow"
+note = "tenant-wide admin scope"
+
+[[cases]]
+user = "niletech/access-admin"
+resource = "niletech/company-overview"
+action = "resource.read"
+expect = "deny"
+reason = "deny.missing_capability"
+
+[[cases]]
+user = "niletech/finance-reader"
+resource = "isolation-test/company-overview"
+action = "resource.read"
+expect = "deny"
+reason = "deny.tenant_mismatch"
+note = "public classification never crosses tenants"
+
+[[cases]]
+user = "niletech/access-admin"
+resource = "isolation-test/hr-policies"
+action = "resource.admin"
+expect = "deny"
+reason = "deny.tenant_mismatch"
+
+[[cases]]
+user = "isolation-test/finance-reader"
+resource = "isolation-test/finance-report"
+action = "resource.read"
+expect = "allow"
+reason = "allow"
+
+[[cases]]
+user = "isolation-test/finance-reader"
+resource = "niletech/finance-report"
+action = "resource.read"
+expect = "deny"
+reason = "deny.tenant_mismatch"
+
+[[cases]]
+user = "isolation-test/sales-reader"
+resource = "isolation-test/hr-policies"
+action = "resource.read"
+expect = "deny"
+reason = "deny.clearance"
+note = "public clearance below internal classification"
+
+[[cases]]
+user = "isolation-test/board-member"
+resource = "isolation-test/payroll-report"
+action = "resource.read"
+expect = "deny"
+reason = "deny.attribute_country"
+note = "direct grant does not bypass the country attribute"
+
+[[cases]]
+user = "isolation-test/denied-reader"
+resource = "isolation-test/finance-report"
+action = "resource.read"
+expect = "deny"
+reason = "deny.explicit_deny"
+
+[[cases]]
+user = "isolation-test/inactive-reader"
+resource = "isolation-test/finance-report"
+action = "resource.read"
+expect = "deny"
+reason = "deny.inactive_subject"
+
+[[cases]]
+user = "isolation-test/finance-admin"
+resource = "isolation-test/finance-report"
+action = "resource.admin"
+expect = "allow"
+reason = "allow"

@@ -1,0 +1,45 @@
+/* Shared design tokens for web and (later) Electron. Light and dark themes. */
+:root {
+  --eaios-bg: #ffffff;
+  --eaios-fg: #0f172a;
+  --eaios-card: #ffffff;
+  --eaios-border: #e2e8f0;
+  --eaios-muted: #f1f5f9;
+  --eaios-muted-fg: #475569;
+  --eaios-primary: #1d4ed8;
+  --eaios-primary-fg: #ffffff;
+  --eaios-ring: #2563eb;
+  --eaios-ok-bg: #dcfce7;
+  --eaios-ok-fg: #166534;
+  --eaios-warn-bg: #fef3c7;
+  --eaios-warn-fg: #92400e;
+  --eaios-error-bg: #fee2e2;
+  --eaios-error-fg: #991b1b;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --eaios-bg: #0b1120;
+    --eaios-fg: #e2e8f0;
+    --eaios-card: #111827;
+    --eaios-border: #1f2937;
+    --eaios-muted: #1f2937;
+    --eaios-muted-fg: #94a3b8;
+    --eaios-primary: #3b82f6;
+    --eaios-primary-fg: #0b1120;
+    --eaios-ring: #60a5fa;
+    --eaios-ok-bg: #052e16;
+    --eaios-ok-fg: #86efac;
+    --eaios-warn-bg: #422006;
+    --eaios-warn-fg: #fcd34d;
+    --eaios-error-bg: #450a0a;
+    --eaios-error-fg: #fca5a5;
+    color-scheme: dark;
+  }
+}
+
+body {
+  background: var(--eaios-bg);
+  color: var(--eaios-fg);
+}

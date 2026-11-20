@@ -1,0 +1,233 @@
+"""Real PostgreSQL + Redis fixtures.
+
+Each test session creates its own disposable database and its own owner/app
+roles (random names and passwords) using TEST_DATABASE_ADMIN_URL, runs the real
+Alembic migrations as the owner role, seeds the foundation fixtures, and
+connects the application as the non-owner app role. Everything is dropped at
+the end. Set EAIOS_REQUIRE_INTEGRATION=1 (CI does) to fail instead of skip when
+the services are not configured.
+"""
+
+from __future__ import annotations
+
+import os
+import secrets
+import threading
+import uuid
+from collections.abc import Iterator
+from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
+
+import pytest
+from alembic import command
+from alembic.config import Config
+from fastapi.testclient import TestClient
+from redis import Redis
+from sqlalchemy import Engine, create_engine, pool, text
+from sqlalchemy.engine import make_url
+
+from app.config import Settings
+from app.db.engine import create_app_engine
+from app.fixtures import Foundation, load_foundation
+from app.main import create_app
+from app.seed import seed_foundation
+
+ADMIN_URL = os.environ.get("TEST_DATABASE_ADMIN_URL")
+REDIS_URL = os.environ.get("TEST_REDIS_URL")
+JWT_SECRET = "integration-" + secrets.token_urlsafe(32)
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    for item in items:
+        if "/integration/" in str(item.fspath):
+            item.add_marker(pytest.mark.integration)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _require_services() -> None:
+    if ADMIN_URL and REDIS_URL:
+        return
+    message = "TEST_DATABASE_ADMIN_URL and TEST_REDIS_URL are required for integration tests"
+    if os.environ.get("EAIOS_REQUIRE_INTEGRATION") == "1":
+        pytest.fail(message)
+    pytest.skip(message)
+
+
+@dataclass
+class DbHarness:
+    name: str
+    owner_role: str
+    app_role: str
+    owner_url: str
+    app_url: str
+    owner_engine: Engine
+    foundation: Foundation
+    passwords: dict[str, dict[str, str]]
+    secrets: list[str]
+
+    def password(self, ref: str) -> str:
+        slug, key = ref.split("/", 1)
+        email = self.foundation.tenants[slug].users[key].email
+        return self.passwords[slug][email]
+
+
+def _with_credentials(base: str, user: str, password: str, database: str) -> str:
+    url = make_url(base).set(username=user, password=password, database=database)
+    return url.render_as_string(hide_password=False)
+
+
+@pytest.fixture(scope="session")
+def test_db() -> Iterator[DbHarness]:
+    assert ADMIN_URL
+    suffix = uuid.uuid4().hex[:10]
+    name = f"eaios_test_{suffix}"
+    owner_role, app_role = f"eaios_t_owner_{suffix}", f"eaios_t_app_{suffix}"
+    owner_pw, app_pw = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
+
+    admin = create_engine(ADMIN_URL, poolclass=pool.NullPool, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        conn.exec_driver_sql(
+            f"CREATE ROLE {owner_role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"
+            f" PASSWORD '{owner_pw}'"
+        )
+        conn.exec_driver_sql(
+            f"CREATE ROLE {app_role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"
+            f" NOINHERIT PASSWORD '{app_pw}'"
+        )
+        conn.exec_driver_sql(f"CREATE DATABASE {name} OWNER {owner_role}")
+        conn.exec_driver_sql(f"REVOKE ALL ON DATABASE {name} FROM PUBLIC")
+        conn.exec_driver_sql(f"GRANT CONNECT ON DATABASE {name} TO {app_role}")
+    # PostgreSQL 15+: public schema is owned by pg_database_owner (the owner role).
+    db_admin = create_engine(
+        _with_credentials(ADMIN_URL, *_admin_creds(), name),
+        poolclass=pool.NullPool,
+        isolation_level="AUTOCOMMIT",
+    )
+    with db_admin.connect() as conn:
+        conn.exec_driver_sql("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
+    db_admin.dispose()
+
+    owner_url = _with_credentials(ADMIN_URL, owner_role, owner_pw, name)
+    app_url = _with_credentials(ADMIN_URL, app_role, app_pw, name)
+
+    os.environ["EAIOS_APP_DB_ROLE"] = app_role
+    config = Config("alembic.ini")
+    config.attributes["url"] = owner_url
+    command.upgrade(config, "head")
+
+    owner_engine = create_engine(owner_url, poolclass=pool.NullPool)
+    foundation = load_foundation()
+    result = seed_foundation(owner_engine, foundation, environment="test")
+    all_passwords = [pw for users in result.new_credentials.values() for pw in users.values()]
+    db = DbHarness(
+        name=name,
+        owner_role=owner_role,
+        app_role=app_role,
+        owner_url=owner_url,
+        app_url=app_url,
+        owner_engine=owner_engine,
+        foundation=foundation,
+        passwords=result.new_credentials,
+        secrets=[owner_pw, app_pw, JWT_SECRET, *all_passwords],
+    )
+    try:
+        yield db
+    finally:
+        owner_engine.dispose()
+        with admin.connect() as conn:
+            conn.exec_driver_sql(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)")
+            conn.exec_driver_sql(f"DROP ROLE IF EXISTS {app_role}")
+            conn.exec_driver_sql(f"DROP ROLE IF EXISTS {owner_role}")
+        admin.dispose()
+
+
+def _admin_creds() -> tuple[str, str]:
+    assert ADMIN_URL
+    url = make_url(ADMIN_URL)
+    return str(url.username), str(url.password)
+
+
+@pytest.fixture(scope="session")
+def app_engine(test_db: DbHarness) -> Iterator[Engine]:
+    engine = create_app_engine(test_db.app_url, pool_size=2)
+    yield engine
+    engine.dispose()
+
+
+class _StubHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        status = 200 if self.path == "/readyz" else 403
+        self.send_response(status)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, *_: Any) -> None:
+        return
+
+
+@pytest.fixture(scope="session")
+def stub_http_url() -> Iterator[str]:
+    """Stands in for Qdrant (/readyz -> 200) and the S3 endpoint (/ -> 403)."""
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _StubHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+
+
+def make_settings(test_db: DbHarness, stub_http_url: str, **overrides: Any) -> Settings:
+    values: dict[str, Any] = {
+        "EAIOS_ENV": "test",
+        "DATABASE_URL": test_db.app_url,
+        "DATABASE_POOL_SIZE": 2,
+        "REDIS_URL": REDIS_URL,
+        "QDRANT_URL": stub_http_url,
+        "S3_ENDPOINT_URL": stub_http_url,
+        "JWT_SECRET": JWT_SECRET,
+        "RATE_LIMIT_KEY_PREFIX": f"eaios-test:{uuid.uuid4().hex}",
+        "READINESS_TIMEOUT_SECONDS": 1.0,
+        "CORS_ALLOWED_ORIGINS": "http://localhost:3000",
+    }
+    values.update(overrides)
+    return Settings(**values)
+
+
+@pytest.fixture
+def settings(test_db: DbHarness, stub_http_url: str) -> Settings:
+    return make_settings(test_db, stub_http_url)
+
+
+@pytest.fixture
+def client(settings: Settings) -> Iterator[TestClient]:
+    with TestClient(create_app(settings)) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def redis_client() -> Iterator[Redis]:
+    assert REDIS_URL
+    client = Redis.from_url(REDIS_URL)
+    yield client
+    client.close()  # type: ignore[no-untyped-call]
+
+
+def login(client: TestClient, test_db: DbHarness, ref: str) -> str:
+    slug, key = ref.split("/", 1)
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "tenant": slug,
+            "email": test_db.foundation.tenants[slug].users[key].email,
+            "password": test_db.password(ref),
+        },
+    )
+    assert response.status_code == 200, response.text
+    token: str = response.json()["access_token"]
+    return token
+
+
+def owner_exec(test_db: DbHarness, sql: str, params: dict[str, Any] | None = None) -> Any:
+    with test_db.owner_engine.begin() as conn:
+        return conn.execute(text(sql), params or {})
