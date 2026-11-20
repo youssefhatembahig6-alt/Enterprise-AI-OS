@@ -28,27 +28,33 @@ def code(src: str) -> None:
 
 # ---------------------------------------------------------------------------
 md(r"""
-# EAIOS M1 · GPU feasibility benchmark (Colab T4)
+# EAIOS M1 · GPU feasibility (Colab T4)
 
-Measures whether **Qwen3-8B-AWQ (vLLM)**, **BGE-M3** and the **DeBERTa-v3 checker** run together on one Colab GPU, and how long the ten M1 workload questions take.
+Two modes, chosen in cell 2. Each run produces results for **one** mode only, and the summary is labelled with it.
 
-**How to run:** `Runtime → Change runtime type → T4 GPU`, then `Runtime → Run all`. Approve the Google Drive prompt if it appears. Keep the tab open; the full run takes about 60–90 minutes.
+| Mode | Models (only these are downloaded) | What runs | Time |
+| --- | --- | --- | --- |
+| **`small`** (default) | Qwen3-1.7B (vLLM, fp16) · BGE-M3 · DeBERTa-v3 NLI baseline | One NileTech document question (Q05): embedding → answer generation → checking | ~15–25 min |
+| `target` | Qwen3-8B-AWQ (vLLM) · BGE-M3 · DeBERTa-v3 NLI baseline | Ten timing questions ×2, concurrent load, cancellation and restart at `gpu_memory_utilization` 0.85 and 0.75 | ~70–100 min |
 
-* Cell 1 checks the GPU and memory **before** anything is installed or downloaded, and stops if no GPU is attached.
-* Every stage is recorded in `results.json` as soon as it finishes (and mirrored to Drive when mounted). A failed stage is recorded with its error and the run continues where possible.
-* The last cell downloads a zip with the results, a summary and the server logs. You can run it at any time.
+**To run:** choose `Runtime → Change runtime type → T4 GPU`, then `Runtime → Run all`. Approve the Google Drive prompt if it appears.
+
+* Cell 1 checks the GPU and its memory **before** anything is installed or downloaded, and stops if no GPU is attached.
+* Every stage is recorded in `results.json` as soon as it finishes, and mirrored to Drive when Drive is mounted. A failed stage is recorded with its error, and the run continues where it can.
+* The last cell downloads a zip containing the results, the summary and the server logs. You can run it at any time.
 
 **What this run is not:**
 
-* The checker is a **public zero-shot NLI checkpoint** used as a development baseline. It is not the fine-tuned checker (M7), and its labels here are a smoke check, not an accuracy measurement.
-* vLLM listens on `127.0.0.1` inside this runtime only. No tunnel or public endpoint is opened.
-* The SQL that Qwen writes is recorded but not executed; no database runs in Colab. Generation uses fixed evidence (frozen M1 figures and NileTech passages) so timings are comparable across runs.
-* The specification asks for timings on "10 NileTech questions" but does not list them. The ten questions below are a proposed frozen workload (`m1-gpu-workload-v1`), not the evaluation set.
+* **Not the fine-tuned checker.** The checker is a **public zero-shot NLI checkpoint** used as a development baseline (M7 replaces it). Its labels here are a smoke check, not an accuracy measurement.
+* **Not a target measurement in small mode.** Small-mode numbers show only that the path works. Never compare them with target results.
+* **Not exposed outside the runtime.** vLLM listens on `127.0.0.1` inside this runtime only; no tunnel or public endpoint is opened.
+* **Not executing SQL.** The SQL Qwen writes is recorded but not executed. Generation uses fixed evidence, so timings stay comparable across runs.
+* **Not the evaluation set.** The ten questions (`m1-gpu-workload-v1`) are accepted for repeatable timing only and are kept separate from held-out quality evaluation.
 """)
 
 # ---------------------------------------------------------------------------
 code(r'''
-# @title 1 · Detect the GPU and memory (nothing is installed or downloaded yet)
+# @title 1 · Detect the GPU and memory (nothing is installed or downloaded yet; same for both modes)
 import datetime, hashlib, importlib, json, os, pathlib, platform, re, shutil, subprocess, sys, time, traceback, uuid
 
 NOTEBOOK_VERSION = "1.0.0"
@@ -230,22 +236,46 @@ for w in warnings:
 
 # ---------------------------------------------------------------------------
 code(r'''
-# @title 2 · Configuration (edit only if a stage fails and you want to retry differently)
+# @title 2 · Choose the mode and configuration
+# small  (default): Qwen3-1.7B + BGE-M3 + DeBERTa baseline, one document question, ~15–25 minutes.
+# target (opt-in):  Qwen3-8B-AWQ + BGE-M3 + DeBERTa baseline, full ten-question benchmark, ~70–100 minutes.
+MODE = "small"  # @param ["small", "target"]
+
 CONFIG = {
+    "mode": MODE,
     # vLLM runs in its own virtual environment so it cannot disturb Colab's torch/transformers.
     "vllm_version": "0.11.0",
     "vllm_python": "3.12",
-    "chat_model": {"repo": "Qwen/Qwen3-8B-AWQ", "revision": "main"},
-    "embed_model": {"repo": "BAAI/bge-m3", "revision": "main"},
-    "checker_model": {
-        "repo": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
-        "revision": "main",
-        "role": "development baseline: public zero-shot NLI DeBERTa-v3-base checkpoint, NOT the fine-tuned checker",
-    },
     # Revisions are resolved to exact commit SHAs at download time and recorded in results.json.
+    "models": {
+        "chat_small": {"repo": "Qwen/Qwen3-1.7B", "revision": "main"},
+        "chat_target": {"repo": "Qwen/Qwen3-8B-AWQ", "revision": "main"},
+        "embed": {"repo": "BAAI/bge-m3", "revision": "main"},
+        "checker": {
+            "repo": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+            "revision": "main",
+            "role": "development baseline: public zero-shot NLI DeBERTa-v3-base checkpoint, NOT the fine-tuned checker",
+        },
+    },
+    "modes": {
+        "small": {
+            "chat": "chat_small",
+            "quantization": None,          # 16-bit weights served as float16
+            "utilizations": [0.50],
+            "question": "Q05",
+            "purpose": "Smoke run: one NileTech document question through embedding, answer generation and checking. "
+                       "Not a measurement of the target model; never compare it with target results.",
+        },
+        "target": {
+            "chat": "chat_target",
+            "quantization": "awq",
+            # Section 6 says 0.85; section 13 asks about 0.75. Both are measured, in this order.
+            "utilizations": [0.85, 0.75],
+            "purpose": "Target benchmark: Qwen3-8B-AWQ co-resident with BGE-M3 and the checker on the ten timing questions.",
+        },
+    },
     "vllm": {
         "dtype": "half",            # T4 has no bfloat16
-        "quantization": "awq",
         "max_model_len": 4096,      # specification section 6
         "max_num_seqs": 8,
         "enforce_eager": False,     # set True if CUDA-graph capture fails or runs out of memory
@@ -253,26 +283,34 @@ CONFIG = {
         "seed": 0,
         "port": 8000,
     },
-    # Section 6 says 0.85; section 13 asks about 0.75. Both are measured, in this order.
-    "gpu_memory_utilization_candidates": [0.85, 0.75],
     "embed_dtype": "float16",
     "checker_dtype": "float16",
     "checker_max_tokens": 512,
     "checker_support_threshold": 0.5,   # uncalibrated development value
     "max_answer_sentences_checked": 8,
     "max_tokens": {"router": 48, "sql": 256, "report": 400, "answer": 400},
-    "repeats": 2,                        # passes over the ten questions per configuration
+    "repeats": 2,                        # target mode: passes over the ten questions per configuration
     "concurrent_requests": 4,
     "concurrent_max_tokens": 256,
-    "restart_test": "first_config",      # "first_config", "all" or "none"
+    "cancel_after_chunks": 20,
     "startup_timeout_s": 1500,
     "request_timeout_s": 600,
     "save_to_drive": True,
     "drive_dir": "/content/drive/MyDrive/eaios-m1-gpu-feasibility",
 }
+if MODE not in CONFIG["modes"]:
+    raise ValueError(f"MODE must be one of {sorted(CONFIG['modes'])}, not {MODE!r}")
+if RESULTS.get("mode") not in (None, MODE) or (RESULTS.get("mode") is None and RESULTS["configs"]):
+    raise RuntimeError("This runtime already holds a run in another mode. Use Runtime → Run all so cell 1 starts a new run ID.")
+MODE_SPEC = CONFIG["modes"][MODE]
+CHAT_KEY = MODE_SPEC["chat"]
+MODE_MODELS = [CHAT_KEY, "embed", "checker"]   # only these are downloaded
+RESULTS["mode"] = MODE
+RESULTS["mode_purpose"] = MODE_SPEC["purpose"]
 RESULTS["config"] = CONFIG
 save_results()
-print(json.dumps(CONFIG, indent=2))
+print(f"MODE = {MODE}: {MODE_SPEC['purpose']}")
+print("Models to download:", ", ".join(CONFIG["models"][k]["repo"] for k in MODE_MODELS))
 ''')
 
 # ---------------------------------------------------------------------------
@@ -284,7 +322,7 @@ def _mount_drive():
         return {"mounted": False, "reason": "save_to_drive is False"}
     from google.colab import drive
     drive.mount("/content/drive")
-    d = pathlib.Path(CONFIG["drive_dir"]) / RUN_ID
+    d = pathlib.Path(CONFIG["drive_dir"]) / MODE / RUN_ID
     d.mkdir(parents=True, exist_ok=True)
     DRIVE_DIR = d
     return {"mounted": True, "dir": str(d)}
@@ -378,10 +416,10 @@ run_stage("install", _install, requires=["gpu_detect"])
 
 # ---------------------------------------------------------------------------
 code(r'''
-# @title 5 · Download the three models (exact revisions recorded)
+# @title 5 · Download only the selected mode's three models (exact revisions recorded)
 MODELS_DIR = BASE / "models"
 MODEL_PATHS = {}
-EXTRA_FILES = {"embed_model": ["sparse_linear.pt", "colbert_linear.pt"]}
+EXTRA_FILES = {"embed": ["sparse_linear.pt", "colbert_linear.pt"]}
 
 
 def _pick_files(files, extra=()):
@@ -394,7 +432,7 @@ def _pick_files(files, extra=()):
 
 def _download(key):
     from huggingface_hub import HfApi, snapshot_download
-    spec = CONFIG[key]
+    spec = CONFIG["models"][key]
     info = HfApi().model_info(spec["repo"], revision=spec["revision"], files_metadata=True)
     sizes = {s.rfilename: s.size for s in info.siblings}
     chosen = _pick_files(list(sizes), EXTRA_FILES.get(key, ()))
@@ -410,12 +448,12 @@ def _download(key):
            "files": {f: sizes[f] for f in chosen}, "bytes": need, "download_s": round(secs, 1),
            "license": getattr(info.card_data, "license", None) if info.card_data else None,
            "local_path": str(path)}
-    if key == "checker_model":
+    if key == "checker":
         rec["role"] = spec["role"]
     RESULTS["downloads"][key] = rec
     return {k: v for k, v in rec.items() if k != "files"}
 
-for _key in ("chat_model", "embed_model", "checker_model"):
+for _key in MODE_MODELS:
     run_stage(f"download/{_key}", lambda k=_key: _download(k), requires=["gpu_detect"])
 ''')
 
@@ -507,7 +545,7 @@ PROMPTS = {
 }
 
 WORKLOAD = {"version": "m1-gpu-workload-v1", "dataset": "niletech-0.1.6",
-            "note": "Proposed frozen latency workload; the specification does not enumerate its ten questions.",
+            "note": "Frozen timing workload, accepted by the owner on 2026-11-20 for repeatable latency measurement; kept separate from held-out quality evaluation. The specification does not enumerate its ten questions.",
             "passages": PASSAGES, "questions": QUESTIONS, "prompts": PROMPTS}
 _canonical = json.dumps(WORKLOAD, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
 WORKLOAD_SHA256 = hashlib.sha256(_canonical).hexdigest()
@@ -523,6 +561,9 @@ print(f"{len(QUESTIONS)} questions · workload sha256 {WORKLOAD_SHA256}")
 # ---------------------------------------------------------------------------
 code(r'''
 # @title 7 · Benchmark helpers (memory sampler, vLLM server, chat client, BGE-M3, checker)
+# ---- bench_core.py (inlined verbatim by build_notebook.py; tested on CPU in tests/) ----
+# <<BENCH_CORE>>
+# ---- end bench_core.py ----
 import gc, secrets, signal, statistics, threading
 import requests
 
@@ -626,7 +667,7 @@ class MemWindow:
 
 
 # ---- vLLM server ----------------------------------------------------------------
-SERVED_NAME = CONFIG["chat_model"]["repo"]
+SERVED_NAME = CONFIG["models"][CHAT_KEY]["repo"]
 API_KEY = secrets.token_urlsafe(24)  # service-to-service auth even on localhost; never saved
 BASE_URL = f"http://127.0.0.1:{CONFIG['vllm']['port']}"
 HEADERS = {"Authorization": f"Bearer {API_KEY}"}
@@ -653,9 +694,10 @@ class VllmServer:
 
     def command(self):
         v = CONFIG["vllm"]
-        cmd = [str(VLLM_CLI), "serve", str(MODEL_PATHS["chat_model"]),
+        cmd = [str(VLLM_CLI), "serve", str(MODEL_PATHS[CHAT_KEY]),
                "--served-model-name", SERVED_NAME, "--host", "127.0.0.1", "--port", str(v["port"]),
-               "--dtype", v["dtype"], "--quantization", v["quantization"],
+               "--dtype", v["dtype"],
+               *(["--quantization", MODE_SPEC["quantization"]] if MODE_SPEC["quantization"] else []),
                "--max-model-len", str(v["max_model_len"]), "--max-num-seqs", str(v["max_num_seqs"]),
                "--gpu-memory-utilization", str(self.util), "--seed", str(v["seed"]), "--api-key", API_KEY]
         if v["enforce_eager"]:
@@ -762,41 +804,26 @@ class ModelCallError(RuntimeError):
 
 
 def chat(messages, max_tokens, stop_after_chunks=None, timeout=None):
+    """Stream one chat completion. With `stop_after_chunks`, the client closes the connection after
+    that many content chunks if the generation is still unfinished (see consume_sse)."""
     body = {"model": SERVED_NAME, "messages": messages, "max_tokens": max_tokens, "temperature": 0.0,
             "seed": CONFIG["vllm"]["seed"], "stream": True, "stream_options": {"include_usage": True},
             "chat_template_kwargs": {"enable_thinking": False}}
     t0 = time.perf_counter()
-    ttft, parts, usage, finish, chunks = None, [], {}, None, 0
     with requests.post(BASE_URL + "/v1/chat/completions", json=body, headers=HEADERS, stream=True,
                        timeout=(10, timeout or CONFIG["request_timeout_s"])) as r:
         if r.status_code != 200:
             raise ModelCallError(f"HTTP {r.status_code}: {r.text[:1500]}")
-        for raw in r.iter_lines(decode_unicode=True):
-            if not raw or not raw.startswith("data:"):
-                continue
-            data = raw[5:].strip()
-            if data == "[DONE]":
-                break
-            obj = json.loads(data)
-            if obj.get("usage"):
-                usage = obj["usage"]
-            for ch in obj.get("choices") or []:
-                piece = (ch.get("delta") or {}).get("content")
-                if piece:
-                    if ttft is None:
-                        ttft = time.perf_counter() - t0
-                    parts.append(piece)
-                    chunks += 1
-                finish = ch.get("finish_reason") or finish
-            if stop_after_chunks and chunks >= stop_after_chunks:
-                break  # leaving the `with` closes the connection = client cancellation
-    total = time.perf_counter() - t0
-    text = re.sub(r"<think>.*?</think>", "", "".join(parts), flags=re.S).strip()
+        res = consume_sse(r.iter_lines(decode_unicode=True), stop_after_chunks, t0=t0)
+    # Leaving the `with` closes the connection; after an early stop that abandons the generation.
+    usage, ttft, total = res["usage"], res["ttft_s"], res["total_s"]
+    text = re.sub(r"<think>.*?</think>", "", res["text_raw"], flags=re.S).strip()
     ctoks = usage.get("completion_tokens")
     decode = (ctoks - 1) / (total - ttft) if ctoks and ttft and total > ttft and ctoks > 1 else None
     return {"text": text, "ttft_s": round(ttft, 3) if ttft else None, "total_s": round(total, 3),
             "prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": ctoks,
-            "decode_tok_per_s": round(decode, 2) if decode else None, "finish_reason": finish}
+            "decode_tok_per_s": round(decode, 2) if decode else None, "finish_reason": res["finish_reason"],
+            "chunks": res["chunks"], "stream_done": res["stream_done"], "client_closed_early": res["client_closed_early"]}
 
 
 # ---- BGE-M3 (dense + sparse heads, as in FlagEmbedding's BGEM3FlagModel) ----------
@@ -880,11 +907,11 @@ def load_aux():
     import torch
     out = {"torch": torch.__version__, "torch_cuda": torch.version.cuda}
     t = time.perf_counter()
-    AUX["bge"] = BgeM3(MODEL_PATHS["embed_model"], CONFIG["embed_dtype"])
+    AUX["bge"] = BgeM3(MODEL_PATHS["embed"], CONFIG["embed_dtype"])
     out["bge_load_s"] = round(time.perf_counter() - t, 2)
     out["bge_mib_after"] = SAMPLER.used_mib()
     t = time.perf_counter()
-    AUX["checker"] = Checker(MODEL_PATHS["checker_model"], CONFIG["checker_dtype"])
+    AUX["checker"] = Checker(MODEL_PATHS["checker"], CONFIG["checker_dtype"])
     out["checker_load_s"] = round(time.perf_counter() - t, 2)
     out["checker_labels"] = AUX["checker"].labels
     out["device_used_mib_after"] = SAMPLER.used_mib()
@@ -919,15 +946,16 @@ def parse_route(text):
         return None
 
 
-def run_question(q, corpus):
+def run_question(q, corpus, use_router=True):
     rec = {"id": q["id"], "route_expected": q["route"], "steps": {}, "errors": []}
     t_all = time.perf_counter()
-    # 1. router
-    r = chat([{"role": "system", "content": PROMPTS["router_system"]}, {"role": "user", "content": q["question"]}],
-             CONFIG["max_tokens"]["router"])
-    rec["steps"]["router"] = {k: r[k] for k in ("total_s", "ttft_s", "prompt_tokens", "completion_tokens")}
-    rec["route_predicted"] = parse_route(r["text"])
-    rec["route_match"] = rec["route_predicted"] == q["route"]
+    # 1. router (target mode only; small mode measures embedding → answer → checking)
+    if use_router:
+        r = chat([{"role": "system", "content": PROMPTS["router_system"]}, {"role": "user", "content": q["question"]}],
+                 CONFIG["max_tokens"]["router"])
+        rec["steps"]["router"] = {k: r[k] for k in ("total_s", "ttft_s", "prompt_tokens", "completion_tokens")}
+        rec["route_predicted"] = parse_route(r["text"])
+        rec["route_match"] = rec["route_predicted"] == q["route"]
     # 2. query embedding (+ smoke ranking against the small passage corpus)
     t = time.perf_counter()
     qd, qs, qn = AUX["bge"].encode([q["question"]])
@@ -983,18 +1011,19 @@ STATUS["helpers"] = "ok"
 
 # ---------------------------------------------------------------------------
 code(r'''
-# @title 8 · Run the benchmark (each stage is saved as soon as it finishes)
+# @title 8 · Run the selected mode (each stage is saved as soon as it finishes)
 from concurrent.futures import ThreadPoolExecutor
 
-READY = ["install", "download/chat_model", "download/embed_model", "download/checker_model", "workload", "helpers"]
+READY = ["install", *[f"download/{k}" for k in MODE_MODELS], "workload", "helpers"]
 
 
 def run_config(util, idx):
-    key = f"u{util:.2f}"
-    cfg = RESULTS["configs"].setdefault(key, {"utilization": util, "stages": [], "questions": []})
+    key = f"{MODE}/u{util:.2f}"
+    cfg = RESULTS["configs"].setdefault(key, {"mode": MODE, "utilization": util, "stages": [], "questions": []})
     st = cfg["stages"]
     p = lambda n: f"{key}/{n}"
-    srv = VllmServer(util, f"{key}-start1")
+    label = key.replace("/", "-")
+    srv = VllmServer(util, f"{label}-start1")
     SAMPLER.open(key + "/overall")
 
     def start():
@@ -1029,101 +1058,118 @@ def run_config(util, idx):
         return {"passages": len(ids), "batch_s": round(time.perf_counter() - t, 4), "max_tokens": n}
     run_stage(p("embed_corpus"), embed_corpus, requires=[p("warmup")], container=st)
 
-    for rep in range(1, CONFIG["repeats"] + 1):
-        def questions(rep=rep):
-            d = {"rep": rep, "ok": 0, "failed": 0}
-            with MemWindow(p(f"questions_rep{rep}"), d):
-                for q in QUESTIONS:
-                    if not srv.alive():
-                        raise RuntimeError("vLLM process died. Log tail:\n" + srv.tail(40))
-                    try:
-                        rec = run_question(q, corpus)
-                        rec["rep"] = rep
-                        d["ok"] += 1
-                    except Exception as exc:
-                        kind = "oom" if "out of memory" in str(exc).lower() else "error"
-                        rec = {"id": q["id"], "rep": rep, "error": f"{type(exc).__name__}: {exc}"[:3000],
-                               "traceback": traceback.format_exc()[-3000:]}
-                        record_failure(p(f"questions_rep{rep}/{q['id']}"), kind, rec["error"])
-                        d["failed"] += 1
-                    cfg["questions"].append(rec)
-                    print(f"   {q['id']} rep{rep}: " + (f"{rec['pipeline_s']:.1f}s" if "pipeline_s" in rec else "FAILED " + rec["error"][:120]))
-                    save_results()
-            if d["failed"]:
-                raise RuntimeError(f"{d['failed']} of {len(QUESTIONS)} questions failed")
+    if MODE == "small":
+        def document_question():
+            q = next(q for q in QUESTIONS if q["id"] == MODE_SPEC["question"])
+            d = {}
+            with MemWindow(p("document_question"), d):
+                rec = run_question(q, corpus, use_router=False)
+            rec["rep"] = 1
+            cfg["questions"].append(rec)
+            d.update(id=q["id"], pipeline_s=rec["pipeline_s"], steps=rec["steps"])
+            print(f"   {q['id']}: {rec['pipeline_s']:.1f}s  embed {rec['steps']['embed_query']['total_s']:.3f}s · "
+                  f"answer {rec['steps']['answer']['total_s']:.1f}s · check {rec['steps']['check']['total_s']:.2f}s")
             return d
-        run_stage(p(f"questions_rep{rep}"), questions, requires=[p("embed_corpus")], container=st)
+        run_stage(p("document_question"), document_question, requires=[p("embed_corpus")], container=st)
+    else:
+        for rep in range(1, CONFIG["repeats"] + 1):
+            def questions(rep=rep):
+                d = {"rep": rep, "ok": 0, "failed": 0}
+                with MemWindow(p(f"questions_rep{rep}"), d):
+                    for q in QUESTIONS:
+                        if not srv.alive():
+                            raise RuntimeError("vLLM process died. Log tail:\n" + srv.tail(40))
+                        try:
+                            rec = run_question(q, corpus)
+                            rec["rep"] = rep
+                            d["ok"] += 1
+                        except Exception as exc:
+                            kind = "oom" if "out of memory" in str(exc).lower() else "error"
+                            rec = {"id": q["id"], "rep": rep, "error": f"{type(exc).__name__}: {exc}"[:3000],
+                                   "traceback": traceback.format_exc()[-3000:]}
+                            record_failure(p(f"questions_rep{rep}/{q['id']}"), kind, rec["error"])
+                            d["failed"] += 1
+                        cfg["questions"].append(rec)
+                        print(f"   {q['id']} rep{rep}: " + (f"{rec['pipeline_s']:.1f}s" if "pipeline_s" in rec else "FAILED " + rec["error"][:120]))
+                        save_results()
+                if d["failed"]:
+                    raise RuntimeError(f"{d['failed']} of {len(QUESTIONS)} questions failed")
+                return d
+            run_stage(p(f"questions_rep{rep}"), questions, requires=[p("embed_corpus")], container=st)
 
-    def concurrent():
-        d = {"requests": CONFIG["concurrent_requests"]}
-        stop = threading.Event()
-        aux_stats = {"ops": 0, "errors": []}
-        def aux_loop():
-            while not stop.is_set():
+        def concurrent():
+            d = {"requests": CONFIG["concurrent_requests"]}
+            stop = threading.Event()
+            aux_stats = {"ops": 0, "errors": []}
+            def aux_loop():
+                while not stop.is_set():
+                    try:
+                        AUX["bge"].encode([QUESTIONS[aux_stats["ops"] % len(QUESTIONS)]["question"]])
+                        AUX["checker"].score(PASSAGES["leave-entitlement"], "Egypt staff get 21 days.")
+                        aux_stats["ops"] += 1
+                    except Exception as exc:
+                        aux_stats["errors"].append(f"{type(exc).__name__}: {exc}"[:500])
+                        time.sleep(0.5)
+            def one(i):
+                q = QUESTIONS[i % len(QUESTIONS)]
                 try:
-                    AUX["bge"].encode([QUESTIONS[aux_stats["ops"] % len(QUESTIONS)]["question"]])
-                    AUX["checker"].score(PASSAGES["leave-entitlement"], "Egypt staff get 21 days.")
-                    aux_stats["ops"] += 1
+                    return chat([{"role": "system", "content": PROMPTS["answer_system"]},
+                                 {"role": "user", "content": f"Sources:\n{evidence_for(q)}\n\nQuestion: {q['question']}"}],
+                                CONFIG["concurrent_max_tokens"])
                 except Exception as exc:
-                    aux_stats["errors"].append(f"{type(exc).__name__}: {exc}"[:500])
-                    time.sleep(0.5)
-        def one(i):
-            q = QUESTIONS[i % len(QUESTIONS)]
-            try:
-                return chat([{"role": "system", "content": PROMPTS["answer_system"]},
-                             {"role": "user", "content": f"Sources:\n{evidence_for(q)}\n\nQuestion: {q['question']}"}],
-                            CONFIG["concurrent_max_tokens"])
-            except Exception as exc:
-                return {"error": f"{type(exc).__name__}: {exc}"[:500]}
-        with MemWindow(p("concurrent"), d):
-            th = threading.Thread(target=aux_loop, daemon=True)
-            th.start()
+                    return {"error": f"{type(exc).__name__}: {exc}"[:500]}
+            with MemWindow(p("concurrent"), d):
+                th = threading.Thread(target=aux_loop, daemon=True)
+                th.start()
+                t = time.perf_counter()
+                with ThreadPoolExecutor(CONFIG["concurrent_requests"]) as ex:
+                    res = list(ex.map(one, range(CONFIG["concurrent_requests"])))
+                wall = time.perf_counter() - t
+                stop.set()
+                th.join(timeout=30)
+            ok = [r for r in res if "error" not in r]
+            d.update(wall_s=round(wall, 2), ok=len(ok), errors=[r["error"] for r in res if "error" in r],
+                     per_request_s=[r["total_s"] for r in ok], ttft_s=[r["ttft_s"] for r in ok],
+                     aggregate_tok_per_s=round(sum(r["completion_tokens"] or 0 for r in ok) / wall, 2),
+                     aux_ops=aux_stats["ops"], aux_errors=aux_stats["errors"][:10], server_alive=srv.alive())
+            if d["errors"] or aux_stats["errors"] or not srv.alive():
+                raise RuntimeError(f"concurrent load had failures: chat={d['errors'][:3]} aux={aux_stats['errors'][:3]} alive={srv.alive()}")
+            return d
+        run_stage(p("concurrent"), concurrent, requires=[p("embed_corpus")], container=st)
+
+        def cancellation():
+            d = {}
             t = time.perf_counter()
-            with ThreadPoolExecutor(CONFIG["concurrent_requests"]) as ex:
-                res = list(ex.map(one, range(CONFIG["concurrent_requests"])))
-            wall = time.perf_counter() - t
-            stop.set()
-            th.join(timeout=30)
-        ok = [r for r in res if "error" not in r]
-        d.update(wall_s=round(wall, 2), ok=len(ok), errors=[r["error"] for r in res if "error" in r],
-                 per_request_s=[r["total_s"] for r in ok], ttft_s=[r["ttft_s"] for r in ok],
-                 aggregate_tok_per_s=round(sum(r["completion_tokens"] or 0 for r in ok) / wall, 2),
-                 aux_ops=aux_stats["ops"], aux_errors=aux_stats["errors"][:10], server_alive=srv.alive())
-        if d["errors"] or aux_stats["errors"] or not srv.alive():
-            raise RuntimeError(f"concurrent load had failures: chat={d['errors'][:3]} aux={aux_stats['errors'][:3]} alive={srv.alive()}")
-        return d
-    run_stage(p("concurrent"), concurrent, requires=[p("embed_corpus")], container=st)
+            part = chat([{"role": "user", "content": PROMPTS["long_generation"]}], 1500,
+                        stop_after_chunks=CONFIG["cancel_after_chunks"])
+            d["closed_after_s"] = round(time.perf_counter() - t, 2)
+            d["stream"] = {k: part[k] for k in ("chunks", "finish_reason", "stream_done", "client_closed_early", "completion_tokens")}
+            t = time.perf_counter()
+            running = None
+            while time.perf_counter() - t < 30:
+                running = server_metric("vllm:num_requests_running")
+                if running == 0:
+                    break
+                time.sleep(0.25)
+            d["requests_running_after"] = running
+            d["release_s"] = round(time.perf_counter() - t, 2)
+            after = chat([{"role": "user", "content": "Reply with the word ok."}], 8)
+            d["follow_up_ok"] = bool(after["text"])
+            d["server_alive"] = srv.alive()
+            d["verdict"] = cancellation_verdict(part, running, d["follow_up_ok"], d["server_alive"])
+            cfg["cancellation_evidence"] = d   # kept even when the stage fails
+            if not d["verdict"]["ok"]:
+                raise RuntimeError("cancellation not demonstrated: " + "; ".join(d["verdict"]["reasons"]))
+            return d
+        run_stage(p("cancellation"), cancellation, requires=[p("aux_load")], container=st)
 
-    def cancellation():
-        d = {}
-        t = time.perf_counter()
-        part = chat([{"role": "user", "content": PROMPTS["long_generation"]}], 1500, stop_after_chunks=20)
-        d["closed_after_s"] = round(time.perf_counter() - t, 2)
-        d["chunks_received_tokens"] = part["completion_tokens"]
-        t = time.perf_counter()
-        running = None
-        while time.perf_counter() - t < 30:
-            running = server_metric("vllm:num_requests_running")
-            if running == 0:
-                break
-            time.sleep(0.25)
-        d["requests_running_after"] = running
-        d["release_s"] = round(time.perf_counter() - t, 2)
-        after = chat([{"role": "user", "content": "Reply with the word ok."}], 8)
-        d["follow_up_ok"] = bool(after["text"])
-        d["server_alive"] = srv.alive()
-        if running not in (0, 0.0) or not d["follow_up_ok"]:
-            raise RuntimeError(f"cancelled request still running ({running}) or follow-up failed")
-        return d
-    run_stage(p("cancellation"), cancellation, requires=[p("aux_load")], container=st)
-
-    do_restart = CONFIG["restart_test"] == "all" or (CONFIG["restart_test"] == "first_config" and idx == 0)
-    if do_restart:
+        # Restart runs for every target configuration: a configuration without a successful
+        # restart is never recommended (it is reported as failed or incomplete).
         def restart():
             nonlocal srv
             d = {"stop": srv.stop()}
             # (a) restart while BGE-M3 + checker stay resident in this kernel — the realistic recovery path
-            srv = VllmServer(util, f"{key}-restart-aux-resident")
+            srv = VllmServer(util, f"{label}-restart-aux-resident")
             try:
                 with MemWindow(p("restart_a"), d.setdefault("aux_resident", {})):
                     d["aux_resident"].update(srv.start())
@@ -1133,7 +1179,7 @@ def run_config(util, idx):
                 srv.stop()
                 # (b) unload aux, restart vLLM, reload aux
                 d["unload"] = unload_aux()
-                srv = VllmServer(util, f"{key}-restart-aux-reloaded")
+                srv = VllmServer(util, f"{label}-restart-aux-reloaded")
                 with MemWindow(p("restart_b"), d.setdefault("aux_reloaded", {})):
                     d["aux_reloaded"].update(srv.start())
                     d["aux_reloaded"]["aux"] = load_aux()
@@ -1155,75 +1201,70 @@ def run_config(util, idx):
 
 if STATUS.get("helpers") != "ok":
     raise RuntimeError("Cell 7 (helpers) did not finish; fix the error shown there and re-run cells 7 and 8.")
-for _i, _u in enumerate(CONFIG["gpu_memory_utilization_candidates"]):
-    print(f"\n=== gpu_memory_utilization = {_u} ===")
+for _i, _u in enumerate(MODE_SPEC["utilizations"]):
+    print(f"\n=== {MODE} mode · gpu_memory_utilization = {_u} ===")
     run_config(_u, _i)
-print("\nBenchmark finished. Run the next cells for the summary and the download.")
+print("\nRun finished. Run the next cells for the summary and the download.")
 ''')
 
 # ---------------------------------------------------------------------------
 code(r'''
-# @title 9 · Summary (also saved as summary.md)
-def _stats(values):
-    v = sorted(x for x in values if isinstance(x, (int, float)))
-    if not v:
-        return None
-    p90 = v[min(len(v) - 1, int(round(0.9 * (len(v) - 1))))]
-    return {"n": len(v), "median": round(statistics.median(v), 3), "p90": round(p90, 3), "max": round(v[-1], 3)}
+# @title 9 · Summary for the selected mode (also saved as summary.md)
+def _ratio(records, field):
+    measured = [r for r in records if field in r]
+    return f"{sum(1 for r in measured if r[field])}/{len(measured)}" if measured else "not run"
 
 
 def summarize():
-    summary = {"configs": {}}
+    summary = {"mode": MODE, "mode_purpose": MODE_SPEC["purpose"], "configs": {}}
     for key, cfg in RESULTS["configs"].items():
-        stages = {s["name"].split("/", 1)[1]: s for s in cfg["stages"]}
-        ok = lambda n: stages.get(n, {}).get("status") == "ok"
-        warm = [q for q in cfg["questions"] if "pipeline_s" in q and q.get("rep", 1) >= 2] or \
-               [q for q in cfg["questions"] if "pipeline_s" in q]
-        step = lambda name, field="total_s": _stats([q["steps"][name][field] for q in warm if name in q["steps"]])
+        statuses = {s["name"][len(key) + 1:]: s.get("status") for s in cfg["stages"]}
+        stage = lambda n: next((s for s in cfg["stages"] if s["name"] == f"{key}/{n}"), {})
+        done = [q for q in cfg["questions"] if "pipeline_s" in q]
+        warm = [q for q in done if q.get("rep", 1) >= 2] or done
+        step = lambda name, field="total_s": stats([q["steps"][name][field] for q in warm if name in q["steps"]])
         fixed = [c for q in warm for c in q.get("check_fixed_claims", []) if c.get("agrees") is not None]
         mem = cfg.get("memory_overall", {})
+        facts = cfg.get("server_log_facts", {})
+        oom = any(f["kind"] == "oom" and f["stage"].startswith(key + "/") for f in RESULTS["failures"]) or bool(facts.get("oom_in_log"))
         s = {
+            "mode": cfg.get("mode", MODE),
             "utilization": cfg["utilization"],
-            "vllm_started": ok("vllm_start"),
-            "vllm_ready_s": stages.get("vllm_start", {}).get("details", {}).get("ready_s"),
-            "aux_loaded": ok("aux_load"),
-            "all_question_passes_ok": all(ok(f"questions_rep{r}") for r in range(1, CONFIG["repeats"] + 1)),
-            "concurrent_ok": ok("concurrent"),
-            "cancellation_ok": ok("cancellation"),
-            "restart": stages.get("restart", {}).get("details", {}).get("recovery") if ok("restart") else stages.get("restart", {}).get("status"),
+            **evaluate_config(statuses, cfg.get("mode", MODE), CONFIG["repeats"], oom_seen=oom),
+            "stage_status": statuses,
+            "vllm_ready_s": stage("vllm_start").get("details", {}).get("ready_s"),
+            "restart": stage("restart").get("details", {}).get("recovery") if statuses.get("restart") == "ok" else statuses.get("restart", "not run"),
+            "cancellation_evidence": cfg.get("cancellation_evidence"),
             "peak_device_used_mib": mem.get("peak_device_used_mib"),
             "device_total_mib": mem.get("device_total_mib"),
             "min_headroom_mib": mem.get("min_headroom_mib"),
             "peak_host_ram_used_mib": mem.get("peak_host_ram_used_mib"),
             "kernel_torch_peak_allocated_mib": mem.get("kernel_torch_peak_allocated_mib"),
-            "oom_seen": any(f["kind"] == "oom" and f["stage"].startswith(key) for f in RESULTS["failures"]) or
-                        bool(cfg.get("server_log_facts", {}).get("oom_in_log")),
-            "kv_cache": cfg.get("server_log_facts", {}).get("kv_cache_size"),
-            "max_concurrency": cfg.get("server_log_facts", {}).get("max_concurrency"),
-            "attention_backend": cfg.get("server_log_facts", {}).get("attention_backend"),
-            "warm_questions": len(warm),
+            "kv_cache": facts.get("kv_cache_size"),
+            "max_concurrency": facts.get("max_concurrency"),
+            "attention_backend": facts.get("attention_backend"),
+            "questions_measured": len(warm),
             "latency_s": {
-                "pipeline_all": _stats([q["pipeline_s"] for q in warm]),
-                "pipeline_database": _stats([q["pipeline_s"] for q in warm if q["route_expected"] == "database"]),
-                "pipeline_documents": _stats([q["pipeline_s"] for q in warm if q["route_expected"] != "database"]),
+                "pipeline_all": stats([q["pipeline_s"] for q in warm]),
+                "pipeline_database": stats([q["pipeline_s"] for q in warm if q["route_expected"] == "database"]),
+                "pipeline_documents": stats([q["pipeline_s"] for q in warm if q["route_expected"] != "database"]),
                 "router": step("router"), "embed_query": step("embed_query"), "sql": step("sql"),
                 "report": step("report"), "answer": step("answer"), "check_total": step("check"),
                 "report_ttft": step("report", "ttft_s"), "answer_ttft": step("answer", "ttft_s"),
-                "checker_per_item": _stats([c["latency_s"] for q in warm for c in q.get("check_fixed_claims", []) + q.get("check_answer_sentences", []) if c.get("status") == "ok"]),
+                "checker_per_item": stats([c["latency_s"] for q in warm for c in q.get("check_fixed_claims", []) + q.get("check_answer_sentences", []) if c.get("status") == "ok"]),
             },
-            "decode_tok_per_s": _stats([q["steps"][n]["decode_tok_per_s"] for q in warm for n in ("report", "answer") if n in q["steps"]]),
+            "decode_tok_per_s": stats([q["steps"][n]["decode_tok_per_s"] for q in warm for n in ("report", "answer") if n in q["steps"]]),
             "smoke": {
-                "route_match": f"{sum(1 for q in warm if q.get('route_match'))}/{len(warm)}",
-                "retrieval_hit_at_1": f"{sum(1 for q in warm if q.get('retrieval_hit_at_1'))}/{sum(1 for q in warm if 'retrieval_hit_at_1' in q)}",
+                "route_match": _ratio(warm, "route_match"),
+                "retrieval_hit_at_1": _ratio(warm, "retrieval_hit_at_1"),
                 "checker_agrees_with_expected": f"{sum(1 for c in fixed if c['agrees'])}/{len(fixed)}",
                 "checker_over_token_limit": sum(q["steps"]["check"]["over_token_limit"] for q in warm if "check" in q["steps"]),
             },
         }
-        s["passed_all"] = all([s["vllm_started"], s["aux_loaded"], s["all_question_passes_ok"], s["concurrent_ok"],
-                               s["cancellation_ok"], not s["oom_seen"]])
         summary["configs"][key] = s
-    passing = [s for s in summary["configs"].values() if s["passed_all"]]
-    summary["candidate"] = (max(passing, key=lambda s: (s["min_headroom_mib"] or 0))["utilization"] if passing else None)
+    summary["incomplete_configs"] = [k for k, s in summary["configs"].items() if s["verdict"] == "incomplete"]
+    summary["failed_configs"] = [k for k, s in summary["configs"].items() if s["verdict"] == "failed"]
+    summary["candidate"] = choose_candidate(summary["configs"]) if MODE == "target" else None
     summary["failures"] = len(RESULTS["failures"])
     RESULTS["summary"] = summary
     save_results()
@@ -1231,53 +1272,75 @@ def summarize():
 
 
 def _fmt(st):
-    return "—" if not st else f"{st['median']:.2f} / {st['p90']:.2f} / {st['max']:.2f} (n={st['n']})"
+    return f"{st['median']:.2f} / {st['p90']:.2f} / {st['max']:.2f} (n={st['n']})"
+
+
+LATENCY_ROWS = [("pipeline_all", "Full pipeline, all measured questions"),
+                ("pipeline_database", "Full pipeline, database (router+SQL+report+check)"),
+                ("pipeline_documents", "Full pipeline, documents"),
+                ("router", "Router"), ("embed_query", "Query embedding (BGE-M3)"), ("sql", "SQL generation"),
+                ("report", "Report generation"), ("report_ttft", "Report time to first token"),
+                ("answer", "Document answer generation"), ("answer_ttft", "Answer time to first token"),
+                ("check_total", "Checker, all items per question"), ("checker_per_item", "Checker, per item")]
 
 
 def write_markdown(summary):
     env = RESULTS["environment"]
     g = (env.get("gpu") or {}).get("gpus", [{}])[0]
     ve = env.get("vllm_env", {})
-    lines = [f"# EAIOS M1 GPU feasibility — run {RUN_ID}", "",
-             f"GPU {g.get('name')} ({g.get('memory_total_mib')} MiB, driver {g.get('driver_version')}, CUDA {(env.get('gpu') or {}).get('driver_cuda_version')}) · "
-             f"vLLM {ve.get('vllm')} · torch (vLLM) {ve.get('torch')} · torch (kernel) {env.get('kernel_env', {}).get('torch')} · "
-             f"transformers (kernel) {env.get('kernel_env', {}).get('transformers')}", "",
-             "Models: " + ", ".join(f"{d['repo']}@{d['resolved_sha'][:12]}" for d in RESULTS["downloads"].values()), "",
-             f"Workload {RESULTS['workload'].get('version')} sha256 {RESULTS['workload'].get('sha256')}", "",
-             "Checker = public zero-shot NLI baseline, not the fine-tuned checker. Smoke counts are not accuracy results.", ""]
+    title = "SMALL mode (smoke run, not a target measurement)" if MODE == "small" else "TARGET mode (Qwen3-8B-AWQ benchmark)"
+    lines = [f"# EAIOS M1 GPU feasibility — {title}", "", f"Run `{RUN_ID}`. {MODE_SPEC['purpose']}", "",
+             f"GPU {g.get('name')} ({g.get('memory_total_mib')} MiB, compute {g.get('compute_cap')}, driver {g.get('driver_version')}, "
+             f"CUDA {(env.get('gpu') or {}).get('driver_cuda_version')}) · vLLM {ve.get('vllm')} · torch (vLLM) {ve.get('torch')} · "
+             f"torch (kernel) {env.get('kernel_env', {}).get('torch')} · transformers (kernel) {env.get('kernel_env', {}).get('transformers')}", "",
+             "Model revisions:", ""]
+    lines += [f"- {k}: `{d['repo']}` @ `{d['resolved_sha']}`" + (f" — {d['role']}" if d.get("role") else "")
+              for k, d in RESULTS["downloads"].items()]
+    lines += ["", f"Workload {RESULTS['workload'].get('version')} sha256 `{RESULTS['workload'].get('sha256')}` "
+              "(timing questions accepted by the owner; separate from held-out quality evaluation).", "",
+              "The checker is a public zero-shot NLI development baseline, not the fine-tuned checker. Smoke counts are not accuracy results.", ""]
     for key, s in summary["configs"].items():
-        L = s["latency_s"]
-        lines += [f"## gpu_memory_utilization {s['utilization']} — {'PASSED' if s['passed_all'] else 'NOT PASSED'}", "",
-                  "| Check | Result |", "| --- | --- |",
-                  f"| vLLM started (ready seconds) | {s['vllm_started']} ({s['vllm_ready_s']}) |",
-                  f"| BGE-M3 + checker loaded beside vLLM | {s['aux_loaded']} |",
-                  f"| All question passes ok | {s['all_question_passes_ok']} |",
-                  f"| Concurrent load ({CONFIG['concurrent_requests']} chats + embed/check loop) | {s['concurrent_ok']} |",
-                  f"| Cancellation releases the request | {s['cancellation_ok']} |",
-                  f"| Restart | {s['restart']} |",
-                  f"| OOM seen | {s['oom_seen']} |",
-                  f"| Peak GPU used / total (MiB) | {s['peak_device_used_mib']} / {s['device_total_mib']} |",
+        verdict = s["verdict"].upper()
+        if s["failed_stages"]:
+            verdict += " — failed: " + ", ".join(s["failed_stages"])
+        if s["oom_seen"]:
+            verdict += " — OOM seen"
+        if s["incomplete_stages"]:
+            verdict += " — not completed: " + ", ".join(f"{i['stage']} ({i['status']})" for i in s["incomplete_stages"])
+        lines += [f"## {key} — {verdict}", "", "| Check | Result |", "| --- | --- |"]
+        lines += [f"| {name} | {s['stage_status'].get(name, 'not run')} |" for name in s["required_stages"]]
+        lines += [f"| vLLM ready (s) | {s['vllm_ready_s']} |"]
+        if MODE == "target":
+            lines += [f"| Restart recovery | {s['restart']} |"]
+            ce = s.get("cancellation_evidence") or {}
+            if ce.get("stream"):
+                lines += [f"| Cancellation evidence | chunks {ce['stream'].get('chunks')}, client closed unfinished stream "
+                          f"{ce['stream'].get('client_closed_early')}, running after {ce.get('requests_running_after')}, "
+                          f"follow-up ok {ce.get('follow_up_ok')}; verdict {'ok' if ce['verdict']['ok'] else '; '.join(ce['verdict']['reasons'])} |"]
+        lines += [f"| Peak GPU used / total (MiB) | {s['peak_device_used_mib']} / {s['device_total_mib']} |",
                   f"| Minimum headroom (MiB) | {s['min_headroom_mib']} |",
                   f"| Kernel torch peak allocated (MiB) | {s['kernel_torch_peak_allocated_mib']} |",
                   f"| Peak host RAM used (MiB) | {s['peak_host_ram_used_mib']} |",
-                  f"| KV cache | {s['kv_cache']} |", f"| Attention backend | {s['attention_backend']} |", "",
-                  "| Latency, warm passes (s) | median / p90 / max |", "| --- | --- |",
-                  f"| Full pipeline, all questions | {_fmt(L['pipeline_all'])} |",
-                  f"| Full pipeline, database (router+SQL+report+check) | {_fmt(L['pipeline_database'])} |",
-                  f"| Full pipeline, documents (router+embed+answer+check) | {_fmt(L['pipeline_documents'])} |",
-                  f"| Router | {_fmt(L['router'])} |", f"| Query embedding | {_fmt(L['embed_query'])} |",
-                  f"| SQL generation | {_fmt(L['sql'])} |", f"| Report generation | {_fmt(L['report'])} |",
-                  f"| Report time to first token | {_fmt(L['report_ttft'])} |",
-                  f"| Document answer | {_fmt(L['answer'])} |", f"| Checker, all items per question | {_fmt(L['check_total'])} |",
-                  f"| Checker, per item | {_fmt(L['checker_per_item'])} |",
-                  f"| Decode tokens/s | {_fmt(s['decode_tok_per_s'])} |", "",
-                  f"Smoke: routes {s['smoke']['route_match']}, retrieval hit@1 {s['smoke']['retrieval_hit_at_1']}, "
-                  f"checker agrees with expected labels {s['smoke']['checker_agrees_with_expected']}, "
-                  f"checker inputs over 512 tokens {s['smoke']['checker_over_token_limit']}.", ""]
+                  f"| KV cache | {s['kv_cache']} |", f"| Attention backend | {s['attention_backend']} |", ""]
+        rows = [(label, s["latency_s"][k]) for k, label in LATENCY_ROWS if s["latency_s"].get(k)]
+        if s["decode_tok_per_s"]:
+            rows.append(("Decode tokens/s", s["decode_tok_per_s"]))
+        if rows:
+            which = "warm passes" if MODE == "target" else "single measured question"
+            lines += [f"| Latency, {which} (s) | median / p90 / max |", "| --- | --- |"]
+            lines += [f"| {label} | {_fmt(st)} |" for label, st in rows]
+            lines += [""]
+        sm = s["smoke"]
+        lines += [f"Smoke: routes {sm['route_match']}, retrieval hit@1 {sm['retrieval_hit_at_1']}, checker agrees with expected "
+                  f"labels {sm['checker_agrees_with_expected']}, checker inputs over 512 tokens {sm['checker_over_token_limit']}.", ""]
     lines += ["## Failures", ""]
     lines += [f"- `{f['stage']}` ({f['kind']}): {f['message'][:400]}" for f in RESULTS["failures"]] or ["None recorded."]
-    lines += ["", f"Candidate configuration (passed every check, most headroom): {summary['candidate']}",
-              "", "Specification planning estimate for comparison: 25–75 s per warm answer with vLLM (section 6)."]
+    if MODE == "target":
+        lines += ["", "Incomplete configurations (never recommended): " + (", ".join(summary["incomplete_configs"]) or "none"),
+                  "", f"Candidate configuration (passed every required stage including restart, most headroom): {summary['candidate']}",
+                  "", "Specification planning estimate for comparison: 25–75 s per warm answer with vLLM (section 6)."]
+    else:
+        lines += ["", "Small mode makes no configuration recommendation. Run MODE = \"target\" for the Qwen3-8B-AWQ measurements."]
     (OUT / "summary.md").write_text("\n".join(lines))
     save_results()
     return "\n".join(lines)
@@ -1296,7 +1359,7 @@ code(r'''
 # @title 10 · Download the results (zip of results.json, summary.md, workload and logs) — safe to run any time
 RESULTS["finished_at"] = utcnow()
 save_results()
-_zip = shutil.make_archive(str(BASE / f"eaios-m1-gpu-{RUN_ID}"), "zip", root_dir=OUT.parent, base_dir=OUT.name)
+_zip = shutil.make_archive(str(BASE / f"eaios-m1-gpu-{MODE}-{RUN_ID}"), "zip", root_dir=OUT.parent, base_dir=OUT.name)
 print("Results zip:", _zip)
 if DRIVE_DIR is not None:
     shutil.copy(_zip, DRIVE_DIR.parent)
@@ -1309,7 +1372,12 @@ except Exception as exc:
 ''')
 
 
-def build() -> None:
+BENCH_CORE = HERE / "bench_core.py"
+MARKER = "# <<BENCH_CORE>>"
+
+
+def render() -> str:
+    core = BENCH_CORE.read_text().rstrip("\n")
     nb = {
         "nbformat": 4,
         "nbformat_minor": 5,
@@ -1322,13 +1390,26 @@ def build() -> None:
         "cells": [],
     }
     for i, (kind, src) in enumerate(CELLS):
+        if MARKER in src:
+            src = src.replace(MARKER, core)
         cell = {"cell_type": kind, "id": f"cell-{i:02d}", "metadata": {}, "source": src.splitlines(keepends=True)}
         if kind == "code":
             cell.update(execution_count=None, outputs=[])
         nb["cells"].append(cell)
-    TARGET.write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n")
+    return json.dumps(nb, indent=1, ensure_ascii=False) + "\n"
+
+
+def build() -> None:
+    TARGET.write_text(render())
     print(f"wrote {TARGET.relative_to(HERE.parent.parent)} ({len(CELLS)} cells)")
 
 
 if __name__ == "__main__":
-    build()
+    import sys
+
+    if "--check" in sys.argv:
+        if TARGET.read_text() != render():
+            sys.exit("m1_gpu_feasibility.ipynb is stale: run python ml/gpu-feasibility/build_notebook.py")
+        print("notebook is up to date")
+    else:
+        build()
