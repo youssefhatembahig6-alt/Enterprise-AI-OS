@@ -15,3 +15,6 @@ coverage/
 *.tsbuildinfo
 # Development login credentials written by the explicit dev seed command
 var/
+# Raw GPU benchmark outputs stay local; commit only the reports
+ml/gpu-feasibility/**/*.zip
+ml/gpu-feasibility/**/vllm-*.log

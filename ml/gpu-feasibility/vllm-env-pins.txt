@@ -1,0 +1,9 @@
+# Exact pins for the isolated vLLM environment (/content/vllm-env in Colab).
+# Single source of truth: build_notebook.py inlines this file into cell 4, and CI installs
+# from it for tests/test_vllm_tokenizer.py. One "name==version" per line.
+#
+# vllm 0.11.0 declares transformers>=4.55.2 with no upper bound, so an unpinned install
+# resolves Transformers 5.x, whose tokenizers no longer have all_special_tokens_extended
+# and `vllm serve` crashes at startup (seen on free Colab with transformers 5.23.0).
+vllm==0.11.0
+transformers==4.56.2

@@ -66,6 +66,38 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
 
+  gpu-feasibility-notebook:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.7"
+      - name: Notebook matches its generator
+        run: python ml/gpu-feasibility/build_notebook.py --check
+      - name: CPU-only benchmark logic tests (standard library)
+        run: python -m unittest discover -s ml/gpu-feasibility/tests -v
+
+  vllm-tokenizer:
+    # Initialises the real Qwen tokenizers through vLLM's tokenizer code path, on CPU,
+    # in an environment installed exactly from ml/gpu-feasibility/vllm-env-pins.txt.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.11"
+      - name: Install the pinned vLLM environment (CPU torch)
+        run: |
+          python -m pip install uv==0.9.5
+          uv venv --python "$(which python)" /tmp/vllm-env
+          uv pip install --python /tmp/vllm-env/bin/python --torch-backend cpu -r ml/gpu-feasibility/vllm-env-pins.txt
+      - name: Qwen tokenizers through vLLM (required, not skipped)
+        env:
+          EAIOS_VLLM_PYTHON: /tmp/vllm-env/bin/python
+          EAIOS_REQUIRE_VLLM_TOKENIZER_TEST: "1"
+        run: python -m unittest ml/gpu-feasibility/tests/test_vllm_tokenizer.py -v
+
   compose:
     runs-on: ubuntu-24.04
     steps:
