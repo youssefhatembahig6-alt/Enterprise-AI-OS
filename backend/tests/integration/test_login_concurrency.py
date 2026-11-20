@@ -90,9 +90,8 @@ def build(
 def counters(
     redis_conn: Redis, limiter: LoginRateLimiter, slug: str, email: str
 ) -> tuple[int, int]:
-    keys = limiter._keys(slug, email, CLIENT)
-    raw: list[Any] = list(redis_conn.mget([keys.identity_key, keys.client_key]))  # type: ignore[arg-type]
-    return int(raw[0] or 0), int(raw[1] or 0)
+    usage = limiter.usage(slug, email, CLIENT)
+    return usage.identity, usage.client
 
 
 def attempt(service: IdentityService, slug: str, email: str, password: str) -> str:

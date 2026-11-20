@@ -70,8 +70,9 @@ class IdentityService:
 
         Order: (1) atomically reserve admission in Redis, (2) take a bounded
         verification slot, (3) run Argon2, (4) settle the reservation. A verified
-        credential failure keeps its reservation; success clears it; any other
-        exit (lookup error, busy verifier, database error) refunds it.
+        credential failure counts toward the limits; success clears earlier
+        identity failures; any other exit (lookup error, busy verifier, database
+        error) refunds it. See ratelimit.py for the per-window accounting.
         """
 
         email = email.strip().lower()
@@ -94,10 +95,10 @@ class IdentityService:
             self._settle(admission, outcome)
 
     def _settle(self, reservation: Reservation, outcome: str) -> None:
-        if outcome == "failure":
-            return
         try:
-            if outcome == "success":
+            if outcome == "failure":
+                self._limiter.settle_failure(reservation)
+            elif outcome == "success":
                 self._limiter.settle_success(reservation)
             else:
                 self._limiter.release(reservation)
