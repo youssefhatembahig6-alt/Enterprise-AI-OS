@@ -78,6 +78,31 @@ jobs:
       - name: CPU-only benchmark logic tests (standard library)
         run: python -m unittest discover -s ml/gpu-feasibility/tests -v
 
+  parser-benchmark:
+    # Laptop half of the M1 parser benchmark: fixture hashes and byte-for-byte regeneration,
+    # scorer tests, the no-model guard, and the generated notebook and results tables.
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: ml/parser-benchmark
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.7"
+      - name: Fonts used by the fixture generator
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core
+      - name: Install the pinned laptop environment
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements-laptop.txt ruff==0.13.0
+      - name: Ruff
+        run: .venv/bin/ruff check . && .venv/bin/ruff format --check .
+      - name: Fixtures regenerate byte-for-byte
+        run: .venv/bin/python fixtures/generate.py --check
+      - name: Tests (scorer, fixtures, no-model guard, notebook, tables)
+        run: .venv/bin/python -m unittest discover -s tests -v
+
   vllm-tokenizer:
     # Initialises the real Qwen tokenizers through vLLM's tokenizer code path, on CPU,
     # in an environment installed exactly from ml/gpu-feasibility/vllm-env-pins.txt.

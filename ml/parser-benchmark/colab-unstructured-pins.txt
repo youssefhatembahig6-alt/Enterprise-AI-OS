@@ -1,0 +1,6 @@
+# Colab environment for the Unstructured PDF strategies (installed with uv into
+# /content/venv-unstructured). Tesseract comes from apt. Top-level pins only; the notebook
+# saves the full freeze with the results.
+unstructured[pdf,xlsx]==0.27.37
+unstructured-inference==1.6.17
+rapidfuzz==3.14.6

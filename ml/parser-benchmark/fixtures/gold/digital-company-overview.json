@@ -1,0 +1,59 @@
+{
+ "case": "digital_pdf",
+ "file": "digital-company-overview.pdf",
+ "file_sha256": "3c47e7f1fc13cb553d178d37bf1adbc78ccb530d7c01bba8cbf0266d0adba625",
+ "fixture": "digital-company-overview",
+ "furniture": [
+  "NileTech Solutions — company overview (synthetic fixture) · Page 1"
+ ],
+ "headings": [
+  "About NileTech Solutions",
+  "Services",
+  "Contact",
+  "How we deliver"
+ ],
+ "reading_order": [
+  "About NileTech Solutions",
+  "NileTech Solutions operates from Cairo, Alexandria,",
+  "Services",
+  "Business Process Automation — Replace manual",
+  "Custom Software Engineering — Build and",
+  "Data Platform Engineering — Consolidate scattered",
+  "Systems Integration — Connect existing systems",
+  "Cloud Migration — Move workloads with",
+  "Managed Support — Ongoing operation and",
+  "Contact",
+  "General enquiries: hello@niletech.example",
+  "How we deliver",
+  "This section is synthetic text written",
+  "Every engagement starts with a short",
+  "Work is delivered in two-week increments.",
+  "1. Discovery: map the process, the",
+  "2. Design: agree the target workflow",
+  "3. Build: deliver in increments with",
+  "4. Handover: train operators and document"
+ ],
+ "tables": [],
+ "text": "About NileTech Solutions\n\nNileTech Solutions operates from Cairo, Alexandria, Dubai.\n\nServices\n\nBusiness Process Automation — Replace manual back-office steps with governed workflows.\n\nCustom Software Engineering — Build and maintain line-of-business systems end to end.\n\nData Platform Engineering — Consolidate scattered data into a governed analytics layer.\n\nSystems Integration — Connect existing systems without replacing them.\n\nCloud Migration — Move workloads with a documented rollback path at every stage.\n\nManaged Support — Ongoing operation and improvement of delivered systems.\n\nContact\n\nGeneral enquiries: hello@niletech.example\n\nHow we deliver\n\nThis section is synthetic text written for the parser benchmark.\n\nEvery engagement starts with a short discovery phase. The team maps the current process, lists the systems it touches and agrees with the client which steps must never change.\n\nWork is delivered in two-week increments. Each increment ends with a demonstration on the client's own data and a written note of what changed, what was tested and what is still open.\n\n1. Discovery: map the process, the systems and the owners.\n\n2. Design: agree the target workflow and its controls.\n\n3. Build: deliver in increments with tests on real data.\n\n4. Handover: train operators and document the runbook.",
+ "text_blocks": [
+  "About NileTech Solutions",
+  "NileTech Solutions operates from Cairo, Alexandria, Dubai.",
+  "Services",
+  "Business Process Automation — Replace manual back-office steps with governed workflows.",
+  "Custom Software Engineering — Build and maintain line-of-business systems end to end.",
+  "Data Platform Engineering — Consolidate scattered data into a governed analytics layer.",
+  "Systems Integration — Connect existing systems without replacing them.",
+  "Cloud Migration — Move workloads with a documented rollback path at every stage.",
+  "Managed Support — Ongoing operation and improvement of delivered systems.",
+  "Contact",
+  "General enquiries: hello@niletech.example",
+  "How we deliver",
+  "This section is synthetic text written for the parser benchmark.",
+  "Every engagement starts with a short discovery phase. The team maps the current process, lists the systems it touches and agrees with the client which steps must never change.",
+  "Work is delivered in two-week increments. Each increment ends with a demonstration on the client's own data and a written note of what changed, what was tested and what is still open.",
+  "1. Discovery: map the process, the systems and the owners.",
+  "2. Design: agree the target workflow and its controls.",
+  "3. Build: deliver in increments with tests on real data.",
+  "4. Handover: train operators and document the runbook."
+ ]
+}

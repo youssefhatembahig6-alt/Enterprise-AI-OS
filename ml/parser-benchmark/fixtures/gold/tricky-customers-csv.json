@@ -1,0 +1,116 @@
+{
+ "case": "csv",
+ "checks": {
+  "doubled_quotes": "Prefers \"net 45\" terms",
+  "embedded_newline": "Line one\nLine two",
+  "empty_fields": 2,
+  "formula_text": "=1+1 Holdings",
+  "leading_zero_codes": [
+   "00017",
+   "00102",
+   "00230",
+   "01005",
+   "00999",
+   "00042",
+   "00007",
+   "00311"
+  ],
+  "non_ascii": [
+   "شركة النيل للتقنية",
+   "القاهرة",
+   "Zürich Analytics GmbH",
+   "Café Système SARL",
+   "Gulf Ventures LLC 🚀"
+  ]
+ },
+ "delimiter": ",",
+ "encoding": "utf-8 with BOM",
+ "file": "tricky-customers.csv",
+ "file_sha256": "02f3ca381bbb449414dcea4541f1a56b67832d94a8fbb5a22e22c899f6166dc2",
+ "fixture": "tricky-customers-csv",
+ "kind": "csv",
+ "line_terminator": "CRLF",
+ "rows": [
+  [
+   "customer_code",
+   "name",
+   "country",
+   "city",
+   "credit_limit_usd",
+   "since_date",
+   "notes"
+  ],
+  [
+   "00017",
+   "Abbott, Williams and Ibarra (NT-118)",
+   "EG",
+   "Cairo",
+   "1,250,000.00",
+   "2021-04-14",
+   "Key account"
+  ],
+  [
+   "00102",
+   "Nile Delta Trading, S.A.E.",
+   "EG",
+   "Alexandria",
+   "98000.50",
+   "2022-11-03",
+   "Prefers \"net 45\" terms"
+  ],
+  [
+   "00230",
+   "شركة النيل للتقنية",
+   "EG",
+   "القاهرة",
+   "45000",
+   "2023-01-09",
+   "Arabic name and city"
+  ],
+  [
+   "01005",
+   "Zürich Analytics GmbH",
+   "CH",
+   "Zürich",
+   "-1200.00",
+   "2020-06-30",
+   "Line one\nLine two"
+  ],
+  [
+   "00999",
+   "Café Système SARL",
+   "FR",
+   "Paris",
+   "",
+   "2024-02-29",
+   ""
+  ],
+  [
+   "00042",
+   "Gulf Ventures LLC 🚀",
+   "AE",
+   "Dubai",
+   "300000",
+   "2019-12-31",
+   "  leading and trailing spaces  "
+  ],
+  [
+   "00007",
+   "=1+1 Holdings",
+   "AE",
+   "Abu Dhabi",
+   "0",
+   "2025-01-01",
+   "Starts with = (formula-injection text)"
+  ],
+  [
+   "00311",
+   "Aguilar, Garcia and Jackson (NT-029)",
+   "SA",
+   "Riyadh",
+   "75,500",
+   "2018-07-15",
+   "comma, inside; and semicolon"
+  ]
+ ]
+}

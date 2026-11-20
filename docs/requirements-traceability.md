@@ -19,6 +19,12 @@ M0 implements FR-01 and the foundations of FR-02 and FR-11, plus NFR-01, NFR-03 
 | FR-07 / FR-14 (inputs for M2) | Explicit repeatable import; reconciled lines, orders and invoices; frozen Q1 2026 evaluation case with a hand-checked subset | `tests/unit/test_sales_reference.py`, `tests/integration/test_business_import.py`, `docs/data/sales-report-q1-2026.md` |
 | NFR-01 Isolation | RLS and read-only grants on sales tables; isolation tenant sees no business rows | `test_business_import.py::test_isolation_tenant_and_missing_context_see_no_business_rows` |
 
+## M1 parser comparison
+
+| Requirement | What M1 delivers | Evidence |
+| --- | --- | --- |
+| FR-05 Deterministic ingestion (input) / ADR 0016 | Parser benchmark on digital, two-column, table-heavy and scanned PDFs plus CSV and workbook cases; seven synthetic fixtures with SHA-256 provenance and hand-checked gold; laptop results; Colab notebook for model-based candidates (not yet run) | `ml/parser-benchmark/reports/2026-11-20-parser-comparison.md`, `ml/parser-benchmark/tests/`, CI job `parser-benchmark` |
+
 ## Security tests T1–T10 status
 
 | Test | Status in M0 |

@@ -1,0 +1,9 @@
+# Lint settings for the parser benchmark (CI runs the repository's pinned ruff over this directory).
+[tool.ruff]
+line-length = 120
+target-version = "py312"  # Colab runs Python 3.12
+extend-exclude = [".venv", "results", "*.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM", "RUF"]
+ignore = ["E501", "RUF001", "RUF003"]  # long literals are left to the formatter; fixtures use non-ASCII text
