@@ -142,6 +142,53 @@ class NotebookTests(unittest.TestCase):
         return set(requested)
 
 
+class OomRetentionTests(unittest.TestCase):
+    """Every vLLM server of a configuration is kept, so an OOM before a restart is not lost."""
+
+    def test_run_config_keeps_every_servers_log_facts(self):
+        src = cell(8)
+        self.assertIn("servers = [srv]", src)
+        self.assertEqual(src.count("servers.append(srv)"), 2, "both restart paths register their server")
+        self.assertIn('cfg["server_logs"] = {s.log_path.name: s.facts() for s in servers}', src)
+        self.assertNotIn('cfg["server_log_facts"] = srv.facts()', src)
+        self.assertIn('config_oom(key, RESULTS["failures"], cfg.get("server_logs")', cell(9))
+
+    def test_reclassify_saved_zip_counts_oom_before_restart(self):
+        import zipfile
+        spec = importlib.util.spec_from_file_location("reclassify_run", HERE / "reclassify_run.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        sys.path.insert(0, str(HERE))
+        try:
+            from bench_core import required_stages
+        finally:
+            sys.path.pop(0)
+        ok = lambda key, failed=(): [{"name": f"{key}/{s}", "status": "failed" if s in failed else "ok"}
+                                     for s in required_stages("target", 2) + ["teardown"]]
+        results = {"run_id": "r1", "mode": "target", "config": {"repeats": 2},
+                   "failures": [{"stage": "target/u0.85/cancellation", "kind": "error", "message": "HTTP 500: EngineCore"}],
+                   "configs": {"target/u0.85": {"utilization": 0.85, "stages": ok("target/u0.85", ["cancellation"]),
+                                                "memory_overall": {"min_headroom_mib": 128}},
+                               "target/u0.75": {"utilization": 0.75, "stages": ok("target/u0.75"),
+                                                "memory_overall": {"min_headroom_mib": 1454}}}}
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        zp = tmp / "run.zip"
+        with zipfile.ZipFile(zp, "w") as z:
+            z.writestr("r1/results.json", json.dumps(results))
+            z.writestr("r1/vllm-target-u0.85-start1.log", "INFO\ntorch.OutOfMemoryError: CUDA out of memory.\n")
+            z.writestr("r1/vllm-target-u0.85-restart-aux-resident.log", "INFO ok\n")
+            z.writestr("r1/vllm-target-u0.75-start1.log", "INFO ok\n")
+            z.writestr("r1/vllm-target-u0.75-restart-aux-resident.log", "INFO ok\n")
+        res = mod.reclassify(zp)
+        bad, good = res["configs"]["target/u0.85"], res["configs"]["target/u0.75"]
+        self.assertEqual((bad["verdict"], bad["oom_seen"]), ("failed", True))
+        self.assertEqual({e["source"] for e in bad["oom_evidence"]}, {"vllm-target-u0.85-start1.log"})
+        self.assertEqual(len(bad["logs"]), 2)
+        self.assertEqual((good["verdict"], good["oom_seen"]), ("passed", False))
+        self.assertEqual(res["candidate"], 0.75)
+
+
 class FakeVenv:
     """Simulates the commands cell 4 runs (`sh`) against a vLLM venv with given package versions."""
 

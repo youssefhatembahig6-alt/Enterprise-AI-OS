@@ -853,7 +853,8 @@ class VllmServer:
             found = re.findall(pattern, text)
             if found:
                 out[key] = [f.strip()[:300] for f in found[:5]] if key == "errors" else found[-1].strip()[:300]
-        out["oom_in_log"] = bool(re.search(r"out of memory|CUDA error|OutOfMemoryError", text, re.I))
+        out["oom_lines"] = oom_lines(text)
+        out["oom_in_log"] = bool(out["oom_lines"])
         return out
 
 
@@ -885,6 +886,8 @@ def chat(messages, max_tokens, stop_after_chunks=None, timeout=None):
         if r.status_code != 200:
             raise ModelCallError(f"HTTP {r.status_code}: {r.text[:1500]}")
         res = consume_sse(r.iter_lines(decode_unicode=True), stop_after_chunks, t0=t0)
+    if stream_failure(res):  # e.g. the engine died mid-stream (seen with an OOM at 0.85)
+        raise ModelCallError(stream_failure(res))
     # Leaving the `with` closes the connection; after an early stop that abandons the generation.
     usage, ttft, total = res["usage"], res["ttft_s"], res["total_s"]
     text = re.sub(r"<think>.*?</think>", "", res["text_raw"], flags=re.S).strip()
@@ -1094,6 +1097,7 @@ def run_config(util, idx):
     p = lambda n: f"{key}/{n}"
     label = key.replace("/", "-")
     srv = VllmServer(util, f"{label}-start1")
+    servers = [srv]   # every vLLM server of this configuration; all of their logs are checked for OOM
     SAMPLER.open(key + "/overall")
 
     def start():
@@ -1240,6 +1244,7 @@ def run_config(util, idx):
             d = {"stop": srv.stop()}
             # (a) restart while BGE-M3 + checker stay resident in this kernel — the realistic recovery path
             srv = VllmServer(util, f"{label}-restart-aux-resident")
+            servers.append(srv)
             try:
                 with MemWindow(p("restart_a"), d.setdefault("aux_resident", {})):
                     d["aux_resident"].update(srv.start())
@@ -1250,6 +1255,7 @@ def run_config(util, idx):
                 # (b) unload aux, restart vLLM, reload aux
                 d["unload"] = unload_aux()
                 srv = VllmServer(util, f"{label}-restart-aux-reloaded")
+                servers.append(srv)
                 with MemWindow(p("restart_b"), d.setdefault("aux_reloaded", {})):
                     d["aux_reloaded"].update(srv.start())
                     d["aux_reloaded"]["aux"] = load_aux()
@@ -1265,7 +1271,9 @@ def run_config(util, idx):
         return {"server": srv.stop(), "aux": unload_aux()}
     run_stage(p("teardown"), teardown, container=st)
     cfg["memory_overall"] = SAMPLER.close(key + "/overall")
-    cfg["server_log_facts"] = srv.facts()
+    # Facts of the original (measured) server; a successful restart must not hide its errors.
+    cfg["server_log_facts"] = servers[0].facts()
+    cfg["server_logs"] = {s.log_path.name: s.facts() for s in servers}
     save_results()
 
 
@@ -1296,11 +1304,12 @@ def summarize():
         fixed = [c for q in warm for c in q.get("check_fixed_claims", []) if c.get("agrees") is not None]
         mem = cfg.get("memory_overall", {})
         facts = cfg.get("server_log_facts", {})
-        oom = any(f["kind"] == "oom" and f["stage"].startswith(key + "/") for f in RESULTS["failures"]) or bool(facts.get("oom_in_log"))
+        oom = config_oom(key, RESULTS["failures"], cfg.get("server_logs") or {"server_log_facts": facts})
         s = {
             "mode": cfg.get("mode", MODE),
             "utilization": cfg["utilization"],
-            **evaluate_config(statuses, cfg.get("mode", MODE), CONFIG["repeats"], oom_seen=oom),
+            **evaluate_config(statuses, cfg.get("mode", MODE), CONFIG["repeats"], oom_seen=oom["oom_seen"]),
+            "oom_evidence": oom["evidence"],
             "stage_status": statuses,
             "vllm_ready_s": stage("vllm_start").get("details", {}).get("ready_s"),
             "restart": stage("restart").get("details", {}).get("recovery") if statuses.get("restart") == "ok" else statuses.get("restart", "not run"),
@@ -1374,7 +1383,7 @@ def write_markdown(summary):
         if s["failed_stages"]:
             verdict += " — failed: " + ", ".join(s["failed_stages"])
         if s["oom_seen"]:
-            verdict += " — OOM seen"
+            verdict += " — OOM seen in " + ", ".join(sorted({e["source"] for e in s["oom_evidence"]}))
         if s["incomplete_stages"]:
             verdict += " — not completed: " + ", ".join(f"{i['stage']} ({i['status']})" for i in s["incomplete_stages"])
         lines += [f"## {key} — {verdict}", "", "| Check | Result |", "| --- | --- |"]

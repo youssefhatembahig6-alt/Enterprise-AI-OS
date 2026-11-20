@@ -231,6 +231,80 @@ class VllmEnvPlanTests(unittest.TestCase):
         self.assertEqual(core.plan_vllm_env(None, self.pins)["action"], "create")
 
 
+# ---- an OOM in the original server must survive a successful restart ----------------
+OOM_LINE = ("(EngineCore_DP0 pid=6269) ERROR 11-20 17:34:14 [core.py:710] torch.OutOfMemoryError: "
+            "CUDA out of memory. Tried to allocate 192.00 MiB.")
+ENGINE_500 = ('ModelCallError: HTTP 500: {"error":{"message":"EngineCore encountered an issue. '
+              'See stack trace (above) for the root cause."}}')
+
+
+class OomEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self.start1 = "INFO ready\n" + OOM_LINE + "\nINFO shutting down\n"
+        self.restart = "INFO ready\nERROR [fa_utils.py:57] Cannot use FA version 2\nINFO ok\n"
+        # As in run 20261120T171352Z-971d67: the stage error itself does not say "out of memory".
+        self.failures = [{"stage": "target/u0.85/cancellation", "kind": "error", "message": ENGINE_500}]
+
+    def test_oom_lines_ignore_other_errors(self):
+        self.assertEqual(core.oom_lines(self.start1), [OOM_LINE])
+        self.assertEqual(core.oom_lines(self.restart), [])
+
+    def test_oom_in_original_log_is_kept_after_successful_restart(self):
+        logs = {"vllm-target-u0.85-start1.log": {"oom_lines": core.oom_lines(self.start1)},
+                "vllm-target-u0.85-restart-aux-resident.log": {"oom_lines": core.oom_lines(self.restart)}}
+        oom = core.config_oom("target/u0.85", self.failures, logs)
+        self.assertTrue(oom["oom_seen"])
+        self.assertEqual([e["source"] for e in oom["evidence"]], ["vllm-target-u0.85-start1.log"])
+        # Even if every stage had been ok, the configuration fails and is never recommended.
+        ev = core.evaluate_config(target_statuses(restart="ok"), "target", 2, oom_seen=oom["oom_seen"])
+        self.assertEqual(ev["verdict"], "failed")
+        self.assertFalse(ev["eligible_for_recommendation"])
+
+    def test_restart_log_alone_hides_the_oom(self):
+        # The old behaviour read only the last server's log; this is the case it got wrong.
+        only_restart = {"vllm-target-u0.85-restart-aux-resident.log": {"oom_lines": core.oom_lines(self.restart)}}
+        self.assertFalse(core.config_oom("target/u0.85", self.failures, only_restart)["oom_seen"])
+
+    def test_oom_failure_is_scoped_to_its_configuration(self):
+        failures = [{"stage": "target/u0.85/questions_rep1/Q01", "kind": "oom", "message": "CUDA out of memory"}]
+        self.assertTrue(core.config_oom("target/u0.85", failures, {})["oom_seen"])
+        self.assertFalse(core.config_oom("target/u0.75", failures, {})["oom_seen"])
+
+    def test_legacy_facts_without_lines_still_count(self):
+        self.assertTrue(core.config_oom("k", [], {"server_log_facts": {"oom_in_log": True}})["oom_seen"])
+
+
+class StreamErrorTests(unittest.TestCase):
+    """Run 20261120T171352Z-971d67: the engine OOMed under concurrent load, each stream got an
+    error event and [DONE], and the concurrent stage was wrongly recorded as ok."""
+
+    ENGINE_DEAD = sse({"error": {"message": "EngineCore encountered an issue.", "type": "InternalServerError", "code": 500}})
+
+    def test_error_event_after_first_token_is_a_failure(self):
+        res = core.consume_sse([content("The"), self.ENGINE_DEAD, "data: [DONE]"], clock=fake_clock())
+        self.assertEqual(res["error"]["code"], 500)
+        self.assertIn("error event", core.stream_failure(res))
+
+    def test_error_event_with_no_tokens_is_a_failure(self):
+        res = core.consume_sse([self.ENGINE_DEAD, "data: [DONE]"], clock=fake_clock())
+        self.assertIsNone(res["ttft_s"])
+        self.assertIsNotNone(core.stream_failure(res))
+
+    def test_legacy_error_shape(self):
+        res = core.consume_sse([sse({"object": "error", "message": "boom"}), "data: [DONE]"], clock=fake_clock())
+        self.assertIn("boom", core.stream_failure(res))
+
+    def test_finished_and_cancelled_streams_are_valid(self):
+        done = core.consume_sse([content("a"), finish(), usage(), "data: [DONE]"], clock=fake_clock())
+        self.assertIsNone(core.stream_failure(done))
+        cut = core.consume_sse([content("x")] * 50, stop_after_chunks=20, clock=fake_clock())
+        self.assertIsNone(core.stream_failure(cut))
+
+    def test_dropped_stream_is_a_failure(self):
+        res = core.consume_sse([content("a"), content("b")], clock=fake_clock())
+        self.assertIn("without a finish_reason", core.stream_failure(res))
+
+
 class StatsTests(unittest.TestCase):
     def test_stats(self):
         self.assertIsNone(core.stats([None, "x", True]))

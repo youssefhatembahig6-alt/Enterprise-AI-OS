@@ -5,6 +5,7 @@ tests in tests/ exercise exactly the code that runs on Colab. Standard library o
 """
 
 import json
+import re
 import statistics
 import time
 
@@ -20,11 +21,13 @@ def consume_sse(lines, stop_after_chunks=None, clock=time.perf_counter, t0=None)
     chunks have arrived, but only while the stream is still unfinished. The result says
     whether the client really abandoned an unfinished generation: `client_closed_early`
     is True only if we stopped reading before any finish_reason or [DONE] arrived.
+    An error event inside the stream (vLLM sends one when its engine dies mid-request) is
+    returned in `error`, so the caller can fail instead of counting an empty answer.
     `t0` is the time the request was sent (defaults to now), so TTFT includes the round trip.
     """
     t0 = clock() if t0 is None else t0
     ttft, parts, usage, finish = None, [], {}, None
-    chunks, done, stopped = 0, False, False
+    chunks, done, stopped, error = 0, False, False, None
     for raw in lines:
         if not raw or not raw.startswith("data:"):
             continue
@@ -33,6 +36,10 @@ def consume_sse(lines, stop_after_chunks=None, clock=time.perf_counter, t0=None)
             done = True
             break
         obj = json.loads(data)
+        err = obj.get("error") or (obj if obj.get("object") == "error" else None)
+        if err:
+            error = err if isinstance(err, dict) else {"message": str(err)}
+            continue
         if obj.get("usage"):
             usage = obj["usage"]
         for choice in obj.get("choices") or []:
@@ -55,7 +62,18 @@ def consume_sse(lines, stop_after_chunks=None, clock=time.perf_counter, t0=None)
         "chunks": chunks,
         "stream_done": done,
         "client_closed_early": stopped and finish is None and not done,
+        "error": error,
     }
+
+
+def stream_failure(res):
+    """Why a consumed stream is not a valid answer, or None. A stream the client closed on
+    purpose (client_closed_early) is valid; an error event or an unfinished end is not."""
+    if res.get("error"):
+        return "error event in stream: " + str(res["error"].get("message", res["error"]))[:500]
+    if res.get("finish_reason") is None and not res.get("client_closed_early"):
+        return f"stream ended without a finish_reason (chunks={res.get('chunks')}, done={res.get('stream_done')})"
+    return None
 
 
 def cancellation_verdict(stream, running_after, follow_up_ok, server_alive):
@@ -147,6 +165,30 @@ def evaluate_config(statuses, mode, repeats, oom_seen=False):
         # Only a fully passed target-mode configuration may be recommended.
         "eligible_for_recommendation": verdict == "passed" and mode == "target",
     }
+
+
+# ---- OOM evidence ----------------------------------------------------------------
+OOM_PATTERN = re.compile(r"out of memory|OutOfMemoryError", re.I)
+
+
+def oom_lines(text, limit=3):
+    """The first `limit` log lines that report a CUDA/torch out-of-memory error."""
+    return [line.strip()[:400] for line in text.splitlines() if OOM_PATTERN.search(line)][:limit]
+
+
+def config_oom(key, failures, server_logs):
+    """Whether configuration `key` hit an OOM, with the evidence.
+
+    `server_logs` maps each vLLM log of this configuration (the original server and every
+    restart) to its facts. Every log counts: an OOM in the original server stays recorded
+    even when a later restart comes up cleanly.
+    """
+    evidence = [{"source": f"failure {f['stage']}", "line": f["message"][:400]}
+                for f in failures if f.get("kind") == "oom" and f["stage"].startswith(key + "/")]
+    for log, facts in server_logs.items():
+        lines = facts.get("oom_lines") or (["(oom_in_log)"] if facts.get("oom_in_log") else [])
+        evidence += [{"source": log, "line": line} for line in lines]
+    return {"oom_seen": bool(evidence), "evidence": evidence}
 
 
 def choose_candidate(config_summaries):

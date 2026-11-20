@@ -13,6 +13,14 @@ Open in Colab: <https://colab.research.google.com/github/youssefhatembahig6-alt/
 
 After this branch is merged, change `feature/m1-gpu-feasibility` to `main` in that link.
 
+## Measured result
+
+Target run `20261120T171352Z-971d67` on a free Colab T4 ([report](reports/2026-11-20-target-t4.md)):
+
+* **`gpu_memory_utilization` 0.75 passed** every required stage, with at least 1,454 MiB of headroom. It is the measured T4 starting configuration for M2.
+* **0.85 failed:** its vLLM engine ran out of GPU memory under concurrent load.
+* **Warm timings at 0.75:** document questions take 10.2 s median (26.7 s max). Database report questions take 94.8 s median (140.4 s max).
+
 ## Retry after the Transformers startup failure
 
 The first free-Colab run failed at vLLM startup with `AttributeError: Qwen2Tokenizer has no attribute all_special_tokens_extended`. The cause: vLLM 0.11.0 declares `transformers>=4.55.2` with no upper bound, so the install resolved Transformers 5.23.0, which removed that attribute.
@@ -45,6 +53,7 @@ Follow the same steps, but in cell 2 choose `MODE = "target"` from the drop-down
 * **Tokenizer preflight:** the tokenizer class, vocabulary size and special-token count as seen through vLLM, recorded before vLLM starts.
 * **Models:** for each downloaded model, the repository, requested revision, resolved commit SHA, files, bytes, download seconds and license.
 * **Stages:** status, duration, details, and any error with its traceback. `failures[]` lists every failure, with OOMs classified separately.
+* **OOM evidence:** `server_logs` keeps the facts from every vLLM log of a configuration (the original server and each restart). An OOM in any of them fails the configuration, even when a later restart succeeds. A stream that carries an error event, or ends without a `finish_reason`, counts as a failed request.
 * **Memory:** NVML samples every 100 ms give peak GPU use, minimum headroom, the kernel's torch allocator peaks and peak host RAM, overall and for each stage.
 * **Timings:** for each step, time to first token, total seconds, token counts, decode tokens per second, and checker latency per claim and per answer sentence. Target mode also records concurrent throughput.
 
@@ -83,7 +92,7 @@ The failure is recorded in `results.json` and in the vLLM log inside the zip, an
 
 The notebook is generated, so don't edit it directly:
 
-* **Benchmark logic:** edit `build_notebook.py`. Pure logic lives in `bench_core.py`, which is inlined verbatim into cell 7.
+* **Benchmark logic:** edit `build_notebook.py`. Pure logic lives in `bench_core.py`, which is inlined verbatim into cell 4.
 * **Regenerate the notebook:**
 
   ```bash
@@ -101,6 +110,7 @@ The notebook is generated, so don't edit it directly:
   * the reuse, repair and create decisions for the vLLM venv, plus the real cell 4 run against a simulated venv holding the old `vllm 0.11.0` + `transformers 5.23.0` pair
   * natural early completion versus client interruption of a mocked stream
   * failed, skipped and untested restarts
+  * an OOM in the original server log that is still counted after a clean restart, and stream error events counted as failed requests
   * candidate selection
   * a check that the notebook matches its generator
   * the default mode
@@ -118,6 +128,12 @@ The notebook is generated, so don't edit it directly:
 
   ```bash
   EAIOS_VLLM_PYTHON=/tmp/vllm-env/bin/python python -m unittest ml/gpu-feasibility/tests/test_vllm_tokenizer.py -v
+  ```
+
+* **Re-check a saved run:** this re-derives every configuration's verdict, including OOM evidence from all of its vLLM logs, from a results ZIP.
+
+  ```bash
+  python ml/gpu-feasibility/reclassify_run.py eaios-m1-gpu-target-<run id>.zip
   ```
 
 CI runs `build_notebook.py --check` and the stdlib tests in the `gpu-feasibility-notebook` job. The `vllm-tokenizer` job runs the real tokenizer test as required, not skipped.
