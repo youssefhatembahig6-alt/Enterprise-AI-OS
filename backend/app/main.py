@@ -15,6 +15,7 @@ from app.api.errors import install_error_handlers
 from app.config import Settings, get_settings
 from app.db.engine import create_app_engine
 from app.logging_setup import configure_logging, request_id_var
+from app.security.passwords import PasswordVerifier
 from app.security.ratelimit import LoginRateLimiter
 from app.services.health import ReadinessChecker
 from app.services.identity import IdentityService
@@ -54,7 +55,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         max_per_client=settings.login_max_failures_per_client,
         window_seconds=settings.login_failure_window_seconds,
     )
-    app.state.identity = IdentityService(engine, settings, limiter)
+    verifier = PasswordVerifier(
+        concurrency=settings.password_verify_concurrency,
+        queue_timeout_seconds=settings.password_verify_queue_timeout_seconds,
+    )
+    app.state.identity = IdentityService(engine, settings, limiter, verifier)
     app.state.readiness = ReadinessChecker(
         engine=engine,
         redis=redis,

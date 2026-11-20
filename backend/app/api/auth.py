@@ -19,7 +19,7 @@ from app.schemas.auth import (
     TokenResponse,
 )
 from app.security.ratelimit import RateLimiterUnavailable
-from app.services.identity import IdentityService, LoginFailed, LoginRateLimited
+from app.services.identity import IdentityService, LoginBusy, LoginFailed, LoginRateLimited
 
 router = APIRouter(prefix="/api/v1", tags=["identity"])
 
@@ -57,6 +57,13 @@ def login(
         ) from exc
     except LoginFailed as exc:
         raise ApiError(401, "invalid_credentials", "Invalid sign-in details.") from exc
+    except LoginBusy as exc:
+        raise ApiError(
+            503,
+            "service_unavailable",
+            "Sign-in is busy. Try again shortly.",
+            {"Retry-After": "1"},
+        ) from exc
     except RateLimiterUnavailable as exc:
         raise ApiError(503, "service_unavailable", "Sign-in is temporarily unavailable.") from exc
     return TokenResponse(access_token=result.access_token, expires_at=result.expires_at)

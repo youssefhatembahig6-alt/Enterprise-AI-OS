@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.api.errors import UNAUTHENTICATED
+from app.api.errors import unauthenticated
 from app.logging_setup import request_id_var
 from app.security.context import AccessContext
 from app.services.identity import AuthenticationFailed, IdentityService
@@ -31,11 +31,11 @@ def get_access_context(
     """
 
     if credentials is None or credentials.scheme.lower() != "bearer":
-        raise UNAUTHENTICATED
+        raise unauthenticated()
     try:
         return service.authenticate(credentials.credentials, request_id_var.get())
     except AuthenticationFailed as exc:
-        raise UNAUTHENTICATED from exc
+        raise unauthenticated() from exc
 
 
 CurrentContext = Annotated[AccessContext, Depends(get_access_context)]

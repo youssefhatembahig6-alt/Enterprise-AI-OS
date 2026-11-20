@@ -58,6 +58,15 @@ class Settings(BaseSettings):
     login_failure_window_seconds: int = Field(
         default=900, alias="LOGIN_FAILURE_WINDOW_SECONDS", ge=1
     )
+    # Argon2id verification costs ~64 MiB each. Measured in the 384 MiB API
+    # container: ~68 MiB baseline + 64 MiB per concurrent verification, so 2
+    # slots peak near 196 MiB. Applies per API process (uvicorn runs one).
+    password_verify_concurrency: int = Field(
+        default=2, alias="PASSWORD_VERIFY_CONCURRENCY", ge=1, le=16
+    )
+    password_verify_queue_timeout_seconds: float = Field(
+        default=5.0, alias="PASSWORD_VERIFY_QUEUE_TIMEOUT_SECONDS", gt=0, le=30
+    )
     rate_limit_key_prefix: str = Field(default="eaios:ratelimit", alias="RATE_LIMIT_KEY_PREFIX")
 
     readiness_timeout_seconds: float = Field(

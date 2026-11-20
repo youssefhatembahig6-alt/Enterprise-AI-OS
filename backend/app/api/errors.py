@@ -35,9 +35,17 @@ def error_response(
     )
 
 
-UNAUTHENTICATED = ApiError(
-    401, "unauthenticated", "Authentication required.", {"WWW-Authenticate": "Bearer"}
-)
+def unauthenticated() -> ApiError:
+    """Return a new generic 401 for every failure.
+
+    Never raise a shared module-level instance: each raise attaches traceback
+    frames to the exception object, so a shared instance would keep earlier
+    requests' frames (and their locals) alive for the life of the process.
+    """
+
+    return ApiError(
+        401, "unauthenticated", "Authentication required.", {"WWW-Authenticate": "Bearer"}
+    )
 
 
 def install_error_handlers(app: FastAPI) -> None:

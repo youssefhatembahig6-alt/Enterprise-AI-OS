@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -13,10 +14,12 @@ from app.db.engine import contextless_transaction, tenant_transaction
 from app.repositories import identity as repo
 from app.repositories.audit import record_audit_event
 from app.security.context import AccessContext
-from app.security.passwords import verify_password
+from app.security.passwords import PasswordVerifier, VerifierBusyError
 from app.security.policy import CapabilityGrant, Subject
-from app.security.ratelimit import LoginRateLimiter
+from app.security.ratelimit import LoginRateLimiter, RateLimiterUnavailable, Reservation
 from app.security.tokens import InvalidTokenError, decode_access_token, issue_access_token
+
+logger = logging.getLogger("eaios.identity")
 
 
 class LoginFailed(Exception):
@@ -27,6 +30,10 @@ class LoginRateLimited(Exception):
     def __init__(self, retry_after: int) -> None:
         super().__init__("rate_limited")
         self.retry_after = retry_after
+
+
+class LoginBusy(Exception):
+    """All password-verification slots stayed busy for the queue timeout."""
 
 
 class AuthenticationFailed(Exception):
@@ -42,22 +49,71 @@ class LoginResult:
 
 
 class IdentityService:
-    def __init__(self, engine: Engine, settings: Settings, limiter: LoginRateLimiter) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        settings: Settings,
+        limiter: LoginRateLimiter,
+        verifier: PasswordVerifier,
+    ) -> None:
         self._engine = engine
         self._settings = settings
         self._limiter = limiter
+        self._verifier = verifier
 
     # -- login -----------------------------------------------------------------
 
     def login(
         self, *, tenant_slug: str, email: str, password: str, client: str, request_id: str | None
     ) -> LoginResult:
+        """Admit, verify and issue a session.
+
+        Order: (1) atomically reserve admission in Redis, (2) take a bounded
+        verification slot, (3) run Argon2, (4) settle the reservation. A verified
+        credential failure keeps its reservation; success clears it; any other
+        exit (lookup error, busy verifier, database error) refunds it.
+        """
+
         email = email.strip().lower()
         tenant_slug = tenant_slug.strip().lower()
-        details = {"tenant_slug": tenant_slug}
 
-        retry_after = self._limiter.retry_after(tenant_slug, email, client)
-        if retry_after is not None:
+        admission = self._limiter.reserve(tenant_slug, email, client)
+        if not isinstance(admission, Reservation):
+            self._audit_login_denied(request_id, None, None, "rate_limited", tenant_slug)
+            raise LoginRateLimited(admission)
+
+        outcome = "error"
+        try:
+            result = self._login_admitted(tenant_slug, email, password, request_id)
+            outcome = "success"
+            return result
+        except LoginFailed:
+            outcome = "failure"
+            raise
+        finally:
+            self._settle(admission, outcome)
+
+    def _settle(self, reservation: Reservation, outcome: str) -> None:
+        if outcome == "failure":
+            return
+        try:
+            if outcome == "success":
+                self._limiter.settle_success(reservation)
+            else:
+                self._limiter.release(reservation)
+        except RateLimiterUnavailable:
+            # The reservation expires with its window; never mask the real outcome.
+            logger.warning("login_reservation_settle_failed", extra={"outcome": outcome})
+
+    def _audit_login_denied(
+        self,
+        request_id: str | None,
+        tenant_id: uuid.UUID | None,
+        user_id: uuid.UUID | None,
+        reason: str,
+        tenant_slug: str,
+    ) -> None:
+        if tenant_id is None:
             with contextless_transaction(self._engine) as conn:
                 record_audit_event(
                     conn,
@@ -65,16 +121,41 @@ class IdentityService:
                     event_type="auth.login",
                     action="auth.login",
                     decision="deny",
-                    reason="rate_limited",
-                    details=details,
+                    reason=reason,
+                    details={"tenant_slug": tenant_slug},
                 )
-            raise LoginRateLimited(retry_after)
+            return
+        with tenant_transaction(self._engine, tenant_id) as conn:
+            record_audit_event(
+                conn,
+                request_id=request_id,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                event_type="auth.login",
+                action="auth.login",
+                decision="deny",
+                reason=reason,
+            )
 
+    def _login_admitted(
+        self, tenant_slug: str, email: str, password: str, request_id: str | None
+    ) -> LoginResult:
         with contextless_transaction(self._engine) as conn:
             record = repo.lookup_login(conn, tenant_slug, email)
 
-        # Always run one hash verification so timing does not reveal unknown accounts.
-        password_ok = verify_password(record.password_hash if record else None, password)
+        # Always run one bounded hash verification so timing does not reveal
+        # unknown accounts and memory use stays within the container budget.
+        try:
+            password_ok = self._verifier.verify(record.password_hash if record else None, password)
+        except VerifierBusyError as exc:
+            self._audit_login_denied(
+                request_id,
+                record.tenant_id if record else None,
+                record.user_id if record else None,
+                "verifier_busy",
+                tenant_slug,
+            )
+            raise LoginBusy from exc
 
         reason: str | None = None
         if record is None:
@@ -88,30 +169,13 @@ class IdentityService:
 
         if reason is not None or record is None:
             reason = reason or "unknown_account"
-            self._limiter.record_failure(tenant_slug, email, client)
-            if record is None:
-                with contextless_transaction(self._engine) as conn:
-                    record_audit_event(
-                        conn,
-                        request_id=request_id,
-                        event_type="auth.login",
-                        action="auth.login",
-                        decision="deny",
-                        reason=reason,
-                        details=details,
-                    )
-            else:
-                with tenant_transaction(self._engine, record.tenant_id) as conn:
-                    record_audit_event(
-                        conn,
-                        request_id=request_id,
-                        tenant_id=record.tenant_id,
-                        user_id=record.user_id,
-                        event_type="auth.login",
-                        action="auth.login",
-                        decision="deny",
-                        reason=reason,
-                    )
+            self._audit_login_denied(
+                request_id,
+                record.tenant_id if record else None,
+                record.user_id if record else None,
+                reason,
+                tenant_slug,
+            )
             raise LoginFailed(reason)
 
         session_id = uuid.uuid4()
@@ -145,7 +209,6 @@ class IdentityService:
                 reason="password_verified",
                 details={"session_id": str(session_id)},
             )
-        self._limiter.reset_identity(tenant_slug, email, client)
         return LoginResult(access_token=token, expires_at=expires_at)
 
     # -- per-request authentication -----------------------------------------------

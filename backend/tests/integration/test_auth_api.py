@@ -163,6 +163,7 @@ def test_missing_or_malformed_authorization(client: TestClient) -> None:
         response = client.get("/api/v1/me", headers=headers)
         assert response.status_code == 401
         assert response.json()["error"]["code"] == "unauthenticated"
+        assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
 def _forge(

@@ -38,7 +38,7 @@ Lockfiles: `backend/requirements.lock` and `backend/requirements-dev.lock` (pip-
 | qdrant | vectors (unused until M3) | no | 512m |
 | storage | SeaweedFS, S3 on 8333 (unused until M3) | no | 256m |
 | migrate | one-shot Alembic (owner role) | no | 256m |
-| api | FastAPI | 127.0.0.1:8000 | 384m |
+| api | FastAPI (one uvicorn process; at most 2 concurrent Argon2 verifications ≈ 196 MiB peak, measured) | 127.0.0.1:8000 | 384m |
 | worker | Celery, concurrency 2 | no | 384m |
 | scheduler | Celery beat (hourly session purge) | no | 160m |
 | frontend | nginx serving the Vite build | 127.0.0.1:3000 | 64m |
