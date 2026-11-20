@@ -15,6 +15,7 @@ import secrets
 import threading
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -79,6 +80,14 @@ def _with_credentials(base: str, user: str, password: str, database: str) -> str
 
 @pytest.fixture(scope="session")
 def test_db() -> Iterator[DbHarness]:
+    with disposable_database(seed=True) as db:
+        yield db
+
+
+@contextmanager
+def disposable_database(*, seed: bool = True) -> Iterator[DbHarness]:
+    """Create a fresh database plus owner/app roles, migrate it, optionally seed M0."""
+
     assert ADMIN_URL
     suffix = uuid.uuid4().hex[:10]
     name = f"eaios_test_{suffix}"
@@ -111,15 +120,24 @@ def test_db() -> Iterator[DbHarness]:
     owner_url = _with_credentials(ADMIN_URL, owner_role, owner_pw, name)
     app_url = _with_credentials(ADMIN_URL, app_role, app_pw, name)
 
+    previous_role = os.environ.get("EAIOS_APP_DB_ROLE")
     os.environ["EAIOS_APP_DB_ROLE"] = app_role
-    config = Config("alembic.ini")
-    config.attributes["url"] = owner_url
-    command.upgrade(config, "head")
+    try:
+        config = Config("alembic.ini")
+        config.attributes["url"] = owner_url
+        command.upgrade(config, "head")
+    finally:
+        if previous_role is None:
+            os.environ.pop("EAIOS_APP_DB_ROLE", None)
+        else:
+            os.environ["EAIOS_APP_DB_ROLE"] = previous_role
 
     owner_engine = create_engine(owner_url, poolclass=pool.NullPool)
     foundation = load_foundation()
-    result = seed_foundation(owner_engine, foundation, environment="test")
-    all_passwords = [pw for users in result.new_credentials.values() for pw in users.values()]
+    credentials: dict[str, dict[str, str]] = {}
+    if seed:
+        credentials = seed_foundation(owner_engine, foundation, environment="test").new_credentials
+    all_passwords = [pw for users in credentials.values() for pw in users.values()]
     db = DbHarness(
         name=name,
         owner_role=owner_role,
@@ -128,7 +146,7 @@ def test_db() -> Iterator[DbHarness]:
         app_url=app_url,
         owner_engine=owner_engine,
         foundation=foundation,
-        passwords=result.new_credentials,
+        passwords=credentials,
         secrets=[owner_pw, app_pw, JWT_SECRET, *all_passwords],
     )
     try:

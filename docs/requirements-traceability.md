@@ -11,6 +11,14 @@ M0 implements FR-01 and the foundations of FR-02 and FR-11, plus NFR-01, NFR-03 
 | NFR-03 Compose | One `docker compose up --build`, health-gated, named volumes, restart persistence | `compose.yaml`, runbook, PR acceptance log |
 | NFR-05 Secrets | Secrets only in `.env`/env, `SecretStr`, log redaction, no tokens in browser storage, no secrets in logs or responses | `test_auth_api.py::test_audit_events_and_no_secret_leakage`, `test_health.py`, `test_tokens_and_redaction.py`, ESLint storage rule |
 
+## M1 data fixtures
+
+| Requirement | What M1 delivers | Evidence |
+| --- | --- | --- |
+| NFR-06 Dataset (foundation) | Verified NileTech 0.1.6 sales baseline (manifest, hashes, provenance pinned), deterministic normalization and fingerprint | `tests/unit/test_business_source.py`, `tests/integration/test_business_import.py::test_two_clean_database_generations_are_identical` |
+| FR-07 / FR-14 (inputs for M2) | Explicit repeatable import; reconciled lines, orders and invoices; frozen Q1 2026 evaluation case with a hand-checked subset | `tests/unit/test_sales_reference.py`, `tests/integration/test_business_import.py`, `docs/data/sales-report-q1-2026.md` |
+| NFR-01 Isolation | RLS and read-only grants on sales tables; isolation tenant sees no business rows | `test_business_import.py::test_isolation_tenant_and_missing_context_see_no_business_rows` |
+
 ## Security tests T1–T10 status
 
 | Test | Status in M0 |

@@ -1,0 +1,59 @@
+{
+  "dataset": "niletech-0.1.6",
+  "generator_version": "0.1.6",
+  "normalized_fingerprint": "e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127",
+  "reference_date": "2026-06-30",
+  "seed": 20260630,
+  "source_archive": "niletech-0.1.6.zip",
+  "source_archive_sha256": "e220664ca64a21a78450fb1abcc649c45e1038a18064bc33aabadff866fb42d3",
+  "source_content_fingerprint": "36c7784f6754f44a17d08c96018f3bbea1512490079167a33df55a1f311122f0",
+  "source_document_files": 70,
+  "source_key_counts": {
+    "companies": 1,
+    "documents": 70,
+    "invoices": 2400,
+    "orders": 2400,
+    "users": 200
+  },
+  "source_manifest_sha256": "885acf8aa2ccf5006a7e168cc8a52f4cbd81e3637052beb5cd815151c79ad99f",
+  "source_revision": "bf4a247a5c3db8bcedc37e0ed47dad6c635d9349",
+  "tenant": "niletech",
+  "vendored_tables": {
+    "tables/companies.jsonl.gz": {
+      "gzip_sha256": "46d4f13c0b42e61bc1eec4c5b64e0d51bd1baea3634f7b32aaad2d6f6fbb6953",
+      "rows": 1,
+      "source_path": "tables/companies.jsonl",
+      "source_sha256": "0e3277a6b77d51aefb9b7a96c58ddadfa0cebb5f06020ec914873d9f966d137c"
+    },
+    "tables/customers.jsonl.gz": {
+      "gzip_sha256": "4b3a39016a5825ac5e034cdd22d1fa7ec6af1f458eaaba0f02bcac73053e59db",
+      "rows": 120,
+      "source_path": "tables/customers.jsonl",
+      "source_sha256": "701f78a21d4263f66669a20fa1fca4b59df03a63454379e2f754fddc91ebe32c"
+    },
+    "tables/invoices.jsonl.gz": {
+      "gzip_sha256": "65ccacf069e9c6890b058b921bf4bae6e30ff8e00bc4d063f59949e9431f7846",
+      "rows": 2400,
+      "source_path": "tables/invoices.jsonl",
+      "source_sha256": "6d070d8cb582bd43ed6b5760bd7dc349f116723e2d4521e868598d9ca535a13f"
+    },
+    "tables/order_lines.jsonl.gz": {
+      "gzip_sha256": "e93db67bf5411641b132389fef90a3ce8e06ebcce2863c288bf3265312cbd9b6",
+      "rows": 6067,
+      "source_path": "tables/order_lines.jsonl",
+      "source_sha256": "9c5f57d9eae73ef3f7ff661d92c483b7612ccd97f8f6a7c24e2e4f01d561b53e"
+    },
+    "tables/orders.jsonl.gz": {
+      "gzip_sha256": "c3ba040405930c726e2425dff519e6d8edc20b3ccd22de99df5006b9975cbcc6",
+      "rows": 2400,
+      "source_path": "tables/orders.jsonl",
+      "source_sha256": "577caa99f7874b43743b5549469126613d372471a4988ea63d8d437be1bb0a3d"
+    },
+    "tables/products.jsonl.gz": {
+      "gzip_sha256": "ac706759aec757c3eed8894a76c21f40c0566969f5663dd8c91182dfd5af753c",
+      "rows": 25,
+      "source_path": "tables/products.jsonl",
+      "source_sha256": "aa397e0fa3a8216421770efd839e31389bf0903a535f9b02e46f4c4fd93c7ba6"
+    }
+  }
+}

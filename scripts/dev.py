@@ -4,6 +4,8 @@
     python scripts/dev.py init-env            create .env with random secrets (won't overwrite)
     python scripts/dev.py up                  docker compose up --build -d
     python scripts/dev.py seed                explicit, idempotent development seed
+    python scripts/dev.py import-business-data  explicit NileTech sales import (verifies source first)
+    python scripts/dev.py business-data-report  verify source; print fingerprint, counts, anomalies
     python scripts/dev.py status              docker compose ps
     python scripts/dev.py down                stop containers (data volumes are kept)
     python scripts/dev.py test-backend        backend suite in Compose against real PostgreSQL/Redis
@@ -125,6 +127,12 @@ def main() -> None:
         "up": lambda: compose("up", "--build", "-d", "--wait"),
         "seed": seed,
         "status": lambda: compose("ps"),
+        "import-business-data": lambda: compose(
+            "run", "--rm", "migrate", "python", "-m", "app.cli", "import-business-data"
+        ),
+        "business-data-report": lambda: compose(
+            "run", "--rm", "migrate", "python", "-m", "app.cli", "business-data-report"
+        ),
         "down": lambda: compose("down"),
         "test-backend": lambda: compose("--profile", "test", "run", "--rm", "--build",
                                         "backend-tests"),
