@@ -10,7 +10,7 @@ Laptop run `20261120T211830Z-b9dfec`, 2026-11-20. The full generated tables are 
 | Scanned PDF (no text layer) | **None yet.** Detect the scan, mark the document "needs OCR", and do not index it. | — | Waiting for the Colab run |
 | Multi-column or layout-dependent PDF | Index it with PyMuPDF, but **do not claim reading order**: these results show PyMuPDF follows the PDF content stream, not the layout. | — | The layout-model candidates are waiting for the Colab run |
 | CSV | **Python `csv`**: decode the BOM, then strict UTF-8, then cp1252 (never latin-1). Detect the delimiter with `csv.Sniffer`. Keep every field as text. | — | Measured on the laptop |
-| XLSX | **openpyxl**, loaded twice: `data_only=True` for cached values and `data_only=False` for formulas. Keep `sheet_state` and merged ranges. | pandas `read_excel` for bulk values (it gives the same values, but no formulas and no hidden flag) | Measured on the laptop |
+| XLSX | **openpyxl**, loaded twice: `data_only=True` for cached values and `data_only=False` for formulas. Keep `sheet_state` and merged ranges. | pandas `read_excel` for bulk values (it gives the same values, but no formulas, no merge metadata and no sheet visibility) | Measured on the laptop |
 
 The specification's main question is still open: **does Docling or Unstructured win as the production parser?** No local result can answer it, because both need learned models that must stay off laptops. The choice above is the initial parser for M3's digital fixtures. It matches ADR 0016's documented digital-PDF fallback, and nothing more.
 
@@ -28,7 +28,7 @@ The specification's main question is still open: **does Docling or Unstructured 
 | `semicolon-cp1252.csv` | CSV | Semicolon delimiter, cp1252 encoding (the euro sign is byte 0x80), decimal commas, a quoted delimiter |
 | `multi-sheet-q1.xlsx` | workbook | Four sheets, one of them hidden. A merged title, `COUNTIF`/`SUMIF`/`SUM` formulas with cached values, typed dates, wrapped text, Arabic, and a text value `00123`. |
 
-**Metrics.** Text similarity is order-sensitive (normalized Levenshtein). Word recall and precision measure completeness. Reading order is the longest in-order run of gold paragraph anchors. Table cells counts body cells in the right row, in the right column order; a row only counts when its key cell is present. Spurious tables counts tables reported on pages that have none. Spreadsheets get exact field and cell checks, plus formulas, the hidden-sheet flag, and the merged title. Runtime is the median of 5 warm runs after one cold run.
+**Metrics.** Text similarity is order-sensitive (normalized Levenshtein). Word recall and precision measure completeness. Reading order is the longest in-order run of gold paragraph anchors. Table cells counts body cells in the right row, in the right column order; a row only counts when its key cell is present. Spurious tables counts tables reported on pages that have none. Spreadsheets get exact field and cell checks, plus formulas and the hidden-sheet state. The merged title is scored twice: *merge kept* needs the expected sheet to report the merged range with the title in its top-left cell (`n/a` if the parser exposes no merge metadata), and *title text* only checks that the text is in that sheet. Runtime is the median of 5 warm runs after one cold run.
 
 **Hardware.** Intel Core i5-13420H (12 threads), 15.3 GiB RAM, no GPU, Debian 13, Python 3.13.5.
 
@@ -42,13 +42,13 @@ The specification's main question is still open: **does Docling or Unstructured 
 | PyMuPDF / pdfplumber, text-strategy tables | same text as above | same | 31.6 (20 / 0 / 0 / 42), and **1 spurious table** on each prose page | 0 | 44–49 ms / 123–129 ms |
 | Docling, Unstructured fast / hi_res / ocr_only, PyMuPDF + layout | **pending (Colab)** | pending | pending | pending | pending |
 
-| Parser | `tricky-customers.csv` exact fields | `semicolon-cp1252.csv` | Workbook: cell values / formulas / hidden sheet |
+| Parser | `tricky-customers.csv` exact fields | `semicolon-cp1252.csv` | Workbook: cell values / formulas / hidden sheet / merge kept / title text |
 | --- | --- | --- | --- |
 | Python `csv` (native) | **100.0**, all checks pass | **100.0**, all checks pass | — |
 | pandas `read_csv` (defaults) | 100.0 | **fails**: `UnicodeDecodeError` | — |
 | Unstructured `partition_csv` | 96.8 (loses the embedded newline) | **fails**: `UnicodeDecodeError` | — |
-| openpyxl | — | — | **100.0 / 100.0 / flagged** |
-| pandas `read_excel` | — | — | 100.0 / n/a / not flagged |
+| openpyxl | — | — | **100.0 / 100.0 / flagged / 100.0 / 100.0** |
+| pandas `read_excel` | — | — | 100.0 / n/a / unknown / n/a / 100.0 |
 | Unstructured `partition_xlsx` | — | — | pending (Colab: it loads a spaCy model) |
 | Docling (CSV, XLSX) | pending (Colab) | pending | pending |
 
@@ -62,8 +62,21 @@ The routing check (spec step 1) classified all four PDFs correctly. The scan has
 4. **No OCR without models.** Every laptop parser returns nothing for the scan. Tesseract is a learned (LSTM) OCR engine, so it also belongs on Colab under the current constraint.
 5. **pdfplumber glyph mapping.** pdfplumber emits `(cid:127)` for the bullet glyph in the embedded DejaVu subset. This explains its 95.6 text similarity on the digital PDF.
 6. **PyMuPDF 2.x runs a model by default.** `find_tables()` calls an ONNX layout model unless `use_layout=False`, and `pymupdf_layout` and `onnxruntime` are hard dependencies of `pymupdf==2.1`. The laptop adapter disables the model. `tests/test_guard.py` runs every laptop adapter in a fresh interpreter and fails if `onnxruntime`, `torch`, `pymupdf.layout`, `unstructured_inference` or `docling` was imported. Ingestion code must keep the same setting.
-7. **CSV and spreadsheet semantics need the native path.** Default pandas and Unstructured cannot decode cp1252. Unstructured also flattens the embedded newline. Only openpyxl exposes formulas and the hidden-sheet flag; pandas reads the hidden sheet without flagging it. Hidden sheets can hold data that should not be indexed silently.
+7. **CSV and spreadsheet semantics need the native path.** Default pandas and Unstructured cannot decode cp1252. Unstructured also flattens the embedded newline. Only openpyxl exposes formulas, merged ranges and the hidden-sheet flag. pandas returns the hidden sheet's data but exposes no visibility, so its output cannot show that the sheet was hidden. Hidden sheets can hold data that should not be indexed silently.
 8. **Unstructured `partition_xlsx` runs a learned model.** It downloads spaCy's `en_core_web_sm` at run time and loads it (it imports spaCy even with `find_subtable=False`). It is therefore a Colab-only candidate under the current constraint.
+
+## Rescoring after review (PR #4)
+
+Review found two faults in the workbook scorer. It credited the merged title whenever the title text appeared in any sheet, even as plain text, and it reported the hidden sheet as `unflagged` or `skipped` when the output could not show its visibility. The corrected scorer was applied to the saved parser outputs of run `20261120T211830Z-b9dfec` with `python -m bench.rescore`; no parser was rerun and timings are unchanged. Every change is also recorded under `rescored` in the results file.
+
+| Parser | Metric | Before | After |
+| --- | --- | --- | --- |
+| pandas `read_excel` | merged title | yes (100.0) | n/a: no merge metadata |
+| pandas `read_excel` | hidden sheet | unflagged | unknown: visibility not exposed |
+| pandas `read_excel` | title text (new) | — | 100.0 |
+| openpyxl | title text (new) | — | 100.0 |
+
+openpyxl keeps full merge credit: it reports `A1:D1` on `Summary` with the title in `A1`. No PDF or CSV score changed, and **the recommendation is unchanged**. The correction makes the case for openpyxl over pandas more explicit, because pandas cannot show merges or hidden sheets at all.
 
 ## Run-integrity note
 

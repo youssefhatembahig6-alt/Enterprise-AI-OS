@@ -85,12 +85,14 @@ Scores are percentages (0–100, higher is better). `n/a`: the parser has no suc
 
 ## Workbook fixtures
 
-| Parser | Where | Cell values | Sheets | Hidden sheet | Formulas | Merged title | Median | Status |
-| --- | --- | ---: | ---: | --- | ---: | --- | ---: | --- |
-| openpyxl (values + formulas) | laptop | 100.0 | 100.0 | flagged | 100.0 | yes | 28 ms | ok |
-| pandas.read_excel | laptop | 100.0 | 100.0 | unflagged | n/a | yes | 15 ms | ok |
-| Unstructured partition_xlsx | colab | — | — | — | — | — | — | **PENDING** (Colab) |
-| Docling (default pipeline) | colab | — | — | — | — | — | — | **PENDING** (Colab) |
+| Parser | Where | Cell values | Sheets | Hidden sheet | Formulas | Merge kept | Title text | Median | Status |
+| --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- |
+| openpyxl (values + formulas) | laptop | 100.0 | 100.0 | flagged | 100.0 | 100.0 | 100.0 | 28 ms | ok |
+| pandas.read_excel | laptop | 100.0 | 100.0 | unknown | n/a | n/a | 100.0 | 15 ms | ok |
+| Unstructured partition_xlsx | colab | — | — | — | — | — | — | — | **PENDING** (Colab) |
+| Docling (default pipeline) | colab | — | — | — | — | — | — | — | **PENDING** (Colab) |
+
+*Merge kept*: the expected sheet reports the merged range `A1:D1` with the title in its top-left cell (`n/a`: the parser exposes no merge metadata). *Title text*: the title appears in the expected sheet as plain text, which earns no merge credit. *Hidden sheet* `unknown`: the parser exposes no visibility, or names no sheets, so its output cannot show whether the hidden sheet was kept and marked.
 
 ## Table body cells by table
 

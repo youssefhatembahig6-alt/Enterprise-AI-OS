@@ -33,7 +33,7 @@ def oracle(g: dict) -> dict:
         nc = max(c for _, c in cells) + 1
         grid = [[str(cells[(r, c)]["value"]) if (r, c) in cells else "" for c in range(nc)] for r in range(nr)]
         fx = {ref: c["formula"] for ref, c in s["cells"].items() if c["formula"]}
-        sheets.append({"name": s["name"], "hidden": s["hidden"], "grid": grid, "formulas": fx})
+        sheets.append({"name": s["name"], "hidden": s["hidden"], "grid": grid, "formulas": fx, "merged": s["merged"]})
     return {"sheets": sheets}
 
 
@@ -64,6 +64,8 @@ class OracleScoresPerfect(unittest.TestCase):
                     self.assertEqual(m["cell_values"], 1.0)
                     self.assertEqual(m["formulas"], 1.0)
                     self.assertEqual(m["hidden_sheet"], "flagged")
+                    self.assertEqual(m["merged_title"], 1.0)
+                    self.assertEqual(m["title_text"], 1.0)
 
 
 class PdfMetrics(unittest.TestCase):
@@ -110,6 +112,59 @@ class PdfMetrics(unittest.TestCase):
         g = gold("digital-company-overview")
         m = score(g, {"text": g["text"], "tables": [[["x", "y"]]], "headings": None})
         self.assertEqual(m["spurious_tables"], 1)
+
+
+def workbook_out(**overrides: object) -> dict:
+    """Oracle workbook output with per-sheet overrides, e.g. Summary={"merged": []}."""
+    out = oracle(gold("multi-sheet-workbook"))
+    for sheet in out["sheets"]:
+        sheet.update(overrides.get(sheet["name"], {}))  # type: ignore[call-overload]
+    return out
+
+
+class XlsxMergeAndVisibility(unittest.TestCase):
+    g = gold("multi-sheet-workbook")
+
+    def test_flattened_merged_title_earns_no_merge_credit(self) -> None:
+        m = score(self.g, workbook_out(Summary={"merged": []}))  # title kept as plain text in A1
+        self.assertEqual(m["merged_title"], 0.0)
+        self.assertEqual(m["title_text"], 1.0)
+
+    def test_wrong_merge_range_earns_no_credit(self) -> None:
+        m = score(self.g, workbook_out(Summary={"merged": ["A1:C1"]}))
+        self.assertEqual(m["merged_title"], 0.0)
+
+    def test_merge_metadata_unavailable_is_not_applicable(self) -> None:
+        m = score(self.g, workbook_out(Summary={"merged": None}))
+        self.assertIsNone(m["merged_title"])
+        self.assertEqual(m["title_text"], 1.0)
+
+    def test_title_text_must_be_in_the_expected_sheet(self) -> None:
+        out = workbook_out()
+        summary = next(s for s in out["sheets"] if s["name"] == "Summary")
+        notes = next(s for s in out["sheets"] if s["name"] == "Notes")
+        notes["grid"].append([summary["grid"][0][0]])
+        summary["grid"][0][0] = ""
+        m = score(self.g, out)
+        self.assertEqual(m["title_text"], 0.0)
+        self.assertEqual(m["merged_title"], 0.0)
+
+    def test_unnamed_sheets_make_hidden_visibility_unknown(self) -> None:
+        out = workbook_out()
+        for sheet in out["sheets"]:
+            sheet["name"], sheet["hidden"] = None, None
+        self.assertEqual(score(self.g, out)["hidden_sheet"], "unknown")
+        out["sheets"] = out["sheets"][:2]  # fewer unnamed sheets: any of them could still be it
+        self.assertEqual(score(self.g, out)["hidden_sheet"], "unknown")
+
+    def test_named_sheet_without_visibility_is_unknown(self) -> None:
+        self.assertEqual(score(self.g, workbook_out(Lookup={"hidden": None}))["hidden_sheet"], "unknown")
+        self.assertEqual(score(self.g, workbook_out(Lookup={"hidden": False}))["hidden_sheet"], "unflagged")
+
+    def test_named_output_without_the_hidden_sheet_is_skipped(self) -> None:
+        out = workbook_out()
+        out["sheets"] = [s for s in out["sheets"] if s["name"] != "Lookup"]
+        self.assertEqual(score(self.g, out)["hidden_sheet"], "skipped")
 
 
 class SpreadsheetMetrics(unittest.TestCase):

@@ -35,6 +35,8 @@ Open [`m1_parser_benchmark.ipynb`](m1_parser_benchmark.ipynb) in Colab:
 
 Choose a T4 runtime, then **Run all**. The notebook clones this branch and verifies the fixture hashes. It then installs Docling and Unstructured into separate pinned uv environments (`colab-docling-pins.txt`, `colab-unstructured-pins.txt`), runs `bench.run --where colab`, and downloads a zip. Unzip it into `results/`, run `.venv/bin/python -m bench.report`, and commit both. The report then fills the pending rows with measured values.
 
+Partial runs are explicit. Each environment's `install` and `run` stages are recorded separately in `results/<batch>/status.json`, together with their logs, and an environment that fails does not stop the other. The runner rewrites its results file after every pair, so a crash keeps the finished pairs. Cell 5 classifies all 24 expected pairs as succeeded, failed (naming the `install`, `runner` or `parse` stage) or missing. It shows the results tables only when the report for that batch was generated, into `results/<batch>/results-tables.md`. Cell 6 builds the ZIP from whatever exists, even after a failure. The logic is in `bench/colab_status.py` and is tested in `tests/test_colab_status.py`.
+
 The notebook is generated: edit [`build_notebook.py`](build_notebook.py), then run `python build_notebook.py`. CI fails if the two differ.
 
 ## Layout
@@ -46,5 +48,7 @@ The notebook is generated: edit [`build_notebook.py`](build_notebook.py), then r
 | `bench/adapters.py` | One adapter per candidate, with a common output shape and run-location metadata |
 | `bench/scoring.py` | Metric definitions (see the module docstring) |
 | `bench/run.py`, `bench/report.py` | Runner and table generator |
+| `bench/colab_status.py` | Notebook stage tracking and the 24-pair batch summary (standard library only) |
+| `bench/rescore.py` | Re-applies the current scorer to saved parser outputs and records every changed metric |
 | `results/` | Committed raw results, including parser outputs |
 | `tests/` | `unittest` suite, run in CI |

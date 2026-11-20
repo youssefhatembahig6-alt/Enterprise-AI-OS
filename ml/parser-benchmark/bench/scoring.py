@@ -23,9 +23,11 @@ CSV
 XLSX
   cell_values        visible-sheet gold cells recovered (value or displayed form) / gold cells
   sheets_found       visible gold sheets present
-  hidden_sheet       "flagged" | "unflagged" | "skipped"
+  hidden_sheet       "flagged" | "unflagged" | "unknown" | "skipped" (see hidden_sheet_state)
   formulas           gold formulas recovered exactly (None if the parser exposes none)
-  merged_title       1.0 if the merged title text is present
+  merged_title       merge range and top-left title preserved in the expected sheet
+                     (None if the parser exposes no merge metadata)
+  title_text         the merged title's text is present in the expected sheet
 """
 
 from __future__ import annotations
@@ -307,10 +309,13 @@ def score_xlsx(gold: dict, out: dict) -> dict:
     per_sheet = {}
     formulas_total = formulas_hit = 0
     formulas_available = any(s.get("formulas") is not None for s in sheets_out)
+    named_output = any(s.get("name") for s in sheets_out)
+    matched_sheet: dict[str, dict | None] = {}
     for i, gs in enumerate(gold["sheets"]):
         es = by_name.get(gs["name"])
-        if es is None and not any(s.get("name") for s in sheets_out) and i < len(sheets_out):
+        if es is None and not named_output and i < len(sheets_out):
             es = sheets_out[i]  # parser exposes no sheet names: match by order
+        matched_sheet[gs["name"]] = es
         rows: dict[int, list[tuple[int, dict]]] = {}
         for ref, cell in gs["cells"].items():
             r, c = _cell_rc(ref)
@@ -356,22 +361,75 @@ def score_xlsx(gold: dict, out: dict) -> dict:
     hidden_gold = [s for s in gold["sheets"] if s["hidden"]]
     hidden_state = "n/a"
     if hidden_gold:
-        es = by_name.get(hidden_gold[0]["name"])
-        if es is None:
-            hidden_state = "skipped"
-        elif es.get("hidden") is True:
-            hidden_state = "flagged"
-        else:
-            hidden_state = "unflagged"
-    title = next(c["value"] for s in gold["sheets"] for ref, c in s["cells"].items() if s["merged"] and ref == "A1")
-    all_text = {norm_cell(c) for s in sheets_out for r in (s.get("grid") or []) for c in r}
+        hidden_state = hidden_sheet_state(hidden_gold[0]["name"], sheets_out, by_name, named_output)
+    merge = score_merged_title(gold, matched_sheet)
     return {
         "cell_values": round(matched / total, 4),
         "sheets_found": round(found / len(visible), 4),
         "per_sheet": per_sheet,
         "hidden_sheet": hidden_state,
         "formulas": round(formulas_hit / formulas_total, 4) if formulas_available else None,
-        "merged_title": float(norm_cell(title) in all_text),
+        **merge,
+    }
+
+
+def hidden_sheet_state(name: str, sheets_out: list[dict], by_name: dict, named_output: bool) -> str:
+    """flagged | unflagged | unknown | skipped for the gold hidden sheet ``name``.
+
+    ``unknown`` covers two cases where the output cannot show whether the hidden sheet was kept
+    and marked: the sheet is present but the parser exposes no visibility (``hidden is None``),
+    or the parser names no sheets, so any unnamed output sheet could be the hidden one.
+    ``skipped`` is used only when the output names its sheets and the hidden one is absent.
+    """
+    es = by_name.get(name)
+    if es is not None:
+        if es.get("hidden") is True:
+            return "flagged"
+        if es.get("hidden") is False:
+            return "unflagged"
+        return "unknown"
+    if any(not s.get("name") for s in sheets_out):
+        return "unknown"
+    return "skipped"
+
+
+def score_merged_title(gold: dict, matched_sheet: dict[str, dict | None]) -> dict:
+    """Merged-title checks against the expected sheet and merge range.
+
+    merged_title  1.0 only if the expected output sheet reports the exact merged range and holds
+                  the title at that range's top-left cell; 0.0 if the parser exposes merge metadata
+                  but the range or the text is wrong, or the sheet is missing; ``None`` when the
+                  parser exposes no merge metadata for that sheet (unavailable, not a failure).
+    title_text    1.0 if the title text is anywhere in the expected sheet (plain text is credited
+                  here and never as a merge).
+    """
+    merged_hits = merged_total = text_hits = 0
+    unavailable = False
+    for gs in gold["sheets"]:
+        for rng in gs["merged"]:
+            top_left = rng.split(":")[0]
+            title = norm_cell(gs["cells"][top_left]["value"])
+            merged_total += 1
+            es = matched_sheet.get(gs["name"])
+            if es is None:
+                continue
+            grid = es.get("grid") or []
+            if any(norm_cell(c) == title for r in grid for c in r):
+                text_hits += 1
+            ranges = es.get("merged")
+            if ranges is None:
+                unavailable = True
+                continue
+            r, c = _cell_rc(top_left)
+            at_top_left = norm_cell(grid[r][c]) if r < len(grid) and c < len(grid[r]) else ""
+            norm_ranges = {x.replace("$", "").upper() for x in ranges}
+            if rng.upper() in norm_ranges and at_top_left == title:
+                merged_hits += 1
+    if not merged_total:
+        return {"merged_title": None, "title_text": None}
+    return {
+        "merged_title": None if unavailable else round(merged_hits / merged_total, 4),
+        "title_text": round(text_hits / merged_total, 4),
     }
 
 

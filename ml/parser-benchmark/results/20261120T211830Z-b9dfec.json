@@ -950,7 +950,8 @@
     },
     "hidden_sheet": "flagged",
     "formulas": 1.0,
-    "merged_title": 1.0
+    "merged_title": 1.0,
+    "title_text": 1.0
    },
    "status": "ok",
    "model_modules_loaded": []
@@ -978,12 +979,49 @@
      "Notes": 1.0,
      "Lookup": 1.0
     },
-    "hidden_sheet": "unflagged",
+    "hidden_sheet": "unknown",
     "formulas": null,
-    "merged_title": 1.0
+    "merged_title": null,
+    "title_text": 1.0
    },
    "status": "ok",
    "model_modules_loaded": []
+  }
+ ],
+ "rescored": [
+  {
+   "at": "2026-11-20T21:38:39+00:00",
+   "note": "PR #4 review: merged-title credit now requires the expected sheet and merge range (n/a without merge metadata); title text scored separately; hidden-sheet visibility 'unknown' when not exposed or sheets are unnamed.",
+   "changes": [
+    {
+     "adapter": "openpyxl",
+     "fixture": "multi-sheet-workbook",
+     "metric": "title_text",
+     "old": "<absent>",
+     "new": 1.0
+    },
+    {
+     "adapter": "pandas_excel",
+     "fixture": "multi-sheet-workbook",
+     "metric": "hidden_sheet",
+     "old": "unflagged",
+     "new": "unknown"
+    },
+    {
+     "adapter": "pandas_excel",
+     "fixture": "multi-sheet-workbook",
+     "metric": "merged_title",
+     "old": 1.0,
+     "new": null
+    },
+    {
+     "adapter": "pandas_excel",
+     "fixture": "multi-sheet-workbook",
+     "metric": "title_text",
+     "old": "<absent>",
+     "new": 1.0
+    }
+   ]
   }
  ]
 }

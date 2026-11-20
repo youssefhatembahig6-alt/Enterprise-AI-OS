@@ -11,6 +11,7 @@ last run is scored and its text is saved under ``results/<run_id>/outputs`` for 
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import os
@@ -55,6 +56,7 @@ def loaded_model_modules() -> list[str]:
     return sorted(m for m in MODEL_MODULES if m in sys.modules)
 
 
+@functools.cache
 def environment(where: str) -> dict:
     env: dict = {
         "where": where,
@@ -173,7 +175,10 @@ def run(where: str, names: list[str] | None, runs: int, out_dir: Path, batch: st
                     _write(out_dir, run_id, manifest, where, adapters, results, fixtures, batch)
                     raise SystemExit(f"{a.name} imported a model runtime: {leaked}")
             results.append(rec)
-    return _write(out_dir, run_id, manifest, where, adapters, results, fixtures, batch)
+            # Rewrite after every pair: if the process dies (OOM, segfault), the finished
+            # pairs survive and the notebook summary can tell them from the missing ones.
+            _write(out_dir, run_id, manifest, where, adapters, results, fixtures, batch, complete=False)
+    return _write(out_dir, run_id, manifest, where, adapters, results, fixtures, batch, complete=True)
 
 
 def _save_output(outputs: Path, adapter: str, fixture: str, out: dict) -> None:
@@ -191,12 +196,14 @@ def _write(
     results: list,
     fixtures: list,
     batch: str | None,
+    complete: bool = True,
 ) -> Path:
     pkgs = [p for a in adapters for p in a.packages] + ["rapidfuzz"]
     doc = {
         "run_id": run_id,
         "batch": batch or run_id,
         "finished_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "complete": complete,
         "environment": environment(where),
         "packages": versions(pkgs),
         "fixture_manifest_sha256": sha256(FIXTURES / "manifest.json"),
@@ -211,12 +218,15 @@ def _write(
             }
             for a in adapters
         },
-        "routing": routing_check(fixtures) if where == "laptop" else None,
+        "routing": routing_check(fixtures) if where == "laptop" and complete else None,
         "results": results,
     }
     path = out_dir / f"{run_id}.json"
-    path.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print(f"wrote {path}")
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    tmp.replace(path)  # atomic: a reader never sees a half-written file
+    if complete:
+        print(f"wrote {path}")
     return path
 
 

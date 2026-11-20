@@ -3,6 +3,7 @@
     python -m bench.report                      # latest laptop + latest colab run -> reports/results-tables.md
     python -m bench.report --check              # fail if the committed tables are stale
     python -m bench.report results/a.json results/b.json
+    python -m bench.report --colab-batch <id> --out results/<id>/results-tables.md   # notebook
 
 Every Colab adapter/fixture pair with no result is listed as PENDING, never as a score.
 """
@@ -21,13 +22,15 @@ OUT = ROOT / "reports" / "results-tables.md"
 FIXTURES = json.loads((ROOT / "fixtures" / "manifest.json").read_text(encoding="utf-8"))["fixtures"]
 
 
-def _latest(where: str) -> list[Path]:
-    """All result files of the most recent batch for ``where`` (file names sort by time)."""
+def _latest(where: str, results_dir: Path = ROOT / "results", batch: str | None = None) -> list[Path]:
+    """Result files of one batch for ``where``: ``batch`` if given, else the most recent one."""
     found: list[tuple[str, Path]] = []
-    for p in sorted((ROOT / "results").glob("*.json")):
+    for p in sorted(results_dir.glob("*.json")):
         d = json.loads(p.read_text(encoding="utf-8"))
         if d["environment"]["where"] == where:
             found.append((d.get("batch") or d["run_id"], p))
+    if batch is not None:
+        return [p for b, p in found if b == batch]
     if not found:
         return []
     last = found[-1][0]
@@ -48,7 +51,7 @@ def _secs(v: float | None) -> str:
     return f"{v * 1000:.0f} ms" if v < 1 else f"{v:.2f} s"
 
 
-def build(paths: list[Path]) -> str:
+def build(paths: list[Path], colab_batch: str | None = None) -> str:
     runs = [json.loads(p.read_text(encoding="utf-8")) for p in paths]
     res: dict[tuple[str, str], dict] = {}
     for r in runs:
@@ -67,6 +70,10 @@ def build(paths: list[Path]) -> str:
     L.append("")
     L.append("## Runs")
     L.append("")
+    if colab_batch is not None:
+        n = sum(1 for r in runs if r["environment"]["where"] == "colab")
+        L.append(f"Colab batch `{colab_batch}`: {n} result file(s) merged with the latest laptop run.")
+        L.append("")
     L.append("| Run | Where | Hardware | Python | Packages |")
     L.append("| --- | --- | --- | --- | --- |")
     for r in runs:
@@ -128,9 +135,9 @@ def build(paths: list[Path]) -> str:
             L.append("| --- | --- | --- | ---: | ---: | --- | --- | ---: | --- |")
         else:
             L.append(
-                "| Parser | Where | Cell values | Sheets | Hidden sheet | Formulas | Merged title | Median | Status |"
+                "| Parser | Where | Cell values | Sheets | Hidden sheet | Formulas | Merge kept | Title text | Median | Status |"
             )
-            L.append("| --- | --- | ---: | ---: | --- | ---: | --- | ---: | --- |")
+            L.append("| --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- |")
         for a in adapters:
             for fx in fxs:
                 rec = res.get((a.name, fx["id"]))
@@ -149,13 +156,22 @@ def build(paths: list[Path]) -> str:
                 else:
                     if rec is None or rec["status"] != "ok":
                         st = status if rec is None else f"{rec['status']}: {rec.get('error', '')[:100]}"
-                        L.append(f"| {a.label} | {a.where} | — | — | — | — | — | — | {st} |")
+                        L.append(f"| {a.label} | {a.where} | — | — | — | — | — | — | — | {st} |")
                     else:
                         m = rec["metrics"]
                         L.append(
                             f"| {a.label} | {a.where} | {_f(m['cell_values'])} | {_f(m['sheets_found'])} | {m['hidden_sheet']} | "
-                            f"{_f(m['formulas'])} | {'yes' if m['merged_title'] else 'no'} | {_secs(rec['median_s'])} | ok |"
+                            f"{_f(m['formulas'])} | {_f(m.get('merged_title'))} | {_f(m.get('title_text'))} | {_secs(rec['median_s'])} | ok |"
                         )
+        if case == "xlsx":
+            L.append("")
+            L.append(
+                "*Merge kept*: the expected sheet reports the merged range `A1:D1` with the title in its top-left "
+                "cell (`n/a`: the parser exposes no merge metadata). *Title text*: the title appears in the "
+                "expected sheet as plain text, which earns no merge credit. *Hidden sheet* `unknown`: the parser "
+                "exposes no visibility, or names no sheets, so its output cannot show whether the hidden sheet "
+                "was kept and marked."
+            )
         L.append("")
 
     by_table = [
@@ -220,18 +236,25 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("paths", nargs="*", type=Path)
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--results-dir", type=Path, default=ROOT / "results")
+    ap.add_argument("--colab-batch", help="use this Colab batch instead of the most recent one")
+    ap.add_argument("--out", type=Path, default=OUT)
     args = ap.parse_args(argv)
-    paths = args.paths or [*_latest("laptop"), *_latest("colab")]
-    text = build(paths) + "\n"
+    if args.paths:
+        paths = args.paths
+    else:
+        laptop = _latest("laptop", args.results_dir)
+        paths = [*laptop, *_latest("colab", args.results_dir, args.colab_batch)]
+    text = build(paths, args.colab_batch) + "\n"
     if args.check:
-        if not OUT.exists() or OUT.read_text(encoding="utf-8") != text:
-            print(f"{OUT} is stale; run python -m bench.report")
+        if not args.out.exists() or args.out.read_text(encoding="utf-8") != text:
+            print(f"{args.out} is stale; run python -m bench.report")
             return 1
         print("results tables are current")
         return 0
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(text, encoding="utf-8")
-    print(f"wrote {OUT}")
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(text, encoding="utf-8")
+    print(f"wrote {args.out}")
     return 0
 
 
