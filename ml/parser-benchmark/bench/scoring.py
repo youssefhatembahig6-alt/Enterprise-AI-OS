@@ -22,7 +22,8 @@ CSV
 
 XLSX
   cell_values        visible-sheet gold cells recovered (value or displayed form) / gold cells
-  sheets_found       visible gold sheets present
+  sheets_found       visible gold sheets present (None when the parser names no sheets; its
+                     unnamed grids are then pooled and matched to gold rows by content)
   hidden_sheet       "flagged" | "unflagged" | "unknown" | "skipped" (see hidden_sheet_state)
   formulas           gold formulas recovered exactly (None if the parser exposes none)
   merged_title       merge range and top-left title preserved in the expected sheet
@@ -310,11 +311,22 @@ def score_xlsx(gold: dict, out: dict) -> dict:
     formulas_total = formulas_hit = 0
     formulas_available = any(s.get("formulas") is not None for s in sheets_out)
     named_output = any(s.get("name") for s in sheets_out)
+    # A parser that names no sheets may also split or merge them (Docling returns one table
+    # per detected table, e.g. a title and its table separately). Position therefore says
+    # nothing about which sheet a grid came from: pool all unnamed grids and match rows by
+    # content. Sheet identification is then not measurable (sheets_found = None).
+    pooled = None
+    if sheets_out and not named_output:
+        pooled = {
+            "name": None,
+            "hidden": None,
+            "grid": [row for sh in sheets_out for row in (sh.get("grid") or [])],
+            "formulas": None,
+            "merged": None if all(sh.get("merged") is None for sh in sheets_out) else [],
+        }
     matched_sheet: dict[str, dict | None] = {}
-    for i, gs in enumerate(gold["sheets"]):
-        es = by_name.get(gs["name"])
-        if es is None and not named_output and i < len(sheets_out):
-            es = sheets_out[i]  # parser exposes no sheet names: match by order
+    for gs in gold["sheets"]:
+        es = pooled if pooled is not None else by_name.get(gs["name"])
         matched_sheet[gs["name"]] = es
         rows: dict[int, list[tuple[int, dict]]] = {}
         for ref, cell in gs["cells"].items():
@@ -365,7 +377,7 @@ def score_xlsx(gold: dict, out: dict) -> dict:
     merge = score_merged_title(gold, matched_sheet)
     return {
         "cell_values": round(matched / total, 4),
-        "sheets_found": round(found / len(visible), 4),
+        "sheets_found": None if pooled is not None else round(found / len(visible), 4),
         "per_sheet": per_sheet,
         "hidden_sheet": hidden_state,
         "formulas": round(formulas_hit / formulas_total, 4) if formulas_available else None,

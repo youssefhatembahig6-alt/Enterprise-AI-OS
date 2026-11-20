@@ -5,6 +5,7 @@ This benchmark compares the parser candidates from the specification's document-
 * **Report and recommendation:** [`reports/2026-11-20-parser-comparison.md`](reports/2026-11-20-parser-comparison.md)
 * **Generated tables:** [`reports/results-tables.md`](reports/results-tables.md)
 * **Fixtures, provenance and the gold-check procedure:** [`fixtures/README.md`](fixtures/README.md)
+* **Which run supplies each adapter's results:** [`results/selection.json`](results/selection.json). It is an explicit, reviewed mapping, validated by `bench.report`. Every result it leaves out is listed in the tables. The original Colab ZIP is kept in `results/colab-zips/`.
 
 ## Where each candidate runs
 
@@ -33,7 +34,9 @@ python3 -m venv .venv
 Open [`m1_parser_benchmark.ipynb`](m1_parser_benchmark.ipynb) in Colab:
 <https://colab.research.google.com/github/youssefhatembahig6-alt/Enterprise-AI-OS/blob/feature/m1-parser-comparison/ml/parser-benchmark/m1_parser_benchmark.ipynb>
 
-Choose a T4 runtime, then **Run all**. The notebook clones this branch and verifies the fixture hashes. It then installs Docling and Unstructured into separate pinned uv environments (`colab-docling-pins.txt`, `colab-unstructured-pins.txt`), runs `bench.run --where colab`, and downloads a zip. Unzip it into `results/`, run `.venv/bin/python -m bench.report`, and commit both. The report then fills the pending rows with measured values.
+Choose a T4 runtime, then **Run all**. The notebook clones this branch and verifies the fixture hashes. It then installs Docling and Unstructured into separate pinned uv environments (`colab-docling-pins.txt`, `colab-unstructured-pins.txt`), runs `bench.run --where colab`, and downloads a zip. Keep the ZIP in `results/colab-zips/` and unzip it into `results/`. Name the runs to use in `results/selection.json`; the report never picks runs on its own. Then run `.venv/bin/python -m bench.report` and commit everything.
+
+The notebook passes `MPLBACKEND=Agg` to every benchmark subprocess. Colab's inline backend broke Unstructured `hi_res`/`ocr_only` in batch `20261120T220024Z-907146`.
 
 Partial runs are explicit. Each environment's `install` and `run` stages are recorded separately in `results/<batch>/status.json`, together with their logs, and an environment that fails does not stop the other. The runner rewrites its results file after every pair, so a crash keeps the finished pairs. Cell 5 classifies all 24 expected pairs as succeeded, failed (naming the `install`, `runner` or `parse` stage) or missing. It shows the results tables only when the report for that batch was generated, into `results/<batch>/results-tables.md`. Cell 6 builds the ZIP from whatever exists, even after a failure. The logic is in `bench/colab_status.py` and is tested in `tests/test_colab_status.py`.
 
@@ -49,6 +52,6 @@ The notebook is generated: edit [`build_notebook.py`](build_notebook.py), then r
 | `bench/scoring.py` | Metric definitions (see the module docstring) |
 | `bench/run.py`, `bench/report.py` | Runner and table generator |
 | `bench/colab_status.py` | Notebook stage tracking and the 24-pair batch summary (standard library only) |
-| `bench/rescore.py` | Re-applies the current scorer to saved parser outputs and records every changed metric |
+| `bench/rescore.py` | Re-applies the current scorer to saved parser outputs and records every changed metric (`--check` compares without writing) |
 | `results/` | Committed raw results, including parser outputs |
 | `tests/` | `unittest` suite, run in CI |

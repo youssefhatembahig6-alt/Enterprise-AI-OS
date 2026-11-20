@@ -1,0 +1,36 @@
+{
+ "comment": "Explicit choice of which committed run supplies each adapter's results in reports/results-tables.md. bench.report uses this file when no paths or --colab-batch are given. It does not prefer successful results: every adapter is mapped to exactly one run by name, a pair selected twice is an error, and every result left out is listed in the report's 'Excluded results' section.",
+ "decided_by": "project owner, PR #4 review, 2026-11-21",
+ "colab_zip": {
+  "file": "eaios-m1-parsers-20261120T220024Z-907146.zip",
+  "sha256": "591fef115a4f8a7889dc9a18a36ebfa08d10b777647ea2202b25e98ae97e8685",
+  "kept_at": "results/colab-zips/ (the original ZIP, unchanged)",
+  "imported_to": "results/ (all 44 files extracted byte-identical; 20261120T220551Z-200026.json was later rescored in place, with the old values kept under its rescored key)"
+ },
+ "selected": [
+  {
+   "run": "20261120T211830Z-b9dfec",
+   "where": "laptop",
+   "adapters": ["pymupdf", "pymupdf_sorted", "pdfplumber", "pymupdf_text_tables", "pdfplumber_text_tables", "native_csv", "pandas_csv", "unstructured_csv", "openpyxl", "pandas_excel"],
+   "reason": "Committed laptop run (rescored once for the XLSX scorer fix in commit 98d57b6)."
+  },
+  {
+   "run": "20261120T220551Z-200026",
+   "where": "colab",
+   "adapters": ["docling", "pymupdf_layout"],
+   "reason": "The notebook's Docling-environment run for batch 20261120T220024Z-907146. All 11 pairs succeeded."
+  },
+  {
+   "run": "20261120T220043Z-890d9e",
+   "where": "colab",
+   "adapters": ["unstructured_hi_res", "unstructured_ocr_only"],
+   "reason": "Separate invocation in the same Colab session (22:00:43-22:05:49 UTC, batch 20261120T220024Z-907146), described by the owner as the successful hi_res/ocr_only retry. All 8 pairs succeeded. The notebook's stage logs do not record this invocation, and its environment variables are not recorded."
+  },
+  {
+   "run": "20261120T220748Z-49b6cc",
+   "where": "colab",
+   "adapters": ["unstructured_fast", "unstructured_xlsx"],
+   "reason": "The notebook's Unstructured-environment run for batch 20261120T220024Z-907146. Its fast and xlsx pairs succeeded; its hi_res and ocr_only pairs failed (see excluded results) and are taken from 20261120T220043Z-890d9e instead."
+  }
+ ]
+}

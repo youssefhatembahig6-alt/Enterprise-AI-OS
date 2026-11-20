@@ -9,6 +9,35 @@ Scores are percentages (0–100, higher is better). `n/a`: the parser has no suc
 | Run | Where | Hardware | Python | Packages |
 | --- | --- | --- | --- | --- |
 | `20261120T211830Z-b9dfec` | laptop | 13th Gen Intel(R) Core(TM) i5-13420H, 12 threads, 15.3 GiB RAM, GPU: none | 3.13.5 | openpyxl 3.1.5, pandas 2.3.3, pdfminer.six 20260107, pdfplumber 0.11.10, pymupdf 2.1, rapidfuzz 3.14.6, unstructured 0.27.37 |
+| `20261120T220551Z-200026` | colab | Intel(R) Xeon(R) CPU @ 2.00GHz, 2 threads, 12.7 GiB RAM, GPU: Tesla T4, 15360 MiB, 580.82.07 | 3.12.3 | docling 2.151.1, docling-core 2.108.0, pymupdf 2.1, pymupdf-layout 2.1, pymupdf4llm 2.1, rapidfuzz 3.14.6 |
+| `20261120T220043Z-890d9e` | colab | Intel(R) Xeon(R) CPU @ 2.00GHz, 2 threads, 12.7 GiB RAM, GPU: Tesla T4, 15360 MiB, 580.82.07 | 3.12.3 | rapidfuzz 3.14.6, unstructured 0.27.37, unstructured-inference 1.6.17 |
+| `20261120T220748Z-49b6cc` | colab | Intel(R) Xeon(R) CPU @ 2.00GHz, 2 threads, 12.7 GiB RAM, GPU: Tesla T4, 15360 MiB, 580.82.07 | 3.12.3 | rapidfuzz 3.14.6, unstructured 0.27.37, unstructured-inference 1.6.17 |
+
+## Run selection
+
+Results come from `results/selection.json` (project owner, PR #4 review, 2026-11-21): each adapter is taken from one named run. Every result left out is listed under *Excluded results*; none is dropped silently.
+
+Colab evidence: `eaios-m1-parsers-20261120T220024Z-907146.zip`, SHA-256 `591fef115a4f8a7889dc9a18a36ebfa08d10b777647ea2202b25e98ae97e8685`, kept unchanged at results/colab-zips/ (the original ZIP, unchanged); imported to results/ (all 44 files extracted byte-identical; 20261120T220551Z-200026.json was later rescored in place, with the old values kept under its rescored key).
+
+| Run | Where | Adapters used | Pairs used (ok / failed) | Reason |
+| --- | --- | --- | --- | --- |
+| `20261120T211830Z-b9dfec` | laptop | `pymupdf`, `pymupdf_sorted`, `pdfplumber`, `pymupdf_text_tables`, `pdfplumber_text_tables`, `native_csv`, `pandas_csv`, `unstructured_csv`, `openpyxl`, `pandas_excel` | 28 (26 / 2) | Committed laptop run (rescored once for the XLSX scorer fix in commit 98d57b6). |
+| `20261120T220551Z-200026` | colab | `docling`, `pymupdf_layout` | 11 (11 / 0) | The notebook's Docling-environment run for batch 20261120T220024Z-907146. All 11 pairs succeeded. |
+| `20261120T220043Z-890d9e` | colab | `unstructured_hi_res`, `unstructured_ocr_only` | 8 (8 / 0) | Separate invocation in the same Colab session (22:00:43-22:05:49 UTC, batch 20261120T220024Z-907146), described by the owner as the successful hi_res/ocr_only retry. All 8 pairs succeeded. The notebook's stage logs do not record this invocation, and its environment variables are not recorded. |
+| `20261120T220748Z-49b6cc` | colab | `unstructured_fast`, `unstructured_xlsx` | 5 (5 / 0) | The notebook's Unstructured-environment run for batch 20261120T220024Z-907146. Its fast and xlsx pairs succeeded; its hi_res and ocr_only pairs failed (see excluded results) and are taken from 20261120T220043Z-890d9e instead. |
+
+### Excluded results
+
+| Run | Adapter | Fixture | Status | Error |
+| --- | --- | --- | --- | --- |
+| `20261120T220748Z-49b6cc` | `unstructured_hi_res` | digital-company-overview | failed | ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg',  |
+| `20261120T220748Z-49b6cc` | `unstructured_hi_res` | two-column-newsletter | failed | ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg',  |
+| `20261120T220748Z-49b6cc` | `unstructured_hi_res` | table-heavy-sales-q1-2026 | failed | ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg',  |
+| `20261120T220748Z-49b6cc` | `unstructured_hi_res` | scanned-delivery-note | failed | ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg',  |
+| `20261120T220748Z-49b6cc` | `unstructured_ocr_only` | digital-company-overview | failed | ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg',  |
+| `20261120T220748Z-49b6cc` | `unstructured_ocr_only` | two-column-newsletter | failed | ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg',  |
+| `20261120T220748Z-49b6cc` | `unstructured_ocr_only` | table-heavy-sales-q1-2026 | failed | ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg',  |
+| `20261120T220748Z-49b6cc` | `unstructured_ocr_only` | scanned-delivery-note | failed | ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg',  |
 
 ## digital-company-overview (digital_pdf)
 
@@ -19,11 +48,11 @@ Scores are percentages (0–100, higher is better). `n/a`: the parser has no suc
 | pdfplumber | laptop | 95.6 | 100.0 | 97.0 | 100.0 | n/a | 0 | 24 ms | 64 ms | ok |
 | PyMuPDF, text-strategy tables | laptop | 100.0 | 100.0 | 100.0 | 100.0 | n/a | 1 | 43 ms | 45 ms | ok |
 | pdfplumber, text-strategy tables | laptop | 95.6 | 100.0 | 97.0 | 100.0 | n/a | 1 | 48 ms | 50 ms | ok |
-| Docling (default pipeline) | colab | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| Unstructured fast | colab | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| Unstructured hi_res | colab | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| Unstructured ocr_only | colab | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| PyMuPDF + layout model | colab | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
+| Docling (default pipeline) | colab | 99.5 | 96.9 | 96.9 | 100.0 | 100.0 | 0 | 160 ms | 15.18 s | ok |
+| Unstructured fast | colab | 95.6 | 100.0 | 97.0 | 100.0 | 75.0 | n/a | 46 ms | 1.05 s | ok |
+| Unstructured hi_res | colab | 98.9 | 100.0 | 97.0 | 100.0 | 100.0 | 0 | 6.60 s | 22.72 s | ok |
+| Unstructured ocr_only | colab | 94.0 | 100.0 | 92.3 | 100.0 | 75.0 | n/a | 5.18 s | 5.41 s | ok |
+| PyMuPDF + layout model | colab | 100.0 | 100.0 | 100.0 | 100.0 | n/a | 0 | 502 ms | 938 ms | ok |
 
 ## two-column-newsletter (two_column_pdf)
 
@@ -34,11 +63,11 @@ Scores are percentages (0–100, higher is better). `n/a`: the parser has no suc
 | pdfplumber | laptop | 36.0 | 100.0 | 100.0 | 64.7 | n/a | 0 | 32 ms | 31 ms | ok |
 | PyMuPDF, text-strategy tables | laptop | 21.9 | 100.0 | 100.0 | 47.1 | n/a | 1 | 79 ms | 81 ms | ok |
 | pdfplumber, text-strategy tables | laptop | 36.0 | 100.0 | 100.0 | 64.7 | n/a | 1 | 82 ms | 85 ms | ok |
-| Docling (default pipeline) | colab | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| Unstructured fast | colab | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| Unstructured hi_res | colab | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| Unstructured ocr_only | colab | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| PyMuPDF + layout model | colab | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
+| Docling (default pipeline) | colab | 100.0 | 99.7 | 99.7 | 100.0 | 100.0 | 0 | 201 ms | 149 ms | ok |
+| Unstructured fast | colab | 53.2 | 100.0 | 100.0 | 76.5 | 33.3 | n/a | 53 ms | 102 ms | ok |
+| Unstructured hi_res | colab | 51.4 | 100.0 | 100.0 | 70.6 | 100.0 | 0 | 7.07 s | 8.19 s | ok |
+| Unstructured ocr_only | colab | 96.0 | 100.0 | 97.3 | 94.1 | 83.3 | n/a | 6.40 s | 7.61 s | ok |
+| PyMuPDF + layout model | colab | 100.0 | 100.0 | 100.0 | 100.0 | n/a | 0 | 622 ms | 604 ms | ok |
 
 ## table-heavy-sales-q1-2026 (table_heavy_pdf)
 
@@ -49,11 +78,11 @@ Scores are percentages (0–100, higher is better). `n/a`: the parser has no suc
 | pdfplumber | laptop | 98.1 | 100.0 | 98.0 | 100.0 | n/a | 22.6 | 33.3 | 100.0 | 63 ms | 61 ms | ok |
 | PyMuPDF, text-strategy tables | laptop | 98.6 | 100.0 | 98.0 | 100.0 | n/a | 31.6 | 16.7 | 100.0 | 122 ms | 123 ms | ok |
 | pdfplumber, text-strategy tables | laptop | 98.1 | 100.0 | 98.0 | 100.0 | n/a | 31.6 | 16.7 | 100.0 | 129 ms | 128 ms | ok |
-| Docling (default pipeline) | colab | — | — | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| Unstructured fast | colab | — | — | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| Unstructured hi_res | colab | — | — | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| Unstructured ocr_only | colab | — | — | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| PyMuPDF + layout model | colab | — | — | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
+| Docling (default pipeline) | colab | 97.5 | 100.0 | 95.2 | 100.0 | 20.0 | 100.0 | 77.8 | 100.0 | 2.35 s | 3.58 s | ok |
+| Unstructured fast | colab | 77.9 | 100.0 | 98.0 | 93.3 | 60.0 | n/a | n/a | 100.0 | 490 ms | 512 ms | ok |
+| Unstructured hi_res | colab | 74.6 | 100.0 | 98.0 | 80.0 | 100.0 | 77.4 | 50.0 | 100.0 | 18.14 s | 19.72 s | ok |
+| Unstructured ocr_only | colab | 57.0 | 98.5 | 91.7 | 60.0 | 60.0 | n/a | n/a | 98.3 | 12.47 s | 12.83 s | ok |
+| PyMuPDF + layout model | colab | 98.3 | 99.4 | 97.4 | 100.0 | n/a | 6.2 | 77.8 | 100.0 | 2.86 s | 2.32 s | ok |
 
 ## scanned-delivery-note (scanned_pdf)
 
@@ -64,11 +93,11 @@ Scores are percentages (0–100, higher is better). `n/a`: the parser has no suc
 | pdfplumber | laptop | 0.0 | 0.0 | 0.0 | 0.0 | n/a | 0.0 | 0.0 | 0.0 | 1 ms | 1 ms | ok |
 | PyMuPDF, text-strategy tables | laptop | 0.0 | 0.0 | 0.0 | 0.0 | n/a | 0.0 | 0.0 | 0.0 | 1 ms | 1 ms | ok |
 | pdfplumber, text-strategy tables | laptop | 0.0 | 0.0 | 0.0 | 0.0 | n/a | 0.0 | 0.0 | 0.0 | 1 ms | 1 ms | ok |
-| Docling (default pipeline) | colab | — | — | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| Unstructured fast | colab | — | — | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| Unstructured hi_res | colab | — | — | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| Unstructured ocr_only | colab | — | — | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| PyMuPDF + layout model | colab | — | — | — | — | — | — | — | — | — | — | **PENDING** (Colab) |
+| Docling (default pipeline) | colab | 97.2 | 66.2 | 81.7 | 91.7 | 0.0 | 80.0 | 100.0 | 80.0 | 11.48 s | 13.25 s | ok |
+| Unstructured fast | colab | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | n/a | n/a | 0.0 | 2 ms | 3 ms | ok |
+| Unstructured hi_res | colab | 90.2 | 83.8 | 91.2 | 91.7 | 100.0 | 40.0 | 0.0 | 80.0 | 8.65 s | 8.81 s | ok |
+| Unstructured ocr_only | colab | 90.2 | 83.8 | 91.2 | 91.7 | 100.0 | n/a | n/a | 80.0 | 5.63 s | 6.52 s | ok |
+| PyMuPDF + layout model | colab | 97.1 | 86.5 | 91.4 | 91.7 | n/a | 0.0 | 0.0 | 100.0 | 6.39 s | 6.27 s | ok |
 
 ## CSV fixtures
 
@@ -80,8 +109,8 @@ Scores are percentages (0–100, higher is better). `n/a`: the parser has no suc
 | pandas.read_csv (defaults) | laptop | semicolon-cp1252-csv | — | — | — | — | — | failed: UnicodeDecodeError: 'utf-8' codec can't decode byte 0xfc in position 65: invalid start byte |
 | Unstructured partition_csv | laptop | tricky-customers-csv | 96.8 | 100.0 | yes (9/9) | non_ascii_exact 100.0, leading_zeros 100.0, embedded_newline 0.0, doubled_quotes 100.0, formula_text_kept 100.0 | 5 ms | ok |
 | Unstructured partition_csv | laptop | semicolon-cp1252-csv | — | — | — | — | — | failed: UnicodeDecodeError: 'utf-8' codec can't decode byte 0xfc in position 12: invalid start byte |
-| Docling (default pipeline) | colab | tricky-customers-csv | — | — | — | — | — | **PENDING** (Colab) |
-| Docling (default pipeline) | colab | semicolon-cp1252-csv | — | — | — | — | — | **PENDING** (Colab) |
+| Docling (default pipeline) | colab | tricky-customers-csv | 100.0 | 100.0 | yes (9/9) | non_ascii_exact 100.0, leading_zeros 100.0, embedded_newline 100.0, doubled_quotes 100.0, formula_text_kept 100.0 | 3 ms | ok |
+| Docling (default pipeline) | colab | semicolon-cp1252-csv | 100.0 | 100.0 | yes (7/7) | non_ascii_exact 100.0, quoted_delimiter 100.0, decimal_comma_text 100.0 | 2 ms | ok |
 
 ## Workbook fixtures
 
@@ -89,8 +118,8 @@ Scores are percentages (0–100, higher is better). `n/a`: the parser has no suc
 | --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | openpyxl (values + formulas) | laptop | 100.0 | 100.0 | flagged | 100.0 | 100.0 | 100.0 | 28 ms | ok |
 | pandas.read_excel | laptop | 100.0 | 100.0 | unknown | n/a | n/a | 100.0 | 15 ms | ok |
-| Unstructured partition_xlsx | colab | — | — | — | — | — | — | — | **PENDING** (Colab) |
-| Docling (default pipeline) | colab | — | — | — | — | — | — | — | **PENDING** (Colab) |
+| Unstructured partition_xlsx | colab | 100.0 | 100.0 | unknown | n/a | n/a | 100.0 | 169 ms | ok |
+| Docling (default pipeline) | colab | 100.0 | n/a | unknown | n/a | n/a | 100.0 | 86 ms | ok |
 
 *Merge kept*: the expected sheet reports the merged range `A1:D1` with the title in its top-left cell (`n/a`: the parser exposes no merge metadata). *Title text*: the title appears in the expected sheet as plain text, which earns no merge credit. *Hidden sheet* `unknown`: the parser exposes no visibility, or names no sheets, so its output cannot show whether the hidden sheet was kept and marked.
 
@@ -98,16 +127,22 @@ Scores are percentages (0–100, higher is better). `n/a`: the parser has no suc
 
 | Parser | Fixture | T1: full grid | T2: borderless | T3: grid with merged two-level header | T4: horizontal rules, zebra, split across pages with repeated header | S1: full grid (raster) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Docling (default pipeline) | scanned-delivery-note |  |  |  |  | 80.0 |
+| Docling (default pipeline) | table-heavy-sales-q1-2026 | 100.0 | 100.0 | 100.0 | 100.0 |  |
 | pdfplumber | scanned-delivery-note |  |  |  |  | 0.0 |
 | pdfplumber | table-heavy-sales-q1-2026 | 100.0 | 0.0 | 100.0 | 0.0 |  |
 | pdfplumber, text-strategy tables | scanned-delivery-note |  |  |  |  | 0.0 |
 | pdfplumber, text-strategy tables | table-heavy-sales-q1-2026 | 20.0 | 0.0 | 0.0 | 41.6 |  |
 | PyMuPDF (no layout model) | scanned-delivery-note |  |  |  |  | 0.0 |
 | PyMuPDF (no layout model) | table-heavy-sales-q1-2026 | 100.0 | 0.0 | 100.0 | 0.0 |  |
+| PyMuPDF + layout model | scanned-delivery-note |  |  |  |  | 0.0 |
+| PyMuPDF + layout model | table-heavy-sales-q1-2026 | 10.0 | 50.0 | 15.0 | 0.0 |  |
 | PyMuPDF sort=True (no layout model) | scanned-delivery-note |  |  |  |  | 0.0 |
 | PyMuPDF sort=True (no layout model) | table-heavy-sales-q1-2026 | 100.0 | 0.0 | 100.0 | 0.0 |  |
 | PyMuPDF, text-strategy tables | scanned-delivery-note |  |  |  |  | 0.0 |
 | PyMuPDF, text-strategy tables | table-heavy-sales-q1-2026 | 20.0 | 0.0 | 0.0 | 41.6 |  |
+| Unstructured hi_res | scanned-delivery-note |  |  |  |  | 40.0 |
+| Unstructured hi_res | table-heavy-sales-q1-2026 | 70.0 | 0.0 | 65.0 | 88.0 |  |
 
 ## Routing check (spec step 1: text layer or scan?)
 
@@ -120,32 +155,7 @@ Scores are percentages (0–100, higher is better). `n/a`: the parser has no suc
 
 ## Pending and not run
 
-24 adapter/fixture pairs have no result yet:
-
-- `unstructured_xlsx` × `multi-sheet-workbook` — colab; models: spaCy en_core_web_sm (partition_xlsx downloads and loads it at run time)
-- `docling` × `digital-company-overview` — colab; models: layout model, TableFormer, OCR engine (PDF); none for CSV/XLSX
-- `docling` × `two-column-newsletter` — colab; models: layout model, TableFormer, OCR engine (PDF); none for CSV/XLSX
-- `docling` × `table-heavy-sales-q1-2026` — colab; models: layout model, TableFormer, OCR engine (PDF); none for CSV/XLSX
-- `docling` × `scanned-delivery-note` — colab; models: layout model, TableFormer, OCR engine (PDF); none for CSV/XLSX
-- `docling` × `tricky-customers-csv` — colab; models: layout model, TableFormer, OCR engine (PDF); none for CSV/XLSX
-- `docling` × `semicolon-cp1252-csv` — colab; models: layout model, TableFormer, OCR engine (PDF); none for CSV/XLSX
-- `docling` × `multi-sheet-workbook` — colab; models: layout model, TableFormer, OCR engine (PDF); none for CSV/XLSX
-- `unstructured_fast` × `digital-company-overview` — colab; models: none at run time; the package import requires unstructured-inference (CUDA torch stack)
-- `unstructured_fast` × `two-column-newsletter` — colab; models: none at run time; the package import requires unstructured-inference (CUDA torch stack)
-- `unstructured_fast` × `table-heavy-sales-q1-2026` — colab; models: none at run time; the package import requires unstructured-inference (CUDA torch stack)
-- `unstructured_fast` × `scanned-delivery-note` — colab; models: none at run time; the package import requires unstructured-inference (CUDA torch stack)
-- `unstructured_hi_res` × `digital-company-overview` — colab; models: layout detection model, table-structure model, Tesseract OCR
-- `unstructured_hi_res` × `two-column-newsletter` — colab; models: layout detection model, table-structure model, Tesseract OCR
-- `unstructured_hi_res` × `table-heavy-sales-q1-2026` — colab; models: layout detection model, table-structure model, Tesseract OCR
-- `unstructured_hi_res` × `scanned-delivery-note` — colab; models: layout detection model, table-structure model, Tesseract OCR
-- `unstructured_ocr_only` × `digital-company-overview` — colab; models: Tesseract OCR
-- `unstructured_ocr_only` × `two-column-newsletter` — colab; models: Tesseract OCR
-- `unstructured_ocr_only` × `table-heavy-sales-q1-2026` — colab; models: Tesseract OCR
-- `unstructured_ocr_only` × `scanned-delivery-note` — colab; models: Tesseract OCR
-- `pymupdf_layout` × `digital-company-overview` — colab; models: PyMuPDF ONNX layout model
-- `pymupdf_layout` × `two-column-newsletter` — colab; models: PyMuPDF ONNX layout model
-- `pymupdf_layout` × `table-heavy-sales-q1-2026` — colab; models: PyMuPDF ONNX layout model
-- `pymupdf_layout` × `scanned-delivery-note` — colab; models: PyMuPDF ONNX layout model
+Every planned adapter/fixture pair has a result.
 
 - **Amazon Textract**: Cloud OCR/forms service. Spec: only where cloud processing is permitted. Not run: no permission, no account, and the project keeps documents local.
 - **Azure AI Document Intelligence**: Same position as Textract. Not run.

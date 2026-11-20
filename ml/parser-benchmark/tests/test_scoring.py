@@ -157,6 +157,22 @@ class XlsxMergeAndVisibility(unittest.TestCase):
         out["sheets"] = out["sheets"][:2]  # fewer unnamed sheets: any of them could still be it
         self.assertEqual(score(self.g, out)["hidden_sheet"], "unknown")
 
+    def test_unnamed_split_grids_are_matched_by_content_not_position(self) -> None:
+        # Docling returns one grid per detected table: Summary's title and table separately,
+        # so positional matching would compare every later grid with the wrong sheet.
+        out = workbook_out()
+        split = []
+        for sheet in out["sheets"]:
+            grid = sheet["grid"]
+            parts = [grid[:1], grid[1:]] if sheet["name"] == "Summary" else [grid]
+            split += [{"name": None, "hidden": None, "grid": part, "formulas": None, "merged": None} for part in parts]
+        m = score(self.g, {"sheets": split})
+        self.assertEqual(m["cell_values"], 1.0)
+        self.assertIsNone(m["sheets_found"])  # sheets cannot be identified without names
+        self.assertEqual(m["hidden_sheet"], "unknown")
+        self.assertIsNone(m["merged_title"])
+        self.assertEqual(m["title_text"], 1.0)
+
     def test_named_sheet_without_visibility_is_unknown(self) -> None:
         self.assertEqual(score(self.g, workbook_out(Lookup={"hidden": None}))["hidden_sheet"], "unknown")
         self.assertEqual(score(self.g, workbook_out(Lookup={"hidden": False}))["hidden_sheet"], "unflagged")

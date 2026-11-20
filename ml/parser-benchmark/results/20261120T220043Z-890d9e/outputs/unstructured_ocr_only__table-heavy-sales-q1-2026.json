@@ -1,0 +1,30 @@
+{
+ "text": "NileTech Q1 2026 sales tables\n\nSynthetic benchmark fixture. Not a NileTech publication.\n\nFigures cover orders dated 2026-01-01 to 2026-03-31. Net sales exclude tax; tax is 14%. Amounts are in USD. Values are derived from the niletech-0.1.6 sales baseline.\n\nTable 1. Fulfilled sales by month\n\nMonth January 2026 February 2026\n\nOrders\n\nNet sales (USD) Tax (USD)\n\nGross (USD)\n\n26,703,207.00 3,738,448.98 30,441,655.98\n\n27,474,894.00 3,846,485.16\n\n31,321,379.16\n\nMarch 2026 Total\n\n97 97 97 91\n\n2 80,934,385.00 11,330,813.90 92,265,198.90\n\n3,745,879.76\n\n26,756,284.00\n\nTable 2. Ql 2026 orders by status\n\nStatus FULFILLED PENDING CANCELLED\n\nAll statuses\n\nOrders\n\nNet value (USD)\n\n291 80,934,385.00 40 12,605,562.00 28 9,447,839.00\n\n359 102,987,786.00\n\n30,502,163.76\n\nTable 3. Fulfilled net sales by region and month (USD)\n\nQ1 2026 Region February March Quarter EMEA 8,408,107.00 9,338,188.00 5,074,658.00 22,820,953.00 EUROPE 5,281,829.00 9,942,048.00 8,905,679.00 24,129,556.00 GULF 5,011,265.00 4,137,469.00 3,755,774.00 12,904,508.00 NORTH_AFRICA 8,002,006.00 4,057,189.00 9,020,173.00 21,079,368.00\n\nTable 4. Product sales from fulfilled Ql 2026 orders\n\nSKU Product Tier Units\n\nNIL-OOO1 Workflow Automation Platform Enterprise 129 NIL-0002 Workflow Automation Platform Business 166 NIL-0003 Document Intelligence Suite Enterprise 117 NIL-0004 Document Intelligence Suite Business 187 NIL-0005 Integration Gateway Standard 131 NIL-O006 Analytics Workspace Business 93 NIL-0007 Managed Support Retainer Standard 140 NIL-0008 Implementation Services Professional 198 NIL-O009 Workflow Automation Platform 2 Enterprise 239 NIL-0010 Workflow Automation Platform 2 Business 207 NIL-0011 Document Intelligence Suite 2 Enterprise 163 NIL-0012 Document Intelligence Suite 2 Business 145\n\nQ1 2026 sales tables (synthetic fixture) - Page 1\n\nNet sales (USD) 4,742,169.00 2,914,628.00 2,499,120.00 2,222,495.00\n\n610,853.00 833,280.00 817,600.00 3,839,220.00 11,254,271.00 2,185,506.00 4,045,171.00 2,133,820.00\n\nSKU\n\nNIL-0013 NIL-0014 NIL-0015 NIL-0016 NIL-0017 NIL-0018 NIL-0019 NIL-0020 NIL-0021 NIL-0022 NIL-0023 NIL-0024 NIL-0025\n\nProduct\n\nIntegration Gateway 2\n\nAnalytics Workspace 2\n\nManaged Support Retainer 2 Implementation Services 2 Workflow Automation Platform 3 Workflow Automation Platform 3 Document Intelligence Suite 3 Document Intelligence Suite 3 Integration Gateway 3\n\nAnalytics Workspace 3\n\nManaged Support Retainer 3 Implementation Services 3\n\nWorkflow Automation Platform 4\n\nQ1 2026 sales tables (synthetic fixture) - Page 2\n\nTier Standard Business Standard Professional Enterprise Business Enterprise Business Standard Business Standard Professional\n\nEnterprise\n\nUnits 185 250 238 156 247 171 210 206 152 243 257 219 176\n\nNet sales (USD)\n\n946,830.00 1,784,500.00\n\n982,464.00 4,456,296.00 8,904,103.00 2,358,261.00 6,803,580.00 2,376,004.00 1,349,760.00 2,387,232.00\n\n651,752.00 5,016,414.00 4,819,056.00",
+ "tables": null,
+ "headings": [
+  "NileTech Q1 2026 sales tables",
+  "Month January 2026 February 2026",
+  "Orders",
+  "Net sales (USD) Tax (USD)",
+  "Gross (USD)",
+  "March 2026 Total",
+  "Table 2. Ql 2026 orders by status",
+  "Status FULFILLED PENDING CANCELLED",
+  "All statuses",
+  "Orders",
+  "Net value (USD)",
+  "Table 4. Product sales from fulfilled Ql 2026 orders",
+  "SKU Product Tier Units",
+  "Q1 2026 sales tables (synthetic fixture) - Page 1",
+  "SKU",
+  "Product",
+  "Integration Gateway 2",
+  "Analytics Workspace 2",
+  "Analytics Workspace 3",
+  "Managed Support Retainer 3 Implementation Services 3",
+  "Workflow Automation Platform 4",
+  "Q1 2026 sales tables (synthetic fixture) - Page 2",
+  "Enterprise",
+  "Net sales (USD)"
+ ]
+}

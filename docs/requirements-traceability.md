@@ -23,7 +23,7 @@ M0 implements FR-01 and the foundations of FR-02 and FR-11, plus NFR-01, NFR-03 
 
 | Requirement | What M1 delivers | Evidence |
 | --- | --- | --- |
-| FR-05 Deterministic ingestion (input) / ADR 0016 | Parser benchmark on digital, two-column, table-heavy and scanned PDFs plus CSV and workbook cases; seven synthetic fixtures with SHA-256 provenance and hand-checked gold; laptop results; Colab notebook for model-based candidates (not yet run) | `ml/parser-benchmark/reports/2026-11-20-parser-comparison.md`, `ml/parser-benchmark/tests/`, CI job `parser-benchmark` |
+| FR-05 Deterministic ingestion (input) / ADR 0016 | Parser benchmark on digital, two-column, table-heavy and scanned PDFs plus CSV and workbook cases; seven synthetic fixtures with SHA-256 provenance and hand-checked gold; laptop results and Colab results for the model-based candidates (explicit run selection in `results/selection.json`); recommendation: Docling for complex PDFs, Python `csv`, openpyxl | `ml/parser-benchmark/reports/2026-11-20-parser-comparison.md`, `ml/parser-benchmark/tests/`, CI job `parser-benchmark` |
 
 ## Security tests T1–T10 status
 

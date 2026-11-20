@@ -61,12 +61,18 @@ def sh(cmd):
     print(r.stdout[-4000:], r.stderr[-4000:])
     return r
 
-def run_logged(cmd, log_path, cwd=None):
+# Environment for every benchmark subprocess. Colab's kernel exports
+# MPLBACKEND=module://matplotlib_inline.backend_inline, which the venvs' Matplotlib rejects
+# (batch 20261120T220024Z-907146: all Unstructured hi_res/ocr_only pairs failed with it).
+BENCH_ENV = {**os.environ, "MPLBACKEND": "Agg", "DO_NOT_TRACK": "true", "SCARF_NO_ANALYTICS": "true"}
+
+def run_logged(cmd, log_path, cwd=None, env=None):
     # Stream a command to the cell output and to a log file; return its exit code.
     print("$", cmd)
     with open(log_path, "a") as log:
         log.write(f"$ {cmd}\n")
-        p = subprocess.Popen(cmd, shell=True, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        p = subprocess.Popen(cmd, shell=True, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             env=BENCH_ENV if env is None else env)
         for line in p.stdout:
             print(line, end="")
             log.write(line)
@@ -137,8 +143,7 @@ for name in cs.ENV_ADAPTERS:
 """
 
 CELL_RUN = r"""# 4. Run each environment's adapters (an environment that failed to install is skipped and recorded)
-os.environ["DO_NOT_TRACK"] = "true"; os.environ["SCARF_NO_ANALYTICS"] = "true"
-for name, adapters in cs.ENV_ADAPTERS.items():
+for name, adapters in cs.ENV_ADAPTERS.items():  # run_logged passes BENCH_ENV (MPLBACKEND=Agg)
     install = STATUS.stage(name, "install")
     if not install or not install["ok"]:
         STATUS.record(name, "run", False, None, "skipped: the install stage failed")
@@ -158,7 +163,7 @@ for name, adapters in cs.ENV_ADAPTERS.items():
 
 CELL_REPORT = r"""# 5. Batch summary (all 24 expected pairs), then the results tables if the report succeeded
 from IPython.display import Markdown, display
-tables = cs.run_report(STATUS, BENCH, BATCH)  # writes results/<batch>/results-tables.md, or records the failure
+tables = cs.run_report(STATUS, BENCH, BATCH, env=BENCH_ENV)  # writes results/<batch>/results-tables.md, or records the failure
 summary = cs.write_summary(STATUS, f"{BENCH}/results", BATCH)
 display(Markdown(cs.summary_markdown(summary)))
 if tables is not None:

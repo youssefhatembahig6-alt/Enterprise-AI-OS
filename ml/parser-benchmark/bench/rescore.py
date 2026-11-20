@@ -1,6 +1,7 @@
 """Re-apply the current scorer to the parser outputs saved with a run.
 
     python -m bench.rescore results/<run_id>.json --note "why the scorer changed"
+    python -m bench.rescore results/<run_id>.json --check   # compare only; never writes
 
 Parsers are not rerun and timings are kept. Every metric that changes is listed under
 ``rescored`` in the results file, so the history of a score stays visible.
@@ -29,7 +30,7 @@ def _flat(d: dict, prefix: str = "") -> dict:
     return out
 
 
-def rescore(path: Path, note: str) -> list[dict]:
+def rescore(path: Path, note: str, write: bool = True) -> list[dict]:
     doc = json.loads(path.read_text(encoding="utf-8"))
     outputs = path.with_suffix("") / "outputs"
     changes = []
@@ -55,6 +56,8 @@ def rescore(path: Path, note: str) -> list[dict]:
                     }
                 )
         rec["metrics"] = new
+    if not write:
+        return changes
     doc.setdefault("rescored", []).append(
         {
             "at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -69,13 +72,16 @@ def rescore(path: Path, note: str) -> list[dict]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("path", type=Path)
-    ap.add_argument("--note", required=True)
+    ap.add_argument("--note")
+    ap.add_argument("--check", action="store_true", help="report differences without writing; exit 1 if any")
     args = ap.parse_args(argv)
-    changes = rescore(args.path, args.note)
+    if not args.check and not args.note:
+        ap.error("--note is required unless --check is given")
+    changes = rescore(args.path, args.note or "", write=not args.check)
     for c in changes:
         print(f"{c['adapter']} × {c['fixture']}: {c['metric']} {c['old']!r} -> {c['new']!r}")
-    print(f"{len(changes)} metric(s) changed")
-    return 0
+    print(f"{len(changes)} metric(s) {'differ' if args.check else 'changed'}")
+    return 1 if args.check and changes else 0
 
 
 if __name__ == "__main__":

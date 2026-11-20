@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import shutil
 import tempfile
@@ -133,7 +135,11 @@ class ReportGeneration(Base):
         self.assertIn("| — | report | FAILED |", md)
 
     def test_successful_report_is_scoped_to_the_batch(self) -> None:
-        laptop = sorted((ROOT / "results").glob("*.json"))[-1]
+        laptop = next(
+            p
+            for p in sorted((ROOT / "results").glob("*.json"))
+            if json.loads(p.read_text(encoding="utf-8"))["environment"]["where"] == "laptop"
+        )
         shutil.copy(laptop, self.results / laptop.name)
         a, f = self.env_pairs("docling")[0]
         write_results(
@@ -158,7 +164,7 @@ class NotebookWiring(unittest.TestCase):
 
     def test_tables_are_shown_only_after_a_successful_report(self) -> None:
         report_cell = self.cells[4]
-        self.assertIn("tables = cs.run_report(STATUS, BENCH, BATCH)", report_cell)
+        self.assertIn("tables = cs.run_report(STATUS, BENCH, BATCH, env=BENCH_ENV)", report_cell)
         self.assertIn("if tables is not None:", report_cell)
         self.assertNotIn("reports/results-tables.md", report_cell)  # never the committed copy
 
@@ -167,6 +173,34 @@ class NotebookWiring(unittest.TestCase):
         self.assertIn('STATUS.record(name, "install"', install)
         self.assertIn('STATUS.record(name, "run"', run)
         self.assertIn("skipped: the install stage failed", run)
+
+    def test_benchmark_subprocesses_get_the_agg_matplotlib_backend(self) -> None:
+        # Colab's kernel exports the inline backend; the venvs' Matplotlib rejects it (batch
+        # 20261120T220024Z-907146). Execute cell 1 under that environment and check what a
+        # benchmark subprocess actually sees.
+        import os
+        import subprocess
+        from unittest import mock
+
+        inline = {"MPLBACKEND": "module://matplotlib_inline.backend_inline"}
+        quiet = contextlib.redirect_stdout(io.StringIO())  # the cell prints progress
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, inline), quiet:
+            ns: dict = {}
+            with mock.patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")):
+                exec(self.cells[0], ns)  # cell 1 defines BENCH_ENV and run_logged
+            self.assertEqual(ns["BENCH_ENV"]["MPLBACKEND"], "Agg")
+            log = Path(tmp) / "probe.log"
+            rc = ns["run_logged"]('python3 -c \'import os; print("backend=" + os.environ["MPLBACKEND"])\'', log)
+            self.assertEqual(rc, 0)
+            self.assertIn("backend=Agg", log.read_text())
+
+    def test_every_benchmark_subprocess_uses_bench_env(self) -> None:
+        install, run, report = self.cells[2], self.cells[3], self.cells[4]
+        for cell in (install, run):
+            self.assertNotIn("subprocess.", cell)  # all commands go through run_logged
+            self.assertNotIn("env=", cell)  # so none can override BENCH_ENV
+        self.assertIn("bench.run --where colab", run)
+        self.assertIn("env=BENCH_ENV", report)
 
     def test_download_cell_does_not_depend_on_earlier_success(self) -> None:
         download = self.cells[5]

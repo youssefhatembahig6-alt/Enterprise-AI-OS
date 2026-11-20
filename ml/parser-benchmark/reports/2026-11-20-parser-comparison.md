@@ -1,96 +1,125 @@
-# M1 parser comparison: laptop results and recommendation
+# M1 parser comparison: measured results and recommendation
 
-Laptop run `20261120T211830Z-b9dfec`, 2026-11-20. The full generated tables are in [`results-tables.md`](results-tables.md) and the raw results are in [`../results/`](../results/). The Colab half (Docling, the Unstructured PDF strategies and `partition_xlsx`, and PyMuPDF with its layout model) has **not run yet**. Every Colab cell below is marked pending, not estimated.
+This compares the specification's parser candidates on seven synthetic fixtures. The laptop run is `20261120T211830Z-b9dfec`. The Colab runs come from batch `20261120T220024Z-907146` on a Tesla T4, and exactly which run supplies each adapter is listed under [Run selection and provenance](#run-selection-and-provenance). The full generated tables are in [`results-tables.md`](results-tables.md); raw results and every parser output are in [`../results/`](../results/).
 
 ## Recommendation
 
-| Input | Initial parser | Fallback | Status |
+| Input | Use | Fallback | Evidence |
 | --- | --- | --- | --- |
-| Digital PDF (has a text layer) | **PyMuPDF 2.1, heuristic mode**: `get_text("text")` with `find_tables(use_layout=False)` and `pymupdf._layout_enabled = False` | **pdfplumber 0.11.10**: an independent engine (pdfminer). Use it when PyMuPDF raises or returns no text from a page that has a text layer. Also use it for geometry debugging. | Measured on the laptop |
-| Scanned PDF (no text layer) | **None yet.** Detect the scan, mark the document "needs OCR", and do not index it. | — | Waiting for the Colab run |
-| Multi-column or layout-dependent PDF | Index it with PyMuPDF, but **do not claim reading order**: these results show PyMuPDF follows the PDF content stream, not the layout. | — | The layout-model candidates are waiting for the Colab run |
-| CSV | **Python `csv`**: decode the BOM, then strict UTF-8, then cp1252 (never latin-1). Detect the delimiter with `csv.Sniffer`. Keep every field as text. | — | Measured on the laptop |
-| XLSX | **openpyxl**, loaded twice: `data_only=True` for cached values and `data_only=False` for formulas. Keep `sheet_state` and merged ranges. | pandas `read_excel` for bulk values (it gives the same values, but no formulas, no merge metadata and no sheet visibility) | Measured on the laptop |
+| **Complex PDFs**: multi-column, tables without full grid lines, scans | **Docling 2.151.1**, default pipeline, run on the Colab GPU like the other models | If Docling or the Colab runtime is unavailable: PyMuPDF in heuristic mode for pages with a text layer, without claims about reading order or borderless tables. Mark scans "needs OCR" and do not index them. | Docling was the only candidate to recover every table on the table-heavy fixture and to read the two-column page in order, and it had the best structured result on the scan |
+| Simple digital PDFs | Docling, as above, for one consistent pipeline | PyMuPDF heuristic mode scores 100 on this fixture and runs locally in 21 ms | Both are accurate here; Docling replaces em dashes with hyphens |
+| CSV | **Python `csv`**: BOM, then strict UTF-8, then cp1252; `csv.Sniffer`; every field kept as text | — | 100% exact on both CSVs. Docling also scored 100% but needs its model stack; pandas and Unstructured cannot decode cp1252 |
+| XLSX | **openpyxl**, loaded twice: cached values and formulas, plus `sheet_state` and merged ranges | pandas `read_excel` for bulk values only | The only candidate that exposes formulas, merges and the hidden sheet. Docling, Unstructured and pandas recover 100% of values but none of those three |
 
-The specification's main question is still open: **does Docling or Unstructured win as the production parser?** No local result can answer it, because both need learned models that must stay off laptops. The choice above is the initial parser for M3's digital fixtures. It matches ADR 0016's documented digital-PDF fallback, and nothing more.
+This answers the specification's open question, Docling versus Unstructured, **for these fixtures**: Docling. Unstructured `hi_res` recovered 77.4% of table cells against Docling's 100%. It read the two-column page at 70.6% order against Docling's 100%. It was 8–41× slower on the three PDFs with a text layer, and only on the scan was it faster (8.6 s against 11.5 s). The evidence is seven small synthetic files, so confirm the choice on real NileTech documents in M3 (see [Limits of this benchmark](#limits-of-this-benchmark)).
 
-## What was measured
+## Measured comparison
 
-**Seven fixtures.** All are synthetic and public. Each file's SHA-256 is recorded in [`../fixtures/manifest.json`](../fixtures/manifest.json), and all of them regenerate byte for byte.
+### PDFs
 
-| Fixture | Case | What makes it hard |
-| --- | --- | --- |
-| `digital-company-overview.pdf` | digital | Headings, bullets, a numbered list. Built from the PUBLIC `about.md` plus a labelled synthetic section. |
-| `two-column-newsletter.pdf` | two-column | A paragraph crosses the column break, and a full-width note sits below the columns. **The content stream is drawn out of reading order** (footer, note, right column, title, left column). |
-| `table-heavy-sales-q1-2026.pdf` | table-heavy | Four tables built from the vendored sales data: a full grid (T1), a borderless table (T2), a merged two-level header (T3), and a zebra table with horizontal rules only that splits across a page break with a repeated header (T4). Totals match the frozen Q1 figures (80,934,385.00 net, 291 orders). |
-| `scanned-delivery-note.pdf` | scanned | An image-only page at 200 dpi, rotated 0.8°, with speckle noise and blur. It holds a ruled line-item table and has no text layer. |
-| `tricky-customers.csv` | CSV | UTF-8 with a BOM, CRLF line endings, quoted commas, doubled quotes, an embedded newline, Arabic, an emoji, leading-zero codes, and formula-like text (`=1+1 Holdings`) |
-| `semicolon-cp1252.csv` | CSV | Semicolon delimiter, cp1252 encoding (the euro sign is byte 0x80), decimal commas, a quoted delimiter |
-| `multi-sheet-q1.xlsx` | workbook | Four sheets, one of them hidden. A merged title, `COUNTIF`/`SUMIF`/`SUM` formulas with cached values, typed dates, wrapped text, Arabic, and a text value `00123`. |
+Scores are 0–100; higher is better. T1–T4 are the four tables of the table-heavy fixture: full grid, borderless, merged two-level header, and rules-only split across a page break.
 
-**Metrics.** Text similarity is order-sensitive (normalized Levenshtein). Word recall and precision measure completeness. Reading order is the longest in-order run of gold paragraph anchors. Table cells counts body cells in the right row, in the right column order; a row only counts when its key cell is present. Spurious tables counts tables reported on pages that have none. Spreadsheets get exact field and cell checks, plus formulas and the hidden-sheet state. The merged title is scored twice: *merge kept* needs the expected sheet to report the merged range with the title in its top-left cell (`n/a` if the parser exposes no merge metadata), and *title text* only checks that the text is in that sheet. Runtime is the median of 5 warm runs after one cold run.
+| Parser | Digital: text / order | Two-column: text / order | Table-heavy: cells (T1 / T2 / T3 / T4), headers | Scan: text / word recall / order / table cells |
+| --- | --- | --- | --- | --- |
+| **Docling** | 99.5 / 100 | **100 / 100** | **100 (100 / 100 / 100 / 100)**, 77.8 | **97.2** / 66.2 / 91.7 / **80.0** |
+| Unstructured `hi_res` | 98.9 / 100 | 51.4 / 70.6 | 77.4 (70 / 0 / 65 / 88), 50.0 | 90.2 / 83.8 / 91.7 / 40.0 |
+| Unstructured `ocr_only` | 94.0 / 100 | 96.0 / 94.1 | no table output | 90.2 / 83.8 / 91.7 / no table output |
+| Unstructured `fast` | 95.6 / 100 | 53.2 / 76.5 | no table output | 0 (no OCR) |
+| PyMuPDF + layout model | **100 / 100** | **100 / 100** | 6.2 (10 / 50 / 15 / 0), 77.8 | 97.1 / **86.5** / 91.7 / 0.0 |
+| PyMuPDF, heuristic (laptop) | **100 / 100** | 21.9 / 47.1 | 22.6 (100 / 0 / 100 / 0), 33.3 | 0 (no OCR) |
+| pdfplumber (laptop) | 95.6 / 100 | 36.0 / 64.7 | 22.6 (100 / 0 / 100 / 0), 33.3 | 0 |
+| Text-strategy table variants (laptop) | same text as above | same | 31.6 (20 / 0 / 0 / 42), 16.7, and 1 spurious table on each prose page | 0 |
 
-**Hardware.** Intel Core i5-13420H (12 threads), 15.3 GiB RAM, no GPU, Debian 13, Python 3.13.5.
+On the table-heavy fixture, every candidate keeps 100% of the table values somewhere in its text (98.3% for `ocr_only`). The difference is whether values come back **as table cells in the right row and column**.
 
-## Results (laptop)
+### Spreadsheets
 
-| Parser | Digital: text sim. / reading order | Two-column: text sim. / reading order | Table-heavy: table cells (T1 / T2 / T3 / T4) | Scanned | Median time, digital / table-heavy |
-| --- | --- | --- | --- | --- | --- |
-| PyMuPDF (no layout) | **100.0 / 100.0** | 21.9 / 47.1 | 22.6 (100 / 0 / 100 / 0) | 0 (no text) | 21 ms / 58 ms |
-| PyMuPDF `sort=True` | 100.0 / 100.0 | 36.0 / 64.7 | 22.6 (100 / 0 / 100 / 0) | 0 | 26 ms / 67 ms |
-| pdfplumber | 95.6 / 100.0 | 36.0 / 64.7 | 22.6 (100 / 0 / 100 / 0) | 0 | 25 ms / 64 ms |
-| PyMuPDF / pdfplumber, text-strategy tables | same text as above | same | 31.6 (20 / 0 / 0 / 42), and **1 spurious table** on each prose page | 0 | 44–49 ms / 123–129 ms |
-| Docling, Unstructured fast / hi_res / ocr_only, PyMuPDF + layout | **pending (Colab)** | pending | pending | pending | pending |
-
-| Parser | `tricky-customers.csv` exact fields | `semicolon-cp1252.csv` | Workbook: cell values / formulas / hidden sheet / merge kept / title text |
+| Parser | Tricky UTF-8 CSV (exact fields) | cp1252 `;` CSV | Workbook: values / formulas / hidden sheet / merge kept / sheet names |
 | --- | --- | --- | --- |
-| Python `csv` (native) | **100.0**, all checks pass | **100.0**, all checks pass | — |
-| pandas `read_csv` (defaults) | 100.0 | **fails**: `UnicodeDecodeError` | — |
-| Unstructured `partition_csv` | 96.8 (loses the embedded newline) | **fails**: `UnicodeDecodeError` | — |
-| openpyxl | — | — | **100.0 / 100.0 / flagged / 100.0 / 100.0** |
-| pandas `read_excel` | — | — | 100.0 / n/a / unknown / n/a / 100.0 |
-| Unstructured `partition_xlsx` | — | — | pending (Colab: it loads a spaCy model) |
-| Docling (CSV, XLSX) | pending (Colab) | pending | pending |
+| **Python `csv`** | **100** | **100** | — |
+| Docling | 100 | 100 | 100 / n/a / unknown / n/a / not exposed |
+| pandas defaults | 100 | fails: `UnicodeDecodeError` | 100 / n/a / unknown / n/a / yes |
+| Unstructured | 96.8 (loses the embedded newline) | fails: `UnicodeDecodeError` | 100 / n/a / unknown / n/a / yes |
+| **openpyxl** | — | — | **100 / 100 / flagged / 100 / yes** |
 
-The routing check (spec step 1) classified all four PDFs correctly. The scan has 0 text characters and 1 full-page image, so it routes to OCR plus layout.
+### Timings
 
-## Measured limitations of the recommendation
+All times are medians of warm runs per file. The laptop has an i5-13420H (12 threads) with no GPU and ran 5 warm runs. The Colab runtime has a Tesla T4, 2 vCPUs of an Intel Xeon @ 2.00 GHz and 12.7 GiB RAM, and ran 3 warm runs. *Cold* is the first call, including model loading.
 
-1. **Reading order follows the content stream.** On the two-column page, PyMuPDF kept every word (100% recall and precision) but put the right column, the title and the left column in the order the PDF drew them (reading order 47.1). `sort=True` and pdfplumber interleave the two columns line by line instead (64.7). None of the laptop parsers reconstructs the column layout. Real PDFs from layout tools often have this problem; the generated digital fixtures here do not.
-2. **Only ruled tables are found.** The default line-based finders recovered T1 and T3 exactly, including the body under the merged header. They found nothing in the borderless T2 or the rules-only T4. Table text is still complete (100% of cell values appear in the text), so values are searchable but not structured. The text strategy is worse, not better: it turns the whole page into one grid, splits words (`N` | `IL-0011`, `Document Int` | `elligence`), and reports a table on every prose page.
-3. **Merged headers lose their structure.** For T3, the top header row comes back as `Region, Q1 2026` and the second row as `"", January, …`. Header accuracy is 33.3 over all four tables.
-4. **No OCR without models.** Every laptop parser returns nothing for the scan. Tesseract is a learned (LSTM) OCR engine, so it also belongs on Colab under the current constraint.
-5. **pdfplumber glyph mapping.** pdfplumber emits `(cid:127)` for the bullet glyph in the embedded DejaVu subset. This explains its 95.6 text similarity on the digital PDF.
-6. **PyMuPDF 2.x runs a model by default.** `find_tables()` calls an ONNX layout model unless `use_layout=False`, and `pymupdf_layout` and `onnxruntime` are hard dependencies of `pymupdf==2.1`. The laptop adapter disables the model. `tests/test_guard.py` runs every laptop adapter in a fresh interpreter and fails if `onnxruntime`, `torch`, `pymupdf.layout`, `unstructured_inference` or `docling` was imported. Ingestion code must keep the same setting.
-7. **CSV and spreadsheet semantics need the native path.** Default pandas and Unstructured cannot decode cp1252. Unstructured also flattens the embedded newline. Only openpyxl exposes formulas, merged ranges and the hidden-sheet flag. pandas returns the hidden sheet's data but exposes no visibility, so its output cannot show that the sheet was hidden. Hidden sheets can hold data that should not be indexed silently.
-8. **Unstructured `partition_xlsx` runs a learned model.** It downloads spaCy's `en_core_web_sm` at run time and loads it (it imports spaCy even with `find_subtable=False`). It is therefore a Colab-only candidate under the current constraint.
+| Parser | Digital (1 page) | Two-column (1 page) | Table-heavy (2 pages) | Scan (1 page) | Cold, first file |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Docling | 0.16 s | 0.20 s | 2.35 s | 11.48 s | 15.18 s |
+| Unstructured `hi_res` | 6.60 s | 7.07 s | 18.14 s | 8.65 s | 22.72 s |
+| Unstructured `ocr_only` | 5.18 s | 6.40 s | 12.47 s | 5.63 s | 5.41 s |
+| Unstructured `fast` | 0.05 s | 0.05 s | 0.49 s | 0.00 s | 1.05 s |
+| PyMuPDF + layout model | 0.50 s | 0.62 s | 2.86 s | 6.39 s | 0.94 s |
+| PyMuPDF heuristic (laptop) | 0.02 s | 0.03 s | 0.06 s | 0.00 s | 0.07 s |
 
-## Rescoring after review (PR #4)
+Docling's 11.5 s on the scan is OCR on the CPU. Its log shows RapidOCR falling back with "CUDAExecutionProvider is not in available providers", so the GPU was not used for OCR. CSV and XLSX parsing took under 0.2 s for every candidate.
 
-Review found two faults in the workbook scorer. It credited the merged title whenever the title text appeared in any sheet, even as plain text, and it reported the hidden sheet as `unflagged` or `skipped` when the output could not show its visibility. The corrected scorer was applied to the saved parser outputs of run `20261120T211830Z-b9dfec` with `python -m bench.rescore`; no parser was rerun and timings are unchanged. Every change is also recorded under `rescored` in the results file.
+## Measured limitations
 
-| Parser | Metric | Before | After |
+**Docling (the recommendation)**
+
+1. **OCR drops spaces between words.** On the scan, RapidOCR returned `Deliverynoteno.DN-001809`, `within7days` and `Platform2`. Character similarity stays high (97.2), but word recall is 66.2, and one table cell is wrong (`Workflow Automation Platform2`), which is why table cells score 80. Search and citations over OCR text will need whitespace-tolerant matching, or a different OCR engine, which is not measured here.
+2. **OCR ran on the CPU** (see Timings). A GPU-enabled ONNX runtime might cut the 11.5 s per scanned page; this is not measured.
+3. **Text is normalized.** Em dashes become hyphens (digital word recall 96.9).
+4. **Table titles are not headings.** "Table 1. …" and the other titles are not labelled as section headers (table-heavy heading recall 20; on the scan, 0).
+5. **Merged headers are flattened.** For T3, the spanning header `Q1 2026` is repeated over each month column (headers 77.8).
+6. **Workbooks lose their sheet structure.** Docling returns one grid per detected table with no sheet name (6 grids for 4 sheets), and no formulas, merges or visibility. Its values are complete only once grids are matched by content.
+7. **Cold start is 15 s** for the first file while the models load. Docling runs where the other models run, so ingestion of complex PDFs depends on the Colab runtime being up.
+
+**Other candidates**
+
+8. **Unstructured `hi_res`:** found no cells in the borderless T2. It read the two-column page out of order (70.6) and took 18 s for the two-page table file.
+9. **Unstructured `ocr_only`:** reads columns well (94.1) but returns no tables and OCRs even pages that have a text layer (5–12 s each).
+10. **PyMuPDF + layout model:** perfect reading order, but table cells score 6.2 and it found no table on the scan.
+11. **Heuristic PyMuPDF and pdfplumber (laptop):** follow the PDF content stream (two-column order 47.1–64.7), find ruled tables only, and do no OCR. PyMuPDF 2.1 runs an ONNX layout model inside `find_tables()` unless `use_layout=False`. pdfplumber emits `(cid:127)` for the bullet glyph.
+12. **Spreadsheets:** only openpyxl exposes formulas, merges and the hidden-sheet flag. Every other workbook parser returns the hidden sheet's data without marking it hidden. Default pandas and Unstructured cannot decode cp1252.
+
+## Run selection and provenance
+
+The comparison uses an **explicit, reviewed selection** in [`../results/selection.json`](../results/selection.json). `bench.report` reads it and maps each adapter to exactly one named run. Selecting the same adapter from two runs is an error, and nothing is chosen because it succeeded. Every result left out appears under *Excluded results* in the tables.
+
+| Run | Adapters used | Pairs | Why |
 | --- | --- | --- | --- |
-| pandas `read_excel` | merged title | yes (100.0) | n/a: no merge metadata |
-| pandas `read_excel` | hidden sheet | unflagged | unknown: visibility not exposed |
-| pandas `read_excel` | title text (new) | — | 100.0 |
-| openpyxl | title text (new) | — | 100.0 |
+| `20261120T211830Z-b9dfec` (laptop) | the 10 laptop adapters | 28 (26 ok, 2 genuine parser failures) | Committed laptop run |
+| `20261120T220551Z-200026` (Colab) | `docling`, `pymupdf_layout` | 11 ok | The notebook's Docling-environment run |
+| `20261120T220043Z-890d9e` (Colab) | `unstructured_hi_res`, `unstructured_ocr_only` | 8 ok | A separate invocation in the same session (22:00:43–22:05:49 UTC), which the owner describes as the successful hi_res/ocr_only retry. The notebook's stage logs do not record it, and its environment variables were not saved. |
+| `20261120T220748Z-49b6cc` (Colab) | `unstructured_fast`, `unstructured_xlsx` | 5 ok | The notebook's Unstructured-environment run. Its 8 hi_res/ocr_only pairs failed and are **excluded** (below). |
 
-openpyxl keeps full merge credit: it reports `A1:D1` on `Summary` with the title in `A1`. No PDF or CSV score changed, and **the recommendation is unchanged**. The correction makes the case for openpyxl over pandas more explicit, because pandas cannot show merges or hidden sheets at all.
+**Evidence kept:**
+- the original ZIP, `results/colab-zips/eaios-m1-parsers-20261120T220024Z-907146.zip`, SHA-256 `591fef11…e8685`, unchanged;
+- all 44 files, extracted byte-identical into `results/`: the three run files with every parser output, plus the batch folder with `status.json`, `summary.md`, install and run logs, both environment freezes, and the notebook's own results tables;
+- the notebook's batch summary, which still reads "16 succeeded, 8 failed". The selection does not rewrite that evidence.
 
-## Run-integrity note
+**The later Matplotlib failures.** In run `20261120T220748Z-49b6cc`, all 8 `unstructured_hi_res` and `unstructured_ocr_only` pairs failed with:
 
-The first trial runs on the laptop (results discarded, never committed) included Unstructured `partition_xlsx` as a laptop adapter. At that point the guard list did not include spaCy, and the call downloaded `en_core_web_sm` from GitHub and loaded it on the laptop once per run. The fix has three parts: spaCy, thinc, `en_core_web_sm`, NLTK and transformers are now in the guard list; the adapter moved to Colab; and the downloaded model was uninstalled from the benchmark venv. The committed run was made afterwards, and it records `model_modules_loaded: []` for every laptop result. No other laptop adapter imports any listed module (`tests/test_guard.py`).
+`ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend`
+
+Colab's kernel exports `MPLBACKEND=module://matplotlib_inline.backend_inline`. The benchmark subprocess inherited it, and the venv's Matplotlib 3.11.2, imported by the Unstructured inference path, rejected it. The notebook now passes `MPLBACKEND=Agg` to every benchmark subprocess (`BENCH_ENV` in cell 1, also used for report generation). `tests/test_colab_status.py` checks this by running cell 1's code under the inline value and confirming that a subprocess sees `Agg`.
+
+**Scores recomputed from saved outputs.** Every committed run was re-scored from its saved parser outputs with the current scorer. Two corrections changed stored scores; both are recorded under `rescored` in the affected file:
+
+* **XLSX merge and visibility scoring (commit `98d57b6`), laptop run:**
+  * pandas: merged title yes → n/a, hidden sheet unflagged → unknown;
+  * title text added for pandas and openpyxl.
+* **Unnamed workbook sheets (this change), Docling run `20261120T220551Z-200026`:**
+  * The scorer used to pair unnamed output grids with gold sheets by position. Docling returns one grid per detected table (6 grids for 4 sheets), so every grid after the first was compared with the wrong sheet: cell values 14.1.
+  * Unnamed grids are now pooled and matched by content, and sheet identification is reported as n/a. Docling's cell values became 100.0.
+  * No other run changed (`python -m bench.rescore <run> --check` reports 0 differences for all four).
+
+**Earlier integrity note.** The first laptop trial runs (discarded, never committed) loaded spaCy's `en_core_web_sm` through Unstructured `partition_xlsx`. That adapter moved to Colab, and the laptop guard now covers spaCy, thinc, NLTK and transformers. Every committed laptop result records `model_modules_loaded: []`.
 
 ## Limits of this benchmark
 
-- Seven small synthetic files, all generated with reportlab, Pillow and XlsxWriter. Only the two-column fixture has an adversarial content stream. There are no Arabic PDFs, no real scans, no forms, and no DOCX (DOCX upload is in FR scope but not in the roadmap's benchmark list).
-- The gold references come from the same data structures that draw the pages. The implementation agent checked them by eye against page images rendered with `pdftoppm` (the procedure is in [`../fixtures/README.md`](../fixtures/README.md)). No team member has checked them yet: **a human check is still outstanding**.
-- Reading-order anchors are paragraph-level, so line-level disorder inside a paragraph shows only in text similarity.
-- Timings come from one laptop with a warm file cache. They compare parsers; they do not predict throughput.
-- The Colab notebook is generated and checked in CI, but it **has not been executed**. Its pins (`colab-*-pins.txt`) are top-level only, so dependency resolution on Colab is unverified. The notebook saves the full freeze with its results.
-- Amazon Textract and Azure AI Document Intelligence were not run. The specification allows them only where cloud processing is permitted, and no such permission or account exists.
+- **Small, synthetic fixture set.** Seven files built with reportlab, Pillow and XlsxWriter, including one simulated scan. There are no Arabic PDFs, no real scans, no forms and no DOCX. The ranking of Docling over Unstructured holds for these fixtures and should be confirmed on real NileTech documents during M3.
+- **Gold checked by the agent only.** The implementation agent checked the gold references against rendered pages. **A team member still needs to check them** (see `fixtures/README.md`).
+- **Colab runs come from separate invocations.** They share one session, hardware and package set, but the hi_res/ocr_only run was invoked outside the notebook's stage logging, and its environment was not recorded.
+- **Different hardware.** Colab timings come from one T4 session with 2 vCPUs and 3 warm runs; laptop timings come from a different machine. Compare candidates within a location, not across locations.
+- **Not run.** Amazon Textract and Azure AI Document Intelligence: cloud processing is not permitted.
 
-## Next step
+## Next steps (M3, not part of this PR)
 
-Run [`../m1_parser_benchmark.ipynb`](../m1_parser_benchmark.ipynb) on Colab and commit its results. Then run `python -m bench.report` and revisit two rows of the recommendation: scanned PDFs, and the layout-dependent production parser (Docling versus Unstructured `hi_res`).
+- Ingest complex PDFs through Docling behind the model gateway, with PyMuPDF heuristic mode as the documented fallback and "needs OCR" status for scans when Docling is unavailable.
+- Rerun this benchmark on a sample of real NileTech PDFs, and test a GPU ONNX runtime or another OCR engine for the word-spacing problem.

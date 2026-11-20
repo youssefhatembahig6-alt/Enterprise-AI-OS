@@ -1,0 +1,411 @@
+{
+ "run_id": "20261120T220551Z-200026",
+ "batch": "20261120T220024Z-907146",
+ "finished_at": "2026-11-20T22:07:46+00:00",
+ "complete": true,
+ "environment": {
+  "where": "colab",
+  "platform": "Linux-6.6.159+-x86_64-with-glibc2.39",
+  "python": "3.12.3",
+  "machine": "x86_64",
+  "cpu_count": 2,
+  "cpu": "Intel(R) Xeon(R) CPU @ 2.00GHz",
+  "ram_gib": 12.7,
+  "gpu": "Tesla T4, 15360 MiB, 580.82.07"
+ },
+ "packages": {
+  "docling": "2.151.1",
+  "docling-core": "2.108.0",
+  "pymupdf": "2.1",
+  "pymupdf-layout": "2.1",
+  "pymupdf4llm": "2.1",
+  "rapidfuzz": "3.14.6"
+ },
+ "fixture_manifest_sha256": "7c740314d9907f92f95f1e6d4a99773bbf776ace431960e532a5ef984ade8e65",
+ "fixture_generator": "m1-parser-fixtures-v1",
+ "adapters": {
+  "docling": {
+   "label": "Docling (default pipeline)",
+   "config": "DocumentConverter() defaults; export_to_markdown; tables via export_to_dataframe",
+   "uses_models": "layout model, TableFormer, OCR engine (PDF); none for CSV/XLSX",
+   "where": "colab",
+   "notes": ""
+  },
+  "pymupdf_layout": {
+   "label": "PyMuPDF + layout model",
+   "config": "pymupdf4llm.to_markdown with pymupdf.layout active; find_tables(use_layout=True)",
+   "uses_models": "PyMuPDF ONNX layout model",
+   "where": "colab",
+   "notes": "Not named in the spec; included because PyMuPDF >= 2.0 enables it by default."
+  }
+ },
+ "routing": null,
+ "results": [
+  {
+   "adapter": "docling",
+   "fixture": "digital-company-overview",
+   "case": "digital_pdf",
+   "runs": 3,
+   "cold_s": 15.1797,
+   "warm_s": [
+    0.1606,
+    0.1604,
+    0.1534
+   ],
+   "median_s": 0.1604,
+   "metrics": {
+    "chars_extracted": 1296,
+    "chars_gold": 1296,
+    "text_similarity": 0.9954,
+    "word_recall": 0.9689,
+    "word_precision": 0.9689,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "spurious_tables": 0,
+    "heading_recall": 1.0
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "docling",
+   "fixture": "two-column-newsletter",
+   "case": "two_column_pdf",
+   "runs": 3,
+   "cold_s": 0.1486,
+   "warm_s": [
+    0.14,
+    0.2094,
+    0.2007
+   ],
+   "median_s": 0.2007,
+   "metrics": {
+    "chars_extracted": 1923,
+    "chars_gold": 1923,
+    "text_similarity": 0.9995,
+    "word_recall": 0.9965,
+    "word_precision": 0.9965,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "spurious_tables": 0,
+    "heading_recall": 1.0
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "docling",
+   "fixture": "table-heavy-sales-q1-2026",
+   "case": "table_heavy_pdf",
+   "runs": 3,
+   "cold_s": 3.5813,
+   "warm_s": [
+    2.3466,
+    2.3758,
+    2.3095
+   ],
+   "median_s": 2.3466,
+   "metrics": {
+    "chars_extracted": 2802,
+    "chars_gold": 2731,
+    "text_similarity": 0.9747,
+    "word_recall": 1.0,
+    "word_precision": 0.952,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "table_cells": 1.0,
+    "table_headers": 0.7778,
+    "table_cells_by_table": {
+     "T1": 1.0,
+     "T2": 1.0,
+     "T3": 1.0,
+     "T4": 1.0
+    },
+    "tables_returned": 5,
+    "tables_gold": 4,
+    "table_values_in_text": 1.0,
+    "heading_recall": 0.2
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "docling",
+   "fixture": "scanned-delivery-note",
+   "case": "scanned_pdf",
+   "runs": 3,
+   "cold_s": 13.2513,
+   "warm_s": [
+    11.6378,
+    11.4768,
+    11.3689
+   ],
+   "median_s": 11.4768,
+   "metrics": {
+    "chars_extracted": 496,
+    "chars_gold": 510,
+    "text_similarity": 0.9725,
+    "word_recall": 0.6622,
+    "word_precision": 0.8167,
+    "anchors_found": 0.9167,
+    "reading_order": 0.9167,
+    "table_cells": 0.8,
+    "table_headers": 1.0,
+    "table_cells_by_table": {
+     "S1": 0.8
+    },
+    "tables_returned": 1,
+    "tables_gold": 1,
+    "table_values_in_text": 0.8,
+    "heading_recall": 0.0
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "docling",
+   "fixture": "tricky-customers-csv",
+   "case": "csv",
+   "runs": 3,
+   "cold_s": 0.005,
+   "warm_s": [
+    0.0029,
+    0.0025,
+    0.0026
+   ],
+   "median_s": 0.0026,
+   "metrics": {
+    "field_exact": 1.0,
+    "field_normalized": 1.0,
+    "rows_match": 1.0,
+    "rows_extracted": 9,
+    "rows_gold": 9,
+    "checks": {
+     "non_ascii_exact": 1.0,
+     "leading_zeros": 1.0,
+     "embedded_newline": 1.0,
+     "doubled_quotes": 1.0,
+     "formula_text_kept": 1.0
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "docling",
+   "fixture": "semicolon-cp1252-csv",
+   "case": "csv",
+   "runs": 3,
+   "cold_s": 0.003,
+   "warm_s": [
+    0.0025,
+    0.0023,
+    0.0022
+   ],
+   "median_s": 0.0023,
+   "metrics": {
+    "field_exact": 1.0,
+    "field_normalized": 1.0,
+    "rows_match": 1.0,
+    "rows_extracted": 7,
+    "rows_gold": 7,
+    "checks": {
+     "non_ascii_exact": 1.0,
+     "quoted_delimiter": 1.0,
+     "decimal_comma_text": 1.0
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "docling",
+   "fixture": "multi-sheet-workbook",
+   "case": "xlsx",
+   "runs": 3,
+   "cold_s": 0.0955,
+   "warm_s": [
+    0.0897,
+    0.085,
+    0.0863
+   ],
+   "median_s": 0.0863,
+   "metrics": {
+    "cell_values": 1.0,
+    "sheets_found": null,
+    "per_sheet": {
+     "Summary": 1.0,
+     "Orders Q1": 1.0,
+     "Notes": 1.0,
+     "Lookup": 1.0
+    },
+    "hidden_sheet": "unknown",
+    "formulas": null,
+    "merged_title": null,
+    "title_text": 1.0
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "pymupdf_layout",
+   "fixture": "digital-company-overview",
+   "case": "digital_pdf",
+   "runs": 3,
+   "cold_s": 0.938,
+   "warm_s": [
+    0.5011,
+    0.5092,
+    0.5017
+   ],
+   "median_s": 0.5017,
+   "metrics": {
+    "chars_extracted": 1296,
+    "chars_gold": 1296,
+    "text_similarity": 1.0,
+    "word_recall": 1.0,
+    "word_precision": 1.0,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "spurious_tables": 0,
+    "heading_recall": null
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "pymupdf_layout",
+   "fixture": "two-column-newsletter",
+   "case": "two_column_pdf",
+   "runs": 3,
+   "cold_s": 0.6039,
+   "warm_s": [
+    0.6215,
+    0.6158,
+    0.6232
+   ],
+   "median_s": 0.6215,
+   "metrics": {
+    "chars_extracted": 1923,
+    "chars_gold": 1923,
+    "text_similarity": 1.0,
+    "word_recall": 1.0,
+    "word_precision": 1.0,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "spurious_tables": 0,
+    "heading_recall": null
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "pymupdf_layout",
+   "fixture": "table-heavy-sales-q1-2026",
+   "case": "table_heavy_pdf",
+   "runs": 3,
+   "cold_s": 2.316,
+   "warm_s": [
+    2.9269,
+    2.8573,
+    2.3068
+   ],
+   "median_s": 2.8573,
+   "metrics": {
+    "chars_extracted": 2774,
+    "chars_gold": 2731,
+    "text_similarity": 0.9834,
+    "word_recall": 0.9941,
+    "word_precision": 0.9738,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "table_cells": 0.0621,
+    "table_headers": 0.7778,
+    "table_cells_by_table": {
+     "T1": 0.1,
+     "T2": 0.5,
+     "T3": 0.15,
+     "T4": 0.0
+    },
+    "tables_returned": 5,
+    "tables_gold": 4,
+    "table_values_in_text": 1.0,
+    "heading_recall": null
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "pymupdf_layout",
+   "fixture": "scanned-delivery-note",
+   "case": "scanned_pdf",
+   "runs": 3,
+   "cold_s": 6.2721,
+   "warm_s": [
+    6.3865,
+    5.5218,
+    6.4366
+   ],
+   "median_s": 6.3865,
+   "metrics": {
+    "chars_extracted": 517,
+    "chars_gold": 510,
+    "text_similarity": 0.971,
+    "word_recall": 0.8649,
+    "word_precision": 0.9143,
+    "anchors_found": 0.9167,
+    "reading_order": 0.9167,
+    "table_cells": 0.0,
+    "table_headers": 0.0,
+    "table_cells_by_table": {
+     "S1": 0.0
+    },
+    "tables_returned": 0,
+    "tables_gold": 1,
+    "table_values_in_text": 1.0,
+    "heading_recall": null
+   },
+   "status": "ok"
+  }
+ ],
+ "rescored": [
+  {
+   "at": "2026-11-20T22:13:55+00:00",
+   "note": "Scorer fix found while reviewing the Colab results: unnamed output sheets were paired with gold sheets by position, but Docling returns one grid per detected table (6 grids for 4 sheets), so later sheets were misaligned. Unnamed grids are now pooled and matched by content; sheets_found is None for unnamed output.",
+   "changes": [
+    {
+     "adapter": "docling",
+     "fixture": "multi-sheet-workbook",
+     "metric": "cell_values",
+     "old": 0.141,
+     "new": 1.0
+    },
+    {
+     "adapter": "docling",
+     "fixture": "multi-sheet-workbook",
+     "metric": "per_sheet.Lookup",
+     "old": 0.0,
+     "new": 1.0
+    },
+    {
+     "adapter": "docling",
+     "fixture": "multi-sheet-workbook",
+     "metric": "per_sheet.Notes",
+     "old": 0.0,
+     "new": 1.0
+    },
+    {
+     "adapter": "docling",
+     "fixture": "multi-sheet-workbook",
+     "metric": "per_sheet.Orders Q1",
+     "old": 0.1424,
+     "new": 1.0
+    },
+    {
+     "adapter": "docling",
+     "fixture": "multi-sheet-workbook",
+     "metric": "per_sheet.Summary",
+     "old": 0.0476,
+     "new": 1.0
+    },
+    {
+     "adapter": "docling",
+     "fixture": "multi-sheet-workbook",
+     "metric": "sheets_found",
+     "old": 1.0,
+     "new": null
+    }
+   ]
+  }
+ ]
+}

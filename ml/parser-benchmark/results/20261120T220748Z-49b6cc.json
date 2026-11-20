@@ -1,0 +1,296 @@
+{
+ "run_id": "20261120T220748Z-49b6cc",
+ "batch": "20261120T220024Z-907146",
+ "finished_at": "2026-11-20T22:08:03+00:00",
+ "complete": true,
+ "environment": {
+  "where": "colab",
+  "platform": "Linux-6.6.159+-x86_64-with-glibc2.39",
+  "python": "3.12.3",
+  "machine": "x86_64",
+  "cpu_count": 2,
+  "cpu": "Intel(R) Xeon(R) CPU @ 2.00GHz",
+  "ram_gib": 12.7,
+  "gpu": "Tesla T4, 15360 MiB, 580.82.07"
+ },
+ "packages": {
+  "rapidfuzz": "3.14.6",
+  "unstructured": "0.27.37",
+  "unstructured-inference": "1.6.17"
+ },
+ "fixture_manifest_sha256": "7c740314d9907f92f95f1e6d4a99773bbf776ace431960e532a5ef984ade8e65",
+ "fixture_generator": "m1-parser-fixtures-v1",
+ "adapters": {
+  "unstructured_xlsx": {
+   "label": "Unstructured partition_xlsx",
+   "config": "partition_xlsx(include_header=False); rows from text_as_html, grouped by page_name",
+   "uses_models": "spaCy en_core_web_sm (partition_xlsx downloads and loads it at run time)",
+   "where": "colab",
+   "notes": "Moved off the laptop after a trial run showed it loading the spaCy model."
+  },
+  "unstructured_fast": {
+   "label": "Unstructured fast",
+   "config": "partition_pdf(strategy='fast')",
+   "uses_models": "none at run time; the package import requires unstructured-inference (CUDA torch stack)",
+   "where": "colab",
+   "notes": ""
+  },
+  "unstructured_hi_res": {
+   "label": "Unstructured hi_res",
+   "config": "partition_pdf(strategy='hi_res', infer_table_structure=True)",
+   "uses_models": "layout detection model, table-structure model, Tesseract OCR",
+   "where": "colab",
+   "notes": ""
+  },
+  "unstructured_ocr_only": {
+   "label": "Unstructured ocr_only",
+   "config": "partition_pdf(strategy='ocr_only')",
+   "uses_models": "Tesseract OCR",
+   "where": "colab",
+   "notes": ""
+  }
+ },
+ "routing": null,
+ "results": [
+  {
+   "adapter": "unstructured_xlsx",
+   "fixture": "multi-sheet-workbook",
+   "case": "xlsx",
+   "runs": 3,
+   "cold_s": 4.9507,
+   "warm_s": [
+    0.1726,
+    0.1671,
+    0.1692
+   ],
+   "median_s": 0.1692,
+   "metrics": {
+    "cell_values": 1.0,
+    "sheets_found": 1.0,
+    "per_sheet": {
+     "Summary": 1.0,
+     "Orders Q1": 1.0,
+     "Notes": 1.0,
+     "Lookup": 1.0
+    },
+    "hidden_sheet": "unknown",
+    "formulas": null,
+    "merged_title": null,
+    "title_text": 1.0
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "unstructured_fast",
+   "fixture": "digital-company-overview",
+   "case": "digital_pdf",
+   "runs": 3,
+   "cold_s": 1.0481,
+   "warm_s": [
+    0.0462,
+    0.0598,
+    0.0445
+   ],
+   "median_s": 0.0462,
+   "metrics": {
+    "chars_extracted": 1356,
+    "chars_gold": 1296,
+    "text_similarity": 0.9558,
+    "word_recall": 1.0,
+    "word_precision": 0.9698,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "spurious_tables": null,
+    "heading_recall": 0.75
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "unstructured_fast",
+   "fixture": "two-column-newsletter",
+   "case": "two_column_pdf",
+   "runs": 3,
+   "cold_s": 0.1015,
+   "warm_s": [
+    0.0543,
+    0.0529,
+    0.0477
+   ],
+   "median_s": 0.0529,
+   "metrics": {
+    "chars_extracted": 1923,
+    "chars_gold": 1923,
+    "text_similarity": 0.532,
+    "word_recall": 1.0,
+    "word_precision": 1.0,
+    "anchors_found": 1.0,
+    "reading_order": 0.7647,
+    "spurious_tables": null,
+    "heading_recall": 0.3333
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "unstructured_fast",
+   "fixture": "table-heavy-sales-q1-2026",
+   "case": "table_heavy_pdf",
+   "runs": 3,
+   "cold_s": 0.5119,
+   "warm_s": [
+    0.4879,
+    0.4903,
+    0.4927
+   ],
+   "median_s": 0.4903,
+   "metrics": {
+    "chars_extracted": 2770,
+    "chars_gold": 2731,
+    "text_similarity": 0.7787,
+    "word_recall": 1.0,
+    "word_precision": 0.9797,
+    "anchors_found": 0.9333,
+    "reading_order": 0.9333,
+    "table_cells": null,
+    "table_headers": null,
+    "tables_returned": null,
+    "tables_gold": 4,
+    "table_values_in_text": 1.0,
+    "heading_recall": 0.6
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "unstructured_fast",
+   "fixture": "scanned-delivery-note",
+   "case": "scanned_pdf",
+   "runs": 3,
+   "cold_s": 0.0031,
+   "warm_s": [
+    0.0027,
+    0.0025,
+    0.0025
+   ],
+   "median_s": 0.0025,
+   "metrics": {
+    "chars_extracted": 0,
+    "chars_gold": 510,
+    "text_similarity": 0.0,
+    "word_recall": 0.0,
+    "word_precision": 0.0,
+    "anchors_found": 0.0,
+    "reading_order": 0.0,
+    "table_cells": null,
+    "table_headers": null,
+    "tables_returned": null,
+    "tables_gold": 1,
+    "table_values_in_text": 0.0,
+    "heading_recall": 0.0
+   },
+   "status": "ok"
+  },
+  {
+   "adapter": "unstructured_hi_res",
+   "fixture": "digital-company-overview",
+   "case": "digital_pdf",
+   "runs": 3,
+   "status": "failed",
+   "error": "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']",
+   "traceback_tail": [
+    "  File \"/content/venv-unstructured/lib/python3.12/site-packages/matplotlib/__init__.py\", line 784, in __setitem__",
+    "    raise ValueError(f\"Key {key}: {ve}\") from None",
+    "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']"
+   ]
+  },
+  {
+   "adapter": "unstructured_hi_res",
+   "fixture": "two-column-newsletter",
+   "case": "two_column_pdf",
+   "runs": 3,
+   "status": "failed",
+   "error": "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']",
+   "traceback_tail": [
+    "  File \"/content/venv-unstructured/lib/python3.12/site-packages/matplotlib/__init__.py\", line 784, in __setitem__",
+    "    raise ValueError(f\"Key {key}: {ve}\") from None",
+    "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']"
+   ]
+  },
+  {
+   "adapter": "unstructured_hi_res",
+   "fixture": "table-heavy-sales-q1-2026",
+   "case": "table_heavy_pdf",
+   "runs": 3,
+   "status": "failed",
+   "error": "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']",
+   "traceback_tail": [
+    "  File \"/content/venv-unstructured/lib/python3.12/site-packages/matplotlib/__init__.py\", line 784, in __setitem__",
+    "    raise ValueError(f\"Key {key}: {ve}\") from None",
+    "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']"
+   ]
+  },
+  {
+   "adapter": "unstructured_hi_res",
+   "fixture": "scanned-delivery-note",
+   "case": "scanned_pdf",
+   "runs": 3,
+   "status": "failed",
+   "error": "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']",
+   "traceback_tail": [
+    "  File \"/content/venv-unstructured/lib/python3.12/site-packages/matplotlib/__init__.py\", line 784, in __setitem__",
+    "    raise ValueError(f\"Key {key}: {ve}\") from None",
+    "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']"
+   ]
+  },
+  {
+   "adapter": "unstructured_ocr_only",
+   "fixture": "digital-company-overview",
+   "case": "digital_pdf",
+   "runs": 3,
+   "status": "failed",
+   "error": "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']",
+   "traceback_tail": [
+    "  File \"/content/venv-unstructured/lib/python3.12/site-packages/matplotlib/__init__.py\", line 784, in __setitem__",
+    "    raise ValueError(f\"Key {key}: {ve}\") from None",
+    "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']"
+   ]
+  },
+  {
+   "adapter": "unstructured_ocr_only",
+   "fixture": "two-column-newsletter",
+   "case": "two_column_pdf",
+   "runs": 3,
+   "status": "failed",
+   "error": "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']",
+   "traceback_tail": [
+    "  File \"/content/venv-unstructured/lib/python3.12/site-packages/matplotlib/__init__.py\", line 784, in __setitem__",
+    "    raise ValueError(f\"Key {key}: {ve}\") from None",
+    "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']"
+   ]
+  },
+  {
+   "adapter": "unstructured_ocr_only",
+   "fixture": "table-heavy-sales-q1-2026",
+   "case": "table_heavy_pdf",
+   "runs": 3,
+   "status": "failed",
+   "error": "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']",
+   "traceback_tail": [
+    "  File \"/content/venv-unstructured/lib/python3.12/site-packages/matplotlib/__init__.py\", line 784, in __setitem__",
+    "    raise ValueError(f\"Key {key}: {ve}\") from None",
+    "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']"
+   ]
+  },
+  {
+   "adapter": "unstructured_ocr_only",
+   "fixture": "scanned-delivery-note",
+   "case": "scanned_pdf",
+   "runs": 3,
+   "status": "failed",
+   "error": "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']",
+   "traceback_tail": [
+    "  File \"/content/venv-unstructured/lib/python3.12/site-packages/matplotlib/__init__.py\", line 784, in __setitem__",
+    "    raise ValueError(f\"Key {key}: {ve}\") from None",
+    "ValueError: Key backend: 'module://matplotlib_inline.backend_inline' is not a valid value for backend; supported values are ['gtk3agg', 'gtk3cairo', 'gtk4agg', 'gtk4cairo', 'macosx', 'nbagg', 'notebook', 'qtagg', 'qtcairo', 'qt5agg', 'qt5cairo', 'tkagg', 'tkcairo', 'webagg', 'wx', 'wxagg', 'wxcairo', 'agg', 'cairo', 'pdf', 'pgf', 'ps', 'svg', 'template']"
+   ]
+  }
+ ]
+}

@@ -192,6 +192,7 @@ def run_report(
     batch: str,
     results_dir: Path | str | None = None,
     python: str = sys.executable,
+    env: dict[str, str] | None = None,
 ) -> Path | None:
     """Build the tables for this batch into ``results/<batch>/results-tables.md``.
 
@@ -206,7 +207,7 @@ def run_report(
     results_dir = Path(results_dir) if results_dir is not None else bench_dir / "results"
     cmd = [python, "-m", "bench.report", "--results-dir", str(results_dir), "--colab-batch", batch, "--out", str(out)]
     try:
-        p = subprocess.run(cmd, cwd=bench_dir, capture_output=True, text=True, timeout=600)
+        p = subprocess.run(cmd, cwd=bench_dir, capture_output=True, text=True, timeout=600, env=env)
         rc, text = p.returncode, (p.stdout + p.stderr)
     except (OSError, subprocess.SubprocessError) as exc:
         rc, text = None, f"{type(exc).__name__}: {exc}"

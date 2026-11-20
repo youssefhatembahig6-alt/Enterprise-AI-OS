@@ -1,0 +1,32 @@
+{
+ "text": "NileTech Solutions\n\nDELIVERY NOTE\n\nDelivery note no. DN-001809\n\nOrder: SO-001809 Order date: 2026-01-01\n\nCustomer: Brown and Sons (NT-009)\n\n[omen = [i syne NIL-O009 Workflow Automation Platform 2 9 | 47,089.00 423,801.00 NIL-0O010 Workflow Automation Platform 2 10,558.00 126,696.00\n\nSubtotal: USD 550,497.00\n\nTax 14%: USD 77,069.58\n\nTotal: USD 627,566.58\n\nGoods remain the property of NileTech Solutions until paid in full. Report any damage or shortage within 7 days of delivery.\n\nSynthetic benchmark fixture — simulated scan of a printed page.",
+ "tables": [
+  [
+   [
+    "Ce",
+    "Cee",
+    "Unit price",
+    "(USD)",
+    "Line total (USD)"
+   ],
+   [
+    "NIL-O009",
+    "Workflow Automation Platform 2",
+    "47,089.00",
+    "",
+    "423,801.00"
+   ],
+   [
+    "NIL-0010",
+    "Workflow Automation Platform 2",
+    "10,558.00",
+    "",
+    "126,696.00"
+   ]
+  ]
+ ],
+ "headings": [
+  "NileTech Solutions",
+  "DELIVERY NOTE"
+ ]
+}
