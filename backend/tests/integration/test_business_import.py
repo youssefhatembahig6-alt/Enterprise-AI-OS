@@ -162,7 +162,7 @@ def test_reimport_detects_drifted_rows_and_changes_nothing(
 ) -> None:
     """A changed row is a mismatch with the source; the importer must not paper over it."""
 
-    with pytest.raises(ImportMismatch, match="do not reproduce the source"):
+    with pytest.raises(ImportMismatch, match="do not reproduce the previously imported source"):
         import_sales_dataset(test_db.owner_engine, source, dataset, environment="test")
     value = owner_exec(
         test_db,
@@ -170,6 +170,90 @@ def test_reimport_detects_drifted_rows_and_changes_nothing(
         {"t": niletech(test_db), "o": drifted_order},
     ).scalar_one()
     assert value == Decimal("20641.00")
+
+
+@pytest.fixture
+def deleted_invoice(imported: ImportResult, test_db: DbHarness) -> Iterator[dict[str, Any]]:
+    """Delete one invoice after the first import; put the exact row back afterwards."""
+
+    tenant = niletech(test_db)
+    row = (
+        owner_exec(
+            test_db,
+            "SELECT * FROM sales_invoices WHERE tenant_id = :t AND invoice_number = 'INV-001818'",
+            {"t": tenant},
+        )
+        .mappings()
+        .one()
+    )
+    saved = dict(row)
+    owner_exec(
+        test_db, "DELETE FROM sales_invoices WHERE tenant_id = :tenant_id AND id = :id", saved
+    )
+    yield saved
+    owner_exec(
+        test_db,
+        "INSERT INTO sales_invoices (tenant_id, id, order_id, invoice_number, issue_date,"
+        " due_date, amount, currency, status) VALUES (:tenant_id, :id, :order_id,"
+        " :invoice_number, :issue_date, :due_date, :amount, :currency, :status)",
+        saved,
+    )
+
+
+def test_reimport_after_deleted_invoice_fails_and_does_not_restore_it(
+    deleted_invoice: dict[str, Any],
+    test_db: DbHarness,
+    source: VerifiedSource,
+    dataset: SalesDataset,
+) -> None:
+    with pytest.raises(ImportMismatch, match=r"'invoices': 2399"):
+        import_sales_dataset(test_db.owner_engine, source, dataset, environment="test")
+    still_missing = owner_exec(
+        test_db,
+        "SELECT count(*) FROM sales_invoices WHERE tenant_id = :t AND id = :id",
+        {"t": deleted_invoice["tenant_id"], "id": deleted_invoice["id"]},
+    ).scalar_one()
+    total = owner_exec(
+        test_db,
+        "SELECT count(*) FROM sales_invoices WHERE tenant_id = :t",
+        {"t": deleted_invoice["tenant_id"]},
+    ).scalar_one()
+    assert (still_missing, total) == (0, 2399)
+
+
+def test_clean_rerun_still_succeeds_after_restoring_rows(
+    imported: ImportResult, test_db: DbHarness, source: VerifiedSource, dataset: SalesDataset
+) -> None:
+    """Runs after the drift and deletion tests have put their rows back."""
+
+    again = import_sales_dataset(test_db.owner_engine, source, dataset, environment="test")
+    assert again.inserted == dict.fromkeys(EXPECTED_COUNTS, 0)
+    assert again.database_fingerprint == imported.database_fingerprint
+
+
+def test_rows_without_import_record_are_refused(
+    source: VerifiedSource, dataset: SalesDataset
+) -> None:
+    with disposable_database(seed=True) as fresh:
+        tenant = fresh.foundation.tenants["niletech"].id
+        customer = dataset.customers[0]
+        owner_exec(
+            fresh,
+            "INSERT INTO sales_customers (tenant_id, id, name, region, country, since_date)"
+            " VALUES (:t, :id, :name, :region, :country, :since)",
+            {
+                "t": tenant,
+                "id": customer.id,
+                "name": customer.name,
+                "region": customer.region,
+                "country": customer.country,
+                "since": customer.since_date,
+            },
+        )
+        with pytest.raises(ImportMismatch, match="no import record"):
+            import_sales_dataset(fresh.owner_engine, source, dataset, environment="test")
+        count = owner_exec(fresh, "SELECT count(*) FROM sales_orders").scalar_one()
+    assert count == 0
 
 
 def test_different_dataset_already_imported_is_refused(

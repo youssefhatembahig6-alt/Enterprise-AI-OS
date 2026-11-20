@@ -2,7 +2,8 @@
 
 Two source forms are accepted, and both are verified before any record is read:
 
-* the original export ZIP (``niletech-0.1.6.zip``): every entry listed in its
+* the original export ZIP (``niletech-0.1.6.zip``): member names must be unique
+  (checked before anything is read); every entry listed in its
   embedded ``manifest.json`` must be present with the recorded SHA-256, no
   unlisted entries may exist, every table must have the recorded row count, and
   the manifest's ``content_fingerprint`` must recompute;
@@ -22,6 +23,7 @@ import hashlib
 import io
 import json
 import zipfile
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -126,6 +128,12 @@ def verify_zip(path: Path, tables: Iterable[str] = SALES_TABLES) -> VerifiedSour
     """Verify the whole export ZIP, then return the requested tables."""
 
     with zipfile.ZipFile(path) as archive:
+        # Duplicate member names are rejected before anything is read: ``read(name)``
+        # returns only one copy, so another copy could otherwise escape verification.
+        all_names = [info.filename for info in archive.infolist()]
+        duplicates = sorted(name for name, n in Counter(all_names).items() if n > 1)
+        if duplicates:
+            raise SourceVerificationError(f"duplicate archive member names: {duplicates[:5]}")
         names = [info.filename for info in archive.infolist() if not info.is_dir()]
         for name in names:
             if name.startswith("/") or ".." in name.split("/"):

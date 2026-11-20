@@ -164,3 +164,57 @@ def test_zip_with_unlisted_entry_is_rejected(tmp_path: Path) -> None:
         archive.writestr("tables/smuggled.jsonl", b"{}\n")
     with pytest.raises(SourceVerificationError, match="unlisted"):
         verify_zip(copy)
+
+
+def _zip_with_duplicates(path: Path, entries: list[tuple[str, bytes]]) -> Path:
+    with (
+        pytest.warns(UserWarning, match="Duplicate name"),
+        zipfile.ZipFile(path, "w") as archive,
+    ):
+        for name, data in entries:
+            archive.writestr(name, data)
+    return path
+
+
+def test_duplicate_data_member_rejected_before_manifest_is_read(tmp_path: Path) -> None:
+    """The manifest here is not even valid JSON: rejection must happen before it is parsed."""
+
+    archive = _zip_with_duplicates(
+        tmp_path / "dup-table.zip",
+        [
+            ("manifest.json", b"not json"),
+            ("tables/orders.jsonl", b'{"id": "checked"}\n'),
+            ("tables/orders.jsonl", b'{"id": "would escape verification"}\n'),
+        ],
+    )
+    with pytest.raises(
+        SourceVerificationError, match=r"duplicate archive member names: \['tables/orders\.jsonl'\]"
+    ):
+        verify_zip(archive)
+
+
+def test_duplicate_manifest_rejected(tmp_path: Path) -> None:
+    real_manifest = (VENDORED_DIR / "source-manifest.json").read_bytes()
+    archive = _zip_with_duplicates(
+        tmp_path / "dup-manifest.zip",
+        [("manifest.json", real_manifest), ("manifest.json", b"{}")],
+    )
+    with pytest.raises(
+        SourceVerificationError, match=r"duplicate archive member names: \['manifest\.json'\]"
+    ):
+        verify_zip(archive)
+
+
+@needs_zip
+@pytest.mark.parametrize("member", ["tables/orders.jsonl", "manifest.json"])
+def test_real_archive_with_appended_duplicate_is_rejected(tmp_path: Path, member: str) -> None:
+    """A second copy appended to the genuine export (read() would return it) is refused."""
+
+    copy = tmp_path / "appended.zip"
+    shutil.copy(REFERENCE_ZIP, copy)
+    with zipfile.ZipFile(REFERENCE_ZIP) as original:
+        tampered = original.read(member).replace(b"FULFILLED", b"CANCELLED", 1)
+    with pytest.warns(UserWarning, match="Duplicate name"), zipfile.ZipFile(copy, "a") as archive:
+        archive.writestr(member, tampered)
+    with pytest.raises(SourceVerificationError, match="duplicate archive member names"):
+        verify_zip(copy)

@@ -5,11 +5,20 @@ EAIOS_ENV is ``development`` or ``test``, and only into an existing M0 tenant
 whose slug equals the source tenant. M0 login accounts and permission fixtures
 are not touched.
 
-Repeat safety: everything happens in one transaction. Rows are inserted with
-``ON CONFLICT DO NOTHING`` on ``(tenant_id, id)``; afterwards the tenant's rows
-are read back and their canonical fingerprint must equal the source
-fingerprint. If a different dataset was already imported, or existing rows have
-drifted from the source, the transaction rolls back and nothing changes.
+Repeat safety: everything happens in one transaction that first locks and
+reads the tenant's import record, then fingerprints the stored rows *before any
+write*:
+
+* no record and no rows   -> first import: insert every row, then the stored
+                             rows must reproduce the source fingerprint
+* record, rows match      -> repeat import: nothing is written
+* record, rows differ     -> ImportMismatch; a deleted or changed row is
+                             reported, never silently restored
+* no record but rows      -> ImportMismatch (rows of unknown origin)
+* record for another
+  dataset / fingerprint   -> ImportRefused
+
+Any failure rolls the transaction back, so nothing changes.
 """
 
 from __future__ import annotations
@@ -140,7 +149,9 @@ def import_sales_dataset(
     manifest = source.manifest
     with owner_engine.begin() as conn:
         tenant_id = conn.execute(
-            text("SELECT id FROM tenants WHERE slug = :slug"), {"slug": dataset.company_slug}
+            # Row lock serializes concurrent imports into the same tenant.
+            text("SELECT id FROM tenants WHERE slug = :slug FOR UPDATE"),
+            {"slug": dataset.company_slug},
         ).scalar_one_or_none()
         if tenant_id is None:
             raise ImportRefused(
@@ -161,19 +172,43 @@ def import_sales_dataset(
                 f"tenant already holds dataset {existing.dataset!r} with a different fingerprint"
             )
 
+        expected_counts = dataset.row_counts()
+        stored_fp, stored_counts = database_fingerprint(conn, tenant_id)
+        if existing is not None:
+            # Repeat import: the stored rows must already reproduce the source. Nothing
+            # is inserted, so a deleted or changed row is reported, never silently restored.
+            if stored_counts != expected_counts or stored_fp != normalized_fp:
+                raise ImportMismatch(
+                    "stored rows do not reproduce the previously imported source:"
+                    f" counts={stored_counts} expected={expected_counts}"
+                    f" fingerprint={stored_fp} expected={normalized_fp}"
+                )
+            return ImportResult(
+                tenant_id=tenant_id,
+                inserted=dict.fromkeys(TABLE_ORDER, 0),
+                row_counts=stored_counts,
+                normalized_fingerprint=normalized_fp,
+                database_fingerprint=stored_fp,
+            )
+        if any(stored_counts.values()):
+            raise ImportMismatch(
+                f"tenant has sales rows but no import record: counts={stored_counts}"
+            )
+
+        # First import into an empty tenant.
         inserted: dict[str, int] = {}
         for name in TABLE_ORDER:
             table = _TABLE_NAMES[name]
             count_sql = text(f"SELECT count(*) FROM {table} WHERE tenant_id = :t")  # noqa: S608
             before = conn.execute(count_sql, {"t": tenant_id}).scalar_one()
             rows = _rows(dataset, name, tenant_id)
-            statement = text(_INSERTS[name] + " ON CONFLICT (tenant_id, id) DO NOTHING")
+            statement = text(_INSERTS[name])
             for start in range(0, len(rows), 1000):
                 conn.execute(statement, rows[start : start + 1000])
             inserted[name] = conn.execute(count_sql, {"t": tenant_id}).scalar_one() - before
 
         db_fp, db_counts = database_fingerprint(conn, tenant_id)
-        if db_counts != dataset.row_counts() or db_fp != normalized_fp:
+        if db_counts != expected_counts or db_fp != normalized_fp:
             raise ImportMismatch(
                 f"database rows do not reproduce the source: counts={db_counts}"
                 f" expected={dataset.row_counts()} fingerprint={db_fp} expected={normalized_fp}"
@@ -188,7 +223,6 @@ def import_sales_dataset(
                      row_counts)
                 VALUES (:t, :dataset, :gen, :rev, :seed, :ref, :company, :content_fp, :norm_fp,
                         CAST(:counts AS jsonb))
-                ON CONFLICT (tenant_id) DO NOTHING
                 """
             ),
             {
