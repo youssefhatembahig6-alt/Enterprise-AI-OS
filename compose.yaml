@@ -1,8 +1,10 @@
-# Enterprise AI OS — M0 development stack.
+# Enterprise AI OS — development stack (M0 foundation, M2 verified SQL reports).
 #   docker compose up --build        (see docs/runbook.md)
 # Only the API (8000) and frontend (3000) are published, bound to 127.0.0.1.
 # Data services are reachable only on the internal network. No model service
-# runs here: models are external (Colab GPU) and are not required for M0.
+# runs here: models are external (Colab GPU, ml/model-gateway). Without a gateway,
+# report runs end with a clear model_unavailable error (or set MODEL_MODE=fake for a
+# visibly labelled development double).
 # Memory limits total ~2.7 GB; see docs/contracts/runtime.md.
 name: eaios
 
@@ -18,6 +20,11 @@ x-backend-env: &backend-env
   ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
   CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
   LLM_BASE_URL: ${LLM_BASE_URL:-}
+  MODEL_MODE: ${MODEL_MODE:-gateway}
+  MODEL_GATEWAY_TOKEN: ${MODEL_GATEWAY_TOKEN:-}
+  # Separate read-only report query role (M2); see infra/postgres/report-role.sql.
+  REPORT_DATABASE_URL: postgresql+psycopg://eaios_report:${EAIOS_REPORT_DB_PASSWORD:?set in .env (scripts/dev.py add-report-role)}@postgres:5432/eaios
+  REPORT_DISPATCH: celery
   PASSWORD_VERIFY_CONCURRENCY: ${PASSWORD_VERIFY_CONCURRENCY:-2}
   PASSWORD_VERIFY_QUEUE_TIMEOUT_SECONDS: ${PASSWORD_VERIFY_QUEUE_TIMEOUT_SECONDS:-5}
 
@@ -28,9 +35,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set in .env}
       EAIOS_OWNER_DB_PASSWORD: ${EAIOS_OWNER_DB_PASSWORD:?set in .env}
       EAIOS_APP_DB_PASSWORD: ${EAIOS_APP_DB_PASSWORD:?set in .env}
+      EAIOS_REPORT_DB_PASSWORD: ${EAIOS_REPORT_DB_PASSWORD:?set in .env (scripts/dev.py add-report-role)}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./infra/postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-init-roles.sh:ro
+      # .inc so the entrypoint does not run it on its own; init-roles.sh includes it.
+      - ./infra/postgres/report-role.sql:/docker-entrypoint-initdb.d/report-role.sql.inc:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d eaios"]
       interval: 5s
@@ -85,11 +95,12 @@ services:
     build:
       context: ./backend
       target: runtime
-    image: eaios-backend:m0
+    image: eaios-backend:m2
     command: ["python", "-m", "app.cli", "migrate"]
     environment:
       EAIOS_ENV: ${EAIOS_ENV:-development}
       EAIOS_APP_DB_ROLE: eaios_app
+      EAIOS_REPORT_DB_ROLE: eaios_report
       MIGRATION_DATABASE_URL: postgresql+psycopg://eaios_owner:${EAIOS_OWNER_DB_PASSWORD:?set in .env}@postgres:5432/eaios
     depends_on:
       postgres:
@@ -98,7 +109,7 @@ services:
     restart: "no"
 
   api:
-    image: eaios-backend:m0
+    image: eaios-backend:m2
     build:
       context: ./backend
       target: runtime
@@ -123,7 +134,7 @@ services:
     restart: unless-stopped
 
   worker:
-    image: eaios-backend:m0
+    image: eaios-backend:m2
     command: ["celery", "-A", "app.tasks.worker:celery_app", "worker", "--concurrency=2", "--loglevel=INFO", "-Q", "default"]
     environment: *backend-env
     depends_on:
@@ -141,7 +152,7 @@ services:
     restart: unless-stopped
 
   scheduler:
-    image: eaios-backend:m0
+    image: eaios-backend:m2
     command: ["celery", "-A", "app.tasks.worker:celery_app", "beat", "--loglevel=INFO", "--schedule", "/tmp/celerybeat-schedule"]
     environment: *backend-env
     depends_on:
@@ -162,7 +173,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
-    image: eaios-web:m0
+    image: eaios-web:m2
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
@@ -183,7 +194,7 @@ services:
     build:
       context: ./backend
       target: test
-    image: eaios-backend-tests:m0
+    image: eaios-backend-tests:m2
     environment:
       TEST_DATABASE_ADMIN_URL: postgresql+psycopg://postgres:${POSTGRES_SUPERUSER_PASSWORD:?set in .env}@postgres:5432/postgres
       TEST_REDIS_URL: redis://:${REDIS_PASSWORD:?set in .env}@redis:6379/15

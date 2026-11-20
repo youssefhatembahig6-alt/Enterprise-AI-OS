@@ -73,4 +73,4 @@ class LivenessResponse(StrictModel):
 class ReadinessResponse(StrictModel):
     status: Literal["ready", "not_ready"]
     checks: dict[str, str]
-    model_inference: Literal["not_configured", "external_unchecked"]
+    model_inference: Literal["not_configured", "external_unchecked", "fake"]

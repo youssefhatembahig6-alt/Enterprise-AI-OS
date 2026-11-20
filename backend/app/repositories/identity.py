@@ -8,6 +8,8 @@ from uuid import UUID
 
 from sqlalchemy import Connection, text
 
+from app.security.policy import CapabilityGrant, Subject
+
 
 @dataclass(frozen=True, slots=True)
 class LoginRecord:
@@ -150,3 +152,41 @@ def load_groups(conn: Connection, user_id: UUID) -> list[tuple[UUID, str]]:
         {"uid": user_id},
     ).all()
     return [(r.id, r.key) for r in rows]
+
+
+def load_subject(conn: Connection, user_id: UUID) -> Subject | None:
+    """Current policy subject for a user, re-read from PostgreSQL (tenant context).
+
+    Background work (report runs) uses this at every authorization point instead of a
+    request-time snapshot, so deactivation, role, group and attribute changes apply.
+    """
+
+    row = conn.execute(
+        text(
+            """
+            SELECT u.id, u.tenant_id, u.status, u.clearance, u.country, u.department,
+                   t.status AS tenant_status
+              FROM users u JOIN tenants t ON t.id = u.tenant_id
+             WHERE u.id = :uid
+            """
+        ),
+        {"uid": user_id},
+    ).one_or_none()
+    if row is None:
+        return None
+    caps = load_role_capabilities(conn, user_id)
+    groups = load_groups(conn, user_id)
+    return Subject(
+        tenant_id=row.tenant_id,
+        user_id=row.id,
+        active=row.status == "active" and row.tenant_status == "active",
+        capabilities=frozenset(
+            CapabilityGrant(capability=cap, scope_department=scope)
+            for _, cap, scope in caps
+            if cap is not None
+        ),
+        group_ids=frozenset(gid for gid, _ in groups),
+        clearance=row.clearance,
+        country=row.country,
+        department=row.department,
+    )

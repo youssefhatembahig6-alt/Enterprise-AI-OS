@@ -66,7 +66,8 @@ def test_not_ready_when_a_dependency_fails(
 def test_external_model_gateway_is_not_claimed_as_capability(
     test_db: DbHarness, stub_http_url: str
 ) -> None:
-    settings = make_settings(test_db, stub_http_url, LLM_BASE_URL="http://127.0.0.1:1/v1")
+    # M2 contract: LLM_BASE_URL is the gateway root (a trailing /v1 is rejected).
+    settings = make_settings(test_db, stub_http_url, LLM_BASE_URL="http://127.0.0.1:1")
     with TestClient(create_app(settings)) as client:
         response = client.get("/ready")
     assert response.status_code == 200

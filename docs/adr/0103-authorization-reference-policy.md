@@ -10,6 +10,8 @@ Implementation: `backend/app/security/policy.py` (pure, no I/O). Fixtures: `back
 - **Action**: `resource.read` (content) or `resource.admin` (metadata administration). Any other action string is denied.
 - **Resource metadata**: tenant, classification, owning department, `department_restricted`, `allowed_countries` (ISO codes, or `*` for any), active/deleted status, and grants (`allow` or `deny`; one user **or** one group; action `resource.read`).
 
+M2 adds the content action **`dataset.query`** with its own capability and grant action, evaluated through the same five layers; see [ADR 0202](0202-report-authorization-and-row-scope.md).
+
 ## Defined capabilities and predicates
 
 | Capability | Meaning |

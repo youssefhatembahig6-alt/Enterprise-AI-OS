@@ -16,6 +16,10 @@ Content read (``resource.read``) requires all five layers:
 An explicit *deny* grant for the user or any of their groups overrides any allow.
 Missing (unknown) required inputs deny. A direct user grant satisfies layer 4 only.
 
+Querying a protected dataset (``dataset.query``, M2 reports) uses the same five
+layers with its own capability and its own grant action, so holding
+``resource.read`` never implies report access and vice versa.
+
 Metadata administration (``resource.admin``) requires tenant plus the
 ``resource.admin`` capability with a covering scope. It never implies content read.
 """
@@ -31,6 +35,7 @@ from uuid import UUID
 class Action(StrEnum):
     RESOURCE_READ = "resource.read"
     RESOURCE_ADMIN = "resource.admin"
+    DATASET_QUERY = "dataset.query"
 
 
 class Capability(StrEnum):
@@ -38,13 +43,18 @@ class Capability(StrEnum):
 
     RESOURCE_READ = "resource.read"
     RESOURCE_ADMIN = "resource.admin"
+    DATASET_QUERY = "dataset.query"
 
 
 # Capability required for each action.
 ACTION_CAPABILITY: dict[Action, Capability] = {
     Action.RESOURCE_READ: Capability.RESOURCE_READ,
     Action.RESOURCE_ADMIN: Capability.RESOURCE_ADMIN,
+    Action.DATASET_QUERY: Capability.DATASET_QUERY,
 }
+
+# Content actions: all five layers apply, with a grant for that same action.
+CONTENT_ACTIONS: frozenset[Action] = frozenset({Action.RESOURCE_READ, Action.DATASET_QUERY})
 
 # Classification order, lowest to highest. Clearance uses the same scale.
 CLASSIFICATIONS: tuple[str, ...] = ("public", "internal", "confidential", "restricted")
@@ -215,7 +225,7 @@ def evaluate(subject: Subject, action: str, resource: ResourceMeta) -> Decision:
         failure = _capability_check(subject, Capability.RESOURCE_ADMIN, resource.department)
         return Decision.deny(failure) if failure else Decision.allow()
 
-    # resource.read — explicit deny is evaluated before any allow can apply.
+    # Content actions — explicit deny is evaluated before any allow can apply.
     explicit_deny, has_allow, malformed = _grant_checks(subject, resource.grants, act)
     if explicit_deny:
         return Decision.deny(Reason.EXPLICIT_DENY)
@@ -223,7 +233,7 @@ def evaluate(subject: Subject, action: str, resource: ResourceMeta) -> Decision:
         return Decision.deny(Reason.UNKNOWN_INPUT)
 
     # Layer 2: role capability (with department scope).
-    failure = _capability_check(subject, Capability.RESOURCE_READ, resource.department)
+    failure = _capability_check(subject, ACTION_CAPABILITY[act], resource.department)
     if failure:
         return Decision.deny(failure)
 

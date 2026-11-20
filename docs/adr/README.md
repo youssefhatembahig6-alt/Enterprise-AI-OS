@@ -12,3 +12,7 @@ meeting. Repository ADRs start at 0101 so they never collide with the source lis
 | [0103](0103-authorization-reference-policy.md) | Reference authorization policy | Accepted for M0 (pending planning review) | §8 five layers, ADR 0004, ADR 0012 (Proposed) |
 | [0104](0104-retrieval-eligible-ids-design.md) | Eligible-ID retrieval design (design only) | Proposed | ADR 0004, ADR 0012 (Proposed), FR-02 |
 | [0105](0105-runtime-and-compose.md) | Runtime, pinned versions and Compose | Accepted for M0 (pending planning review) | §7, ADR 0007, 0008, 0013, NFR-03/04 |
+| [0201](0201-restricted-report-sql.md) | Restricted report SQL execution | Accepted for M2 (pending planning review) | §8 safe text-to-SQL, FR-07, T6 |
+| [0202](0202-report-authorization-and-row-scope.md) | Report authorization and row scope | Accepted for M2 (pending planning review) | §8 five layers, ADR 0012 (Proposed) |
+| [0203](0203-report-runs-events-publication.md) | Runs, events, publication boundary and jobs | Accepted for M2 (pending planning review) | §7 streaming/outbox, ADR 0006, 0011, 0018 |
+| [0204](0204-report-verification.md) | Report verification and repair bound | Accepted for M2 (pending planning review) | §6 hybrid verification, ADR 0005, 0018, FR-09 |

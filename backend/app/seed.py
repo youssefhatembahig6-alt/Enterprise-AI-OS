@@ -141,10 +141,11 @@ def _seed_tenant(
                 conn,
                 "INSERT INTO resources (id, tenant_id, kind, external_ref, title, classification,"
                 " department, department_restricted, allowed_countries)"
-                " VALUES (:id, :t, 'document', :ref, :title, :cls, :dept, :restricted, :countries)",
+                " VALUES (:id, :t, :kind, :ref, :title, :cls, :dept, :restricted, :countries)",
                 {
                     "id": res.id,
                     "t": tenant.id,
+                    "kind": res.kind,
                     "ref": f"fixture:{res.key}",
                     "title": res.title,
                     "cls": res.classification,
@@ -160,7 +161,7 @@ def _seed_tenant(
                 _insert(
                     conn,
                     "INSERT INTO resource_grants (id, tenant_id, resource_id, user_id, group_id,"
-                    " effect, action) VALUES (:id, :t, :r, :u, :g, :effect, 'resource.read')",
+                    " effect, action) VALUES (:id, :t, :r, :u, :g, :effect, :action)",
                     {
                         "id": grant.id,
                         "t": tenant.id,
@@ -168,9 +169,26 @@ def _seed_tenant(
                         "u": tenant.users[grant.user].id if grant.user else None,
                         "g": tenant.groups[grant.group].id if grant.group else None,
                         "effect": grant.effect,
+                        "action": grant.action,
                     },
                 ),
             )
+    for profile in tenant.report_profiles.values():
+        result.bump(
+            "tenant_report_profiles",
+            _insert(
+                conn,
+                "INSERT INTO tenant_report_profiles (tenant_id, report_key, resource_id, version,"
+                " config) VALUES (:t, :key, :r, :version, CAST(:config AS jsonb))",
+                {
+                    "t": tenant.id,
+                    "key": profile.key,
+                    "r": tenant.resources[profile.resource].id,
+                    "version": profile.version,
+                    "config": json.dumps(profile.config, sort_keys=True),
+                },
+            ),
+        )
 
 
 def seed_foundation(

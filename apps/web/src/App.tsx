@@ -1,6 +1,7 @@
 import { Alert, Button, Card, Field, StatusPill, type StatusTone } from "@eaios/ui";
 import { useCallback, useState, type FormEvent } from "react";
 import { api, ApiError, type Identity } from "./api";
+import { ReportPanel } from "./ReportPanel";
 import { useApiStatus, type ApiStatus } from "./useApiStatus";
 
 interface Session {
@@ -39,7 +40,12 @@ function ApiStatusBar({ status }: { status: ApiStatus }) {
       {view.detail ? <span className="text-muted-fg">{view.detail}</span> : null}
       {model ? (
         <span className="text-muted-fg">
-          Model inference: {model === "not_configured" ? "not configured" : "external (unchecked)"}
+          Model inference:{" "}
+          {model === "not_configured"
+            ? "not configured"
+            : model === "fake"
+              ? "FAKE (development double, not a model)"
+              : "external (unchecked)"}
         </span>
       ) : null}
     </div>
@@ -181,14 +187,19 @@ export function App() {
   }, [session]);
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-xl flex-col gap-6 px-4 py-10">
+    <main
+      className={`mx-auto flex min-h-screen w-full flex-col gap-6 px-4 py-10 ${session ? "max-w-3xl" : "max-w-xl"}`}
+    >
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">Enterprise AI OS</h1>
         <ApiStatusBar status={status} />
       </header>
       {notice && !session ? <p className="text-sm text-muted-fg">{notice}</p> : null}
       {session ? (
-        <IdentityView session={session} onSignOut={() => void signOut()} />
+        <>
+          <ReportPanel token={session.token} />
+          <IdentityView session={session} onSignOut={() => void signOut()} />
+        </>
       ) : (
         <SignInForm
           disabled={status.kind === "unreachable"}

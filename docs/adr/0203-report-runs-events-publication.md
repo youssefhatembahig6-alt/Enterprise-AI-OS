@@ -1,0 +1,21 @@
+# ADR 0203 — Report runs, events, publication boundary and durable jobs
+
+Status: accepted for M2, pending planning-agent review. Source: specification §7 "Streaming" (six SSE events, replay endpoint), §7 job outbox, ADR 0006/0011/0018 in the source table, roadmap "Revocation boundary" and "Runs and events". Implementation: `backend/app/reporting/workflow.py`, `service.py`, `store.py`, `backend/app/tasks/reports.py`, `backend/app/api/reports.py`.
+
+## Decision
+
+**Runs and events.** A run row (tenant, owner, question, inference mode, policy epoch at start and publication) and its ordered events live in PostgreSQL; Redis is never the source of truth. Event ids increase per run (`report_runs.last_seq`), payloads carry `version: 1`, and a partial unique index allows exactly one `done` per run. The live stream and a replay read the same rows, so they are identical (tested).
+
+**Event mapping.** The six specification events are used as documented in [reports.md](../contracts/reports.md): `status` for progress; `token` and `citation` only for verified content; `error` and `done` for endings; `approval_required` reserved for wave 3. Heartbeats are SSE comments.
+
+**Snapshot and publication boundary.** The run records the policy epoch it started under. `dataset.query` is re-evaluated from current PostgreSQL state at start, before executing SQL, when persisting evidence and inside the publication transaction. That transaction first calls `lock_tenant_policy_epoch()`, which takes `FOR SHARE` on the tenant row. Every authorization change bumps the epoch with an `UPDATE` of that row (M0 triggers), so a concurrent change either committed before the lock (and the re-check sees it, publication is refused with `access_revoked`) or waits until publication commits. Content events are written only in this transaction. Already-delivered content cannot be recalled; afterwards, replay and evidence access re-check authorization and refuse.
+
+**Replay.** `GET /runs/{id}/events?after=N` re-authenticates, checks ownership (else 404) and re-authorizes immediately before sending any content event; a revoked user gets only `error: access_revoked`.
+
+**Jobs.** `POST /chat` writes the run, its first status event and a `report_jobs` row in one transaction, then publishes a Celery message. If publishing fails, the beat task `dispatch_due_report_jobs` (every 30 s) re-sends pending jobs and lease-expired claims (`report_jobs_due()` returns identifiers only). A worker must `claim_job` (pending, or claimed with an expired lease) before running; duplicate deliveries are no-ops; a run already terminal is not re-run; after `REPORT_JOB_MAX_ATTEMPTS` claims the run fails. Status events from an interrupted attempt are safe to keep; evidence is only referenced by the published result; the unique `done` index prevents duplicate final events. Tests and single-process development use `REPORT_DISPATCH=inline` (same job row, in-process thread pool).
+
+**Cancellation.** `POST /runs/{id}/cancel` sets `cancel_requested`. The workflow checks it before every node and a watcher thread trips the model client's cancel token, closing an in-flight stream. Publication also refuses a cancelled run under the row lock.
+
+## Evidence
+
+`tests/integration/test_report_workflow.py`: raw SSE capture for every outcome, `assert_only_status_before_publication`, revocation before execution/evidence/drafting/publication, deny grant added just before publication, replay identity and `after`/`Last-Event-ID`, revoked replay and evidence, foreign run and evidence ids, cancellation, idempotent create plus duplicate job delivery, lost-message re-dispatch. `test_report_sql_security.py::test_publication_lock_serializes_policy_changes` shows a policy change blocking on the publication lock.

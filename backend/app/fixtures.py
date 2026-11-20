@@ -79,18 +79,28 @@ class GrantFx:
     effect: str
     user: str | None
     group: str | None
+    action: str = Action.RESOURCE_READ.value
 
 
 @dataclass(frozen=True)
 class ResourceFx:
     id: uuid.UUID
     key: str
+    kind: str
     title: str
     classification: str
     department: str
     department_restricted: bool
     allowed_countries: tuple[str, ...]
     grants: tuple[GrantFx, ...]
+
+
+@dataclass(frozen=True)
+class ReportProfileFx:
+    key: str
+    resource: str
+    version: int
+    config: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -102,6 +112,7 @@ class TenantFx:
     groups: dict[str, GroupFx] = field(default_factory=dict)
     users: dict[str, UserFx] = field(default_factory=dict)
     resources: dict[str, ResourceFx] = field(default_factory=dict)
+    report_profiles: dict[str, ReportProfileFx] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -174,20 +185,46 @@ def _parse_tenant(raw: dict[str, Any]) -> TenantFx:
             _require((user is None) != (group is None), f"{slug}: grant needs user xor group")
             _require(user is None or user in tenant.users, f"{slug}: grant to unknown user {user}")
             _require(group is None or group in tenant.groups, f"{slug}: unknown group {group}")
+            action = g.get("action", Action.RESOURCE_READ.value)
+            _require(
+                action in (Action.RESOURCE_READ.value, Action.DATASET_QUERY.value),
+                f"{slug}: grant action {action!r} is not a content action",
+            )
             grants.append(
-                GrantFx(fixture_id(slug, "grant", res["key"], str(i)), g["effect"], user, group)
+                GrantFx(
+                    fixture_id(slug, "grant", res["key"], str(i)),
+                    g["effect"],
+                    user,
+                    group,
+                    action,
+                )
             )
         countries = tuple(res["allowed_countries"])
         _require(len(countries) >= 1, f"{slug}: {res['key']} needs allowed_countries")
+        kind = res.get("kind", "document")
+        _require(kind in ("document", "dataset"), f"{slug}: bad resource kind {kind!r}")
         tenant.resources[res["key"]] = ResourceFx(
             id=fixture_id(slug, "resource", res["key"]),
             key=res["key"],
+            kind=kind,
             title=res["title"],
             classification=res["classification"],
             department=res["department"],
             department_restricted=bool(res["department_restricted"]),
             allowed_countries=countries,
             grants=tuple(grants),
+        )
+    for prof in raw.get("report_profiles", []):
+        _require(
+            prof["resource"] in tenant.resources
+            and tenant.resources[prof["resource"]].kind == "dataset",
+            f"{slug}: report profile {prof['key']} needs a dataset resource",
+        )
+        tenant.report_profiles[prof["key"]] = ReportProfileFx(
+            key=prof["key"],
+            resource=prof["resource"],
+            version=int(prof["version"]),
+            config=dict(prof["config"]),
         )
     return tenant
 
@@ -238,7 +275,7 @@ def resource_for(tenant: TenantFx, res: ResourceFx) -> ResourceMeta:
         grants=tuple(
             Grant(
                 effect=g.effect,
-                action=Action.RESOURCE_READ.value,
+                action=g.action,
                 user_id=tenant.users[g.user].id if g.user else None,
                 group_id=tenant.groups[g.group].id if g.group else None,
             )

@@ -18,8 +18,15 @@ ignore = ["PLR0913", "PLR2004", "PLR0911", "PLR0912", "N818"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "PLR0915", "S311", "E501", "PLC0415"]
+# The M2 SQL security tests deliberately build hostile SQL strings.
+"tests/unit/test_report_*.py" = ["S608"]
+"tests/integration/test_report_*.py" = ["S608"]
 "app/db/migrations/**" = ["E501"]
 "app/cli.py" = ["PLC0415"]
+# Prompt text and the fake model's canned output contain SQL strings that are never
+# executed directly; model SQL is always parsed and validated (app/reporting/sql_guard.py).
+"app/reporting/prompts.py" = ["S608"]
+"app/reporting/model_client.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.13"
@@ -30,6 +37,17 @@ exclude = ["app/db/migrations/versions/"]
 [[tool.mypy.overrides]]
 module = ["celery.*", "kombu.*", "argon2.*"]
 ignore_missing_imports = true
+
+# pglast's generated AST node classes are untyped; these two modules walk them.
+[[tool.mypy.overrides]]
+module = ["app.reporting.sql_guard", "app.reporting.semantics"]
+disallow_untyped_calls = false
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = ["pglast.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

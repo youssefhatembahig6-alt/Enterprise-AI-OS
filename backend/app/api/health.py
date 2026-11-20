@@ -26,8 +26,8 @@ def liveness() -> LivenessResponse:
 def readiness(request: Request) -> JSONResponse:
     """Required dependencies are reachable and the schema is at the expected head.
 
-    Model inference is external and not part of M0, so it is reported as not
-    configured or unchecked and never as an available capability.
+    Model inference is external, so it is reported as not configured, unchecked or
+    (development/test only) fake, and never as an available capability here.
     """
 
     checker: ReadinessChecker = request.app.state.readiness
@@ -36,7 +36,9 @@ def readiness(request: Request) -> JSONResponse:
         status="ready" if report.ready else "not_ready",
         checks=report.checks,
         model_inference=(
-            "external_unchecked"
+            "fake"
+            if request.app.state.settings.model_mode.value == "fake"
+            else "external_unchecked"
             if request.app.state.settings.model_gateway_url
             else "not_configured"
         ),

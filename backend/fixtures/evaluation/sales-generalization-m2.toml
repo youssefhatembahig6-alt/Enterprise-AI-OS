@@ -1,0 +1,54 @@
+# M2 generalization cases for the verified sales report. Frozen 2026-11-21.
+# Separate from the frozen M1 file (sales-q1-2026.toml), which is not edited.
+# Same reporting definition as M1: order_date basis, inclusive calendar period,
+# FULFILLED only, net = sum(subtotal) (tax-exclusive), tax = sum(tax),
+# gross = sum(total), USD, exact decimals with no intermediate rounding.
+#
+# Expected values were computed by an independent Python pass over the verified
+# source JSONL with json + Decimal only (tests/unit/test_sales_generalization_reference.py),
+# not by SQL and not by the code under test. These are development cases, not a
+# held-out accuracy evaluation.
+
+dataset = "niletech-0.1.6"
+source_content_fingerprint = "36c7784f6754f44a17d08c96018f3bbea1512490079167a33df55a1f311122f0"
+normalized_fingerprint = "e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127"
+reference_date = "2026-06-30"
+
+[[cases]]
+id = "m2-sales-q2-2026-net-fulfilled"
+split = "dev"
+question = "What were net fulfilled sales for Q2 2026 in USD?"
+asking_identity = "niletech/finance-reader"
+period_start = "2026-04-01"
+period_end = "2026-06-30"
+expected_order_count = 313
+expected_net = "89841424.00"
+expected_tax = "12577799.36"
+expected_gross = "102419223.36"
+distractor_all_status_net = "113754975.00"
+
+[[cases]]
+id = "m2-sales-2026-02-net-fulfilled"
+split = "dev"
+question = "Fulfilled sales for February 2026, please."
+asking_identity = "niletech/finance-reader"
+period_start = "2026-02-01"
+period_end = "2026-02-28"
+expected_order_count = 97
+expected_net = "27474894.00"
+expected_tax = "3846485.16"
+expected_gross = "31321379.16"
+distractor_all_status_net = "36623103.00"
+
+[[cases]]
+id = "m2-sales-q4-2025-net-fulfilled"
+split = "dev"
+question = "How much did we sell in the fourth quarter of 2025?"
+asking_identity = "niletech/finance-reader"
+period_start = "2025-10-01"
+period_end = "2025-12-31"
+expected_order_count = 298
+expected_net = "80487170.00"
+expected_tax = "11268203.80"
+expected_gross = "91755373.80"
+distractor_all_status_net = "104656809.00"

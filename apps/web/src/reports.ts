@@ -1,0 +1,204 @@
+/**
+ * Report runs over Server-Sent Events (docs/contracts/reports.md).
+ *
+ * POST /api/v1/chat is read with fetch (so the bearer token stays in a header) and a
+ * small SSE parser. Fetch has no automatic reconnection: on a dropped stream the
+ * caller replays from GET /api/v1/runs/{id}/events?after=<last id>.
+ */
+
+import { API_BASE_URL, ApiError, type ApiErrorBody } from "./api";
+
+export type ReportEventType =
+  | "status"
+  | "token"
+  | "citation"
+  | "approval_required"
+  | "error"
+  | "done";
+
+export interface ReportEvent {
+  id: number | null;
+  event: ReportEventType;
+  data: Record<string, unknown>;
+}
+
+export interface TableCell {
+  column: string;
+  value: string | number;
+  display: string;
+  citation_id: string;
+  ref: { evidence_id: string; row: number; column: string };
+}
+
+export interface ReportTable {
+  columns: { key: string; label: string; type: "integer" | "money" }[];
+  rows: TableCell[][];
+}
+
+export interface Citation {
+  citation_id: string;
+  evidence_id: string;
+  row: number;
+  column: string;
+  label: string;
+}
+
+export interface Verification {
+  label: string;
+  narrative: string;
+  inference_mode: "gateway" | "fake";
+  inference_label?: string;
+  checker: null | {
+    model: string;
+    revision: string;
+    status: string;
+    threshold: number;
+    threshold_status: string;
+  };
+}
+
+export interface DonePayload {
+  message_id: string | null;
+  outcome: "published" | "abstained" | "failed" | "cancelled";
+  verification: Verification | null;
+  abstention: { code: string; message: string } | null;
+  inference: string | null;
+}
+
+export interface Evidence {
+  evidence_id: string;
+  run_id: string;
+  report_key: string;
+  executed_sql: string;
+  parameters: Record<string, unknown>;
+  columns: { name: string; type: string }[];
+  rows: (string | number | null)[][];
+  row_count: number;
+  semantics: Record<string, unknown>;
+  dataset_fingerprint: string;
+  policy_epoch: number;
+  executed_at: string;
+  result_sha256: string;
+  integrity: "verified" | "mismatch";
+}
+
+/** Incremental SSE parser: feed text chunks, get complete events back. */
+export class SseParser {
+  private buffer = "";
+
+  push(chunk: string): ReportEvent[] {
+    this.buffer += chunk.replace(/\r\n/g, "\n");
+    const events: ReportEvent[] = [];
+    let index = this.buffer.indexOf("\n\n");
+    while (index >= 0) {
+      const block = this.buffer.slice(0, index);
+      this.buffer = this.buffer.slice(index + 2);
+      const event = parseBlock(block);
+      if (event) events.push(event);
+      index = this.buffer.indexOf("\n\n");
+    }
+    return events;
+  }
+}
+
+function parseBlock(block: string): ReportEvent | null {
+  let id: number | null = null;
+  let event: string | null = null;
+  const data: string[] = [];
+  for (const line of block.split("\n")) {
+    if (!line || line.startsWith(":")) continue; // comment = heartbeat
+    const colon = line.indexOf(":");
+    const field = colon < 0 ? line : line.slice(0, colon);
+    const value = colon < 0 ? "" : line.slice(colon + 1).replace(/^ /, "");
+    if (field === "id") id = Number.parseInt(value, 10);
+    else if (field === "event") event = value;
+    else if (field === "data") data.push(value);
+  }
+  if (!event || data.length === 0) return null;
+  return { id, event: event as ReportEventType, data: JSON.parse(data.join("\n")) };
+}
+
+async function errorFrom(response: Response): Promise<ApiError> {
+  const body: unknown = await response.json().catch(() => null);
+  const error =
+    body && typeof body === "object" && "error" in body
+      ? (body as { error: ApiErrorBody }).error
+      : { code: "http_error", message: `Request failed (${response.status})`, request_id: null };
+  return new ApiError(response.status, error);
+}
+
+async function readStream(
+  response: Response,
+  onEvent: (event: ReportEvent) => void,
+): Promise<"done" | "dropped"> {
+  if (!response.ok) throw await errorFrom(response);
+  if (!response.body) return "dropped";
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  const parser = new SseParser();
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return "dropped";
+    for (const event of parser.push(value)) {
+      onEvent(event);
+      if (event.event === "done") return "done";
+      if (event.event === "error" && event.id === null) return "done"; // stream-level refusal
+    }
+  }
+}
+
+function headers(token: string): HeadersInit {
+  return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+}
+
+export async function startReport(
+  token: string,
+  question: string,
+  clientRequestId: string,
+  onEvent: (event: ReportEvent) => void,
+  signal: AbortSignal,
+): Promise<{ runId: string | null; ended: "done" | "dropped" }> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/chat`, {
+    method: "POST",
+    headers: headers(token),
+    body: JSON.stringify({ question, client_request_id: clientRequestId }),
+    credentials: "omit",
+    cache: "no-store",
+    signal,
+  });
+  const runId = response.headers.get("X-Run-ID");
+  return { runId, ended: await readStream(response, onEvent) };
+}
+
+export async function resumeReport(
+  token: string,
+  runId: string,
+  after: number,
+  onEvent: (event: ReportEvent) => void,
+  signal: AbortSignal,
+): Promise<"done" | "dropped"> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/runs/${encodeURIComponent(runId)}/events?after=${after}`,
+    { headers: headers(token), credentials: "omit", cache: "no-store", signal },
+  );
+  return readStream(response, onEvent);
+}
+
+export async function cancelReport(token: string, runId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/runs/${encodeURIComponent(runId)}/cancel`, {
+    method: "POST",
+    headers: headers(token),
+    credentials: "omit",
+    cache: "no-store",
+  });
+  if (!response.ok) throw await errorFrom(response);
+}
+
+export async function fetchEvidence(token: string, evidenceId: string): Promise<Evidence> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/evidence/${encodeURIComponent(evidenceId)}`, {
+    headers: headers(token),
+    credentials: "omit",
+    cache: "no-store",
+  });
+  if (!response.ok) throw await errorFrom(response);
+  return (await response.json()) as Evidence;
+}

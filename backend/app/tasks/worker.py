@@ -1,6 +1,7 @@
 """Celery application (worker and beat share this module).
 
-M0 has one real maintenance task: purging long-expired session rows through the
+Maintenance tasks live here; report tasks are in ``app.tasks.reports``. M0 has one
+real maintenance task: purging long-expired session rows through the
 restricted ``purge_expired_sessions()`` database function.
 """
 
@@ -22,7 +23,9 @@ def _broker_url() -> str:
     return os.environ["REDIS_URL"]
 
 
-celery_app = Celery("eaios", broker=_broker_url(), include=["app.tasks.worker"])
+celery_app = Celery(
+    "eaios", broker=_broker_url(), include=["app.tasks.worker", "app.tasks.reports"]
+)
 celery_app.conf.update(
     task_default_queue="default",
     task_acks_late=True,
@@ -38,7 +41,12 @@ celery_app.conf.update(
         "purge-expired-sessions": {
             "task": "app.tasks.worker.purge_expired_sessions",
             "schedule": 3600.0,
-        }
+        },
+        # Outbox: re-dispatch report jobs whose publish failed or whose lease expired.
+        "dispatch-due-report-jobs": {
+            "task": "app.tasks.reports.dispatch_due_report_jobs",
+            "schedule": 30.0,
+        },
     },
 )
 

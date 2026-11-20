@@ -42,7 +42,7 @@ def test_fixture_coverage_requirements() -> None:
         assert any("*" not in r.allowed_countries for r in tenant.resources.values())
 
 
-def test_cases_cover_both_tenants_and_both_actions() -> None:
+def test_cases_cover_both_tenants_and_every_action() -> None:
     assert {c["user"].split("/")[0] for c in CASES} == set(FOUNDATION.tenants)
-    assert {c["action"] for c in CASES} == {"resource.read", "resource.admin"}
+    assert {c["action"] for c in CASES} == {"resource.read", "resource.admin", "dataset.query"}
     assert {c["expect"] for c in CASES} == {"allow", "deny"}

@@ -1,4 +1,4 @@
-# Requirement → test traceability (M0 scope only)
+# Requirement → test traceability (M0–M2)
 
 M0 implements FR-01 and the foundations of FR-02 and FR-11, plus NFR-01, NFR-03 and NFR-05. Document, search and SQL behaviour (most of T1–T10) belongs to later milestones and is **not** marked complete here.
 
@@ -25,15 +25,33 @@ M0 implements FR-01 and the foundations of FR-02 and FR-11, plus NFR-01, NFR-03 
 | --- | --- | --- |
 | FR-05 Deterministic ingestion (input) / ADR 0016 | Parser benchmark on digital, two-column, table-heavy and scanned PDFs plus CSV and workbook cases; seven synthetic fixtures with SHA-256 provenance and hand-checked gold; laptop results and Colab results for the model-based candidates (explicit run selection in `results/selection.json`); recommendation: Docling for complex PDFs, Python `csv`, openpyxl | `ml/parser-benchmark/reports/2026-11-20-parser-comparison.md`, `ml/parser-benchmark/tests/`, CI job `parser-benchmark` |
 
+## M2 verified SQL reports
+
+Tests below are in `backend/tests/`. Integration tests run on real PostgreSQL 17.6 with deterministic model doubles (`FakeModelClient`, labelled fake); they are integration evidence, not model-quality evidence. The real-model demonstration is listed separately.
+
+| Requirement | What M2 delivers | Evidence |
+| --- | --- | --- |
+| FR-07 Read-only SQL | Separate `eaios_report` role (non-owner, no superuser/BYPASSRLS), `reporting` security-invoker views, restrictive RLS bound to an application-minted backend context, parsed allowlist, read-only transaction, timeouts, row limit | `integration/test_report_sql_security.py`, `unit/test_report_sql_guard.py`, ADR 0201 |
+| FR-07 / FR-14 Report semantics | Rule-derived intent from tenant profile; AST checks of date column/window, statuses, measures, grain, filters; join-multiplicity probe; exact decimal result checks; frozen Q1 2026 plus three independently calculated periods | `unit/test_report_semantics.py`, `unit/test_sales_generalization_reference.py`, `integration/test_report_workflow.py::test_frozen_q1_report_is_published_with_evidence`, `::test_other_periods_use_runtime_verification_not_stored_answers`, ADR 0204 |
+| FR-06 Agent routing | LangGraph graph prepare → route → SQL → check → execute → evidence → draft → verify → publish/finish; rules first, model router only for unrecognised topics | `app/reporting/workflow.py`, `test_report_workflow.py::test_unsupported_or_ambiguous_requests_abstain`, `::test_unavailable_inference_fails_without_partial_output[router]` |
+| FR-09 Verification | Deterministic claim checks plus development NLI baseline; ≤ 2 repairs; failed drafts never stored or streamed; structured-only publication when narrative cannot be verified | `test_report_workflow.py::test_bad_sql_is_repaired_and_never_shown`, `::test_exhausted_sql_repairs_abstain_without_figures`, `::test_bad_narrative_is_repaired_and_hidden`, `::test_exhausted_narrative_repairs_publish_structured_only`, `::test_checker_rejection_hides_unsupported_narrative`, `::test_checker_failure_publishes_only_deterministic_results` |
+| FR-03 Progress and citations (SQL part) | Six SSE events, persisted with increasing ids; only `status` before publication; table cells and citations reference immutable evidence by row/column; evidence view with hash integrity | `report_support.assert_only_status_before_publication`, `test_report_workflow.py::test_reconnect_replays_identical_events`, `apps/web/src/ReportPanel.tsx` |
+| FR-02/NFR-01 Authorization and isolation | `dataset.query` through the five-layer policy; denied same-tenant users and the isolation tenant get one indistinguishable abstention; revocation at four run stages and before publication; revoked replay and evidence; foreign ids 404 | `fixtures/policy_cases.toml`, `test_report_workflow.py::test_denied_and_isolated_users_get_the_same_abstention`, `::test_revocation_during_a_run_prevents_publication`, `::test_replay_and_evidence_after_revocation_expose_nothing`, `::test_foreign_and_unknown_ids_are_not_found`, ADR 0202/0203 |
+| FR-11 Audit | `report.run/authorize/query/publish/finish/replay/evidence` events with decisions and private reasons, no figures or SQL text | `test_report_workflow.py::test_audit_records_report_decisions_without_figures` |
+| NFR-02 Responsiveness | Progress streams immediately; answer only after verification; stage timings recorded per run (`diagnostics.timings`) | `scripts/m2_demo_capture.py` |
+| NFR-04 Model endpoint | One root, explicit chat/embed/check/health paths, bearer service auth, timeouts, cancellation, typed failures, pinned revisions; unavailable gateway fails clearly | `unit/test_model_client.py`, `unit/test_model_gateway_contract.py`, `test_report_workflow.py::test_unconfigured_gateway_reports_model_unavailable` |
+| Jobs and durability | Run + job row in one transaction; Celery dispatch; beat re-dispatch; claim/lease; unique terminal event | `test_report_workflow.py::test_idempotent_create_and_duplicate_job_delivery`, `::test_outbox_redispatches_a_lost_job` |
+| **Real-model demonstration** | Gateway and capture script are implemented | **Not yet run** — requires the owner's Colab T4 gateway; see the PR's unresolved items |
+
 ## Security tests T1–T10 status
 
-| Test | Status in M0 |
+| Test | Status (M0, updated for M2) |
 | --- | --- |
 | T1 / T2 | Policy-level only. Fixture cases show a finance reader allowed and a sales reader denied the finance report (in memory and from PostgreSQL). Retrieval-level tests come in M3. |
 | T3 | Database level: the app role cannot read another tenant's rows, and a cross-tenant resource decision is denied. Retrieval level comes in M3. |
 | T4 | Internal group removal changes the next decision (`test_group_removal_changes_next_decision`). Sync-based removal comes in M4. |
 | T5 | Not applicable yet: there is no file or document endpoint. M3. |
-| T6 | Not applicable: no generated SQL. M2. |
+| T6 | **M2:** generated SQL cannot bypass database restrictions: validator rejections plus raw query-role attempts that bypass the validator (forged context, public objects, writes, DDL, borrowed context), cross-tenant predicates and joins, timeouts, row limits, pool reuse (`test_report_sql_security.py`). |
 | T7 | Evaluator level: unknown inputs deny (`test_unknown_required_inputs_deny`). Ingestion level comes in M3. |
 | T8 | Not applicable: no cache. Later. |
 | T9 | Not applicable: no Qdrant queries. Design in ADR 0104. M3. |
