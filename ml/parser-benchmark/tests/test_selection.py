@@ -52,6 +52,72 @@ class CommittedSelection(unittest.TestCase):
         self.assertEqual(hashlib.sha256(data).hexdigest(), z["sha256"])
 
 
+class ColabBatchReportWithSelectionPresent(unittest.TestCase):
+    """--colab-batch must work when selection.json sits beside the run files.
+
+    Regression: _latest() parsed selection.json as a run file and crashed with
+    KeyError: 'environment', which also broke the notebook's report cell for any new batch.
+    """
+
+    BATCH = "20261120T220024Z-907146"
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.results = self.tmp / "results"
+        self.results.mkdir()
+        for p in RESULTS.glob("*.json"):
+            shutil.copy(p, self.results / p.name)
+        self.assertTrue((self.results / "selection.json").exists())
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp)
+
+    def test_cli_colab_batch_writes_a_fresh_report(self) -> None:
+        import subprocess
+        import sys
+
+        out = self.tmp / "results-tables.md"
+        out.write_text("stale tables from an earlier attempt\n")
+        cmd = [
+            sys.executable,
+            "-m",
+            "bench.report",
+            "--results-dir",
+            str(self.results),
+            "--colab-batch",
+            self.BATCH,
+            "--out",
+            str(out),
+        ]
+        p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr[-2000:])
+        text = out.read_text(encoding="utf-8")
+        self.assertNotIn("stale tables", text)
+        self.assertIn(f"Colab batch `{self.BATCH}`: 3 result file(s) merged with the latest laptop run.", text)
+        self.assertNotIn("## Run selection", text)  # batch mode reports the batch as run, not the selection
+        for run in (
+            "20261120T211830Z-b9dfec",
+            "20261120T220043Z-890d9e",
+            "20261120T220551Z-200026",
+            "20261120T220748Z-49b6cc",
+        ):
+            self.assertIn(f"| `{run}` |", text)
+
+    def test_notebook_report_path_succeeds(self) -> None:
+        from bench import colab_status as cs
+
+        status = cs.Status(self.results / self.BATCH)
+        path = cs.run_report(status, ROOT, self.BATCH, self.results)
+        self.assertIsNotNone(path, status.data["report"]["detail"][-2000:])
+        self.assertTrue(status.data["report"]["ok"])
+
+    def test_latest_ignores_the_selection_file(self) -> None:
+        names = {p.name for p in report._latest("colab", self.results, self.BATCH)}
+        self.assertEqual(len(names), 3)
+        self.assertNotIn("selection.json", names)
+        self.assertEqual([p.name for p in report._latest("laptop", self.results)], ["20261120T211830Z-b9dfec.json"])
+
+
 class SelectionValidation(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())

@@ -63,6 +63,8 @@ def _latest(where: str, results_dir: Path = ROOT / "results", batch: str | None 
     """Result files of one batch for ``where``: ``batch`` if given, else the most recent one."""
     found: list[tuple[str, Path]] = []
     for p in sorted(results_dir.glob("*.json")):
+        if p.name == SELECTION:  # the run-selection file lives beside the runs but is not one
+            continue
         d = json.loads(p.read_text(encoding="utf-8"))
         if d["environment"]["where"] == where:
             found.append((d.get("batch") or d["run_id"], p))
