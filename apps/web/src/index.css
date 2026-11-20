@@ -1,0 +1,21 @@
+@import "tailwindcss";
+@import "@eaios/ui/styles.css";
+@source "../../../packages/ui/src";
+
+@theme inline {
+  --color-bg: var(--eaios-bg);
+  --color-fg: var(--eaios-fg);
+  --color-card: var(--eaios-card);
+  --color-border: var(--eaios-border);
+  --color-muted: var(--eaios-muted);
+  --color-muted-fg: var(--eaios-muted-fg);
+  --color-primary: var(--eaios-primary);
+  --color-primary-fg: var(--eaios-primary-fg);
+  --color-ring: var(--eaios-ring);
+  --color-ok-bg: var(--eaios-ok-bg);
+  --color-ok-fg: var(--eaios-ok-fg);
+  --color-warn-bg: var(--eaios-warn-bg);
+  --color-warn-fg: var(--eaios-warn-fg);
+  --color-error-bg: var(--eaios-error-bg);
+  --color-error-fg: var(--eaios-error-fg);
+}

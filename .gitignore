@@ -6,8 +6,12 @@
 node_modules/
 .venv/
 __pycache__/
+*.pyc
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 dist/
 coverage/
+*.tsbuildinfo
+# Development login credentials written by the explicit dev seed command
+var/

@@ -1,0 +1,40 @@
+[project]
+name = "eaios-backend"
+version = "0.1.0"
+description = "Enterprise AI OS backend (M0 foundation)"
+requires-python = ">=3.13,<3.14"
+
+# Dependencies are pinned in requirements.in / requirements-dev.in and locked with
+# hashes in requirements.lock / requirements-dev.lock (see scripts/dev.py lock).
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["app/db/migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "C4", "SIM", "RUF", "PL", "N"]
+ignore = ["PLR0913", "PLR2004", "PLR0911", "PLR0912", "N818"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "PLR0915", "S311", "E501", "PLC0415"]
+"app/db/migrations/**" = ["E501"]
+"app/cli.py" = ["PLC0415"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+exclude = ["app/db/migrations/versions/"]
+
+[[tool.mypy.overrides]]
+module = ["celery.*", "kombu.*", "argon2.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+  "integration: requires real PostgreSQL and Redis (TEST_DATABASE_ADMIN_URL, TEST_REDIS_URL)",
+]
+filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
