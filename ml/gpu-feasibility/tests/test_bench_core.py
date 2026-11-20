@@ -201,6 +201,36 @@ class CandidateTests(unittest.TestCase):
         self.assertEqual(core.choose_candidate(configs), 0.75)
 
 
+PINS_FILE = pathlib.Path(__file__).resolve().parents[1] / "vllm-env-pins.txt"
+
+
+class VllmEnvPlanTests(unittest.TestCase):
+    pins = {"vllm": "0.11.0", "transformers": "4.56.2"}
+
+    def test_pins_file_pins_vllm_and_a_4x_transformers(self):
+        pins = core.parse_pins(PINS_FILE.read_text())
+        self.assertEqual(pins["vllm"], "0.11.0")
+        self.assertTrue(pins["transformers"].startswith("4."), "Transformers 5.x breaks vLLM 0.11.0's tokenizer wrapper")
+
+    def test_parse_pins_ignores_comments_and_rejects_ranges(self):
+        self.assertEqual(core.parse_pins("# c\n\nVLLM==0.11.0  # x\ntransformers==4.56.2\n"), self.pins)
+        with self.assertRaises(ValueError):
+            core.parse_pins("transformers>=4.55.2\n")
+
+    def test_old_colab_pair_is_repaired_not_reused(self):
+        # The failing free-Colab environment: vllm 0.11.0 resolved transformers 5.23.0.
+        plan = core.plan_vllm_env({"vllm": "0.11.0", "transformers": "5.23.0"}, self.pins)
+        self.assertEqual(plan["action"], "repair")
+        self.assertEqual(plan["mismatched"], {"transformers": {"installed": "5.23.0", "required": "4.56.2"}})
+
+    def test_exact_match_is_reused(self):
+        self.assertEqual(core.plan_vllm_env(dict(self.pins), self.pins), {"action": "reuse", "mismatched": {}})
+
+    def test_missing_package_or_venv(self):
+        self.assertEqual(core.plan_vllm_env({"vllm": None, "transformers": None}, self.pins)["action"], "repair")
+        self.assertEqual(core.plan_vllm_env(None, self.pins)["action"], "create")
+
+
 class StatsTests(unittest.TestCase):
     def test_stats(self):
         self.assertIsNone(core.stats([None, "x", True]))

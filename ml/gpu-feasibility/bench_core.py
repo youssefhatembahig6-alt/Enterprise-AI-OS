@@ -79,6 +79,36 @@ def cancellation_verdict(stream, running_after, follow_up_ok, server_alive):
     return {"ok": not reasons, "reasons": reasons}
 
 
+# ---- isolated vLLM environment ------------------------------------------------
+def parse_pins(text):
+    """Parse "name==version" lines (comments and blanks ignored) into {name: version}."""
+    pins = {}
+    for line in text.splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        name, sep, version = line.partition("==")
+        if sep != "==" or not name.strip() or not version.strip():
+            raise ValueError(f"pin must be name==version: {line!r}")
+        pins[name.strip().lower()] = version.strip()
+    return pins
+
+
+def plan_vllm_env(installed, pins):
+    """Decide what to do with the vLLM venv.
+
+    `installed` is None when the venv has no Python, otherwise {package: version or None}.
+    An existing venv is reused only when every pinned package matches exactly; any mismatch
+    (for example vllm 0.11.0 with transformers 5.23.0 from an earlier unpinned install) is
+    repaired in place by reinstalling the pins.
+    """
+    if installed is None:
+        return {"action": "create", "mismatched": {}}
+    mismatched = {name: {"installed": installed.get(name), "required": version}
+                  for name, version in pins.items() if installed.get(name) != version}
+    return {"action": "repair" if mismatched else "reuse", "mismatched": mismatched}
+
+
 # ---- configuration verdicts ------------------------------------------------------
 def required_stages(mode, repeats):
     """Stages a configuration must pass. Target mode includes restart for every configuration."""

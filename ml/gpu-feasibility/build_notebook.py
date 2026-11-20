@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 TARGET = HERE / "m1_gpu_feasibility.ipynb"
@@ -244,7 +245,9 @@ MODE = "small"  # @param ["small", "target"]
 CONFIG = {
     "mode": MODE,
     # vLLM runs in its own virtual environment so it cannot disturb Colab's torch/transformers.
-    "vllm_version": "0.11.0",
+    # Exact pins from ml/gpu-feasibility/vllm-env-pins.txt. vllm 0.11.0 does not cap transformers,
+    # and Transformers 5.x breaks its tokenizer wrapper, so transformers is pinned too.
+    "vllm_pins": <<VLLM_PINS>>,
     "vllm_python": "3.12",
     # Revisions are resolved to exact commit SHAs at download time and recorded in results.json.
     "models": {
@@ -333,12 +336,16 @@ print("Drive mirror:", DRIVE_DIR or "off (results stay in this runtime until you
 
 # ---------------------------------------------------------------------------
 code(r'''
-# @title 4 · Install vLLM (separate venv) and small helpers
+# @title 4 · Install or repair the pinned vLLM environment (separate venv) and small helpers
+# ---- bench_core.py (inlined verbatim by build_notebook.py; tested on CPU in tests/) ----
+# <<BENCH_CORE>>
+# ---- end bench_core.py ----
 import importlib.metadata as _md
 
 VLLM_ENV = BASE / "vllm-env"
 VLLM_PY = VLLM_ENV / "bin" / "python"
 VLLM_CLI = VLLM_ENV / "bin" / "vllm"
+VLLM_PINS = dict(CONFIG["vllm_pins"])
 
 
 def _pkg_version(name):
@@ -348,8 +355,32 @@ def _pkg_version(name):
         return None
 
 
+def _venv_versions(names):
+    """Installed versions inside the vLLM venv, or None if the venv has no working Python."""
+    if not VLLM_PY.exists():
+        return None
+    code = ("import json, importlib.metadata as m\n"
+            "out = {}\n"
+            f"for p in {sorted(names)!r}:\n"
+            "    try: out[p] = m.version(p)\n"
+            "    except m.PackageNotFoundError: out[p] = None\n"
+            "print(json.dumps(out))")
+    rc, out = sh([str(VLLM_PY), "-c", code], timeout=300)
+    if rc != 0:
+        return None
+    return json.loads(out.strip().splitlines()[-1])
+
+
+def _uv():
+    uv = shutil.which("uv")
+    if not uv:
+        rc, out = sh([sys.executable, "-m", "pip", "install", "-q", "uv"], timeout=600)
+        uv = shutil.which("uv") or str(pathlib.Path(sys.executable).parent / "uv")
+    return uv
+
+
 def _install():
-    details = {}
+    details = {"pins": VLLM_PINS}
     # Kernel side: aux models use Colab's preinstalled torch + transformers.
     need = []
     for module, package in [("pynvml", "nvidia-ml-py"), ("sentencepiece", "sentencepiece"),
@@ -364,33 +395,50 @@ def _install():
             raise RuntimeError("kernel pip install failed: " + out[-3000:])
     details["kernel_installed"] = need
 
-    # vLLM side
-    have = False
-    if VLLM_PY.exists():
-        rc, out = sh([str(VLLM_PY), "-c", "import importlib.metadata as m; print(m.version('vllm'))"])
-        have = rc == 0 and out.strip().splitlines()[-1] == CONFIG["vllm_version"]
-    if not have:
-        uv = shutil.which("uv")
-        if not uv:
-            rc, out = sh([sys.executable, "-m", "pip", "install", "-q", "uv"], timeout=600)
-            uv = shutil.which("uv") or str(pathlib.Path(sys.executable).parent / "uv")
-        t = time.perf_counter()
-        if VLLM_ENV.exists():
-            shutil.rmtree(VLLM_ENV)
-        rc, out = sh([uv, "venv", "--python", CONFIG["vllm_python"], str(VLLM_ENV)], timeout=900)
-        if rc != 0:
-            raise RuntimeError("uv venv failed: " + out[-3000:])
-        rc, out = sh([uv, "pip", "install", "--python", str(VLLM_PY), f"vllm=={CONFIG['vllm_version']}"], timeout=2400)
-        (OUT / "install-vllm.log").write_text(out)
+    # vLLM side: reuse only an exact match; repair any other existing environment in place.
+    pins_file = OUT / "vllm-env-pins.txt"
+    pins_file.write_text("".join(f"{k}=={v}\n" for k, v in VLLM_PINS.items()))
+    before = _venv_versions(VLLM_PINS)
+    plan = plan_vllm_env(before, VLLM_PINS)
+    details.update(env_action=plan["action"], installed_before=before, mismatched_before=plan["mismatched"])
+    if plan["mismatched"]:
+        print("Repairing vLLM environment:", ", ".join(f"{k} {v['installed']} → {v['required']}" for k, v in plan["mismatched"].items()))
+    t = time.perf_counter()
+    if plan["action"] != "reuse":
+        uv = _uv()
+        log = []
+        if plan["action"] == "create":
+            if VLLM_ENV.exists():
+                shutil.rmtree(VLLM_ENV)
+            rc, out = sh([uv, "venv", "--python", CONFIG["vllm_python"], str(VLLM_ENV)], timeout=900)
+            log.append(out)
+            if rc != 0:
+                raise RuntimeError("uv venv failed: " + out[-3000:])
+        rc, out = sh([uv, "pip", "install", "--python", str(VLLM_PY), "-r", str(pins_file)], timeout=2400)
+        log.append(out)
+        if rc != 0 and plan["action"] == "repair":
+            # In-place repair failed: rebuild the environment from scratch.
+            details["repair_failed"] = out[-2000:]
+            shutil.rmtree(VLLM_ENV, ignore_errors=True)
+            rc, out = sh([uv, "venv", "--python", CONFIG["vllm_python"], str(VLLM_ENV)], timeout=900)
+            log.append(out)
+            if rc == 0:
+                rc, out = sh([uv, "pip", "install", "--python", str(VLLM_PY), "-r", str(pins_file)], timeout=2400)
+                log.append(out)
+            details["env_action"] = "recreate after failed repair"
+        (OUT / "install-vllm.log").write_text("\n\n".join(log))
         if rc != 0:
             raise RuntimeError("vLLM install failed (see install-vllm.log): " + out[-3000:])
-        details["vllm_install_s"] = round(time.perf_counter() - t, 1)
-    else:
-        details["vllm_install_s"] = 0.0
-        details["vllm_reused"] = True
+    details["vllm_install_s"] = round(time.perf_counter() - t, 1)
+
+    after = _venv_versions(VLLM_PINS)
+    still = plan_vllm_env(after, VLLM_PINS)["mismatched"] if after is not None else {"venv": "missing"}
+    if still:
+        raise RuntimeError(f"vLLM environment does not match the pins after install: {still}")
+    details["installed_after"] = after
 
     probe = ("import json, importlib.metadata as m\n"
-             "out = {p: None for p in ['vllm','torch','transformers','triton','xformers','flashinfer-python','tokenizers']}\n"
+             "out = {p: None for p in ['vllm','torch','transformers','triton','xformers','flashinfer-python','tokenizers','huggingface-hub']}\n"
              "for p in out:\n"
              "    try: out[p] = m.version(p)\n"
              "    except Exception: pass\n"
@@ -402,12 +450,13 @@ def _install():
     if rc != 0:
         raise RuntimeError("could not import torch in the vLLM venv: " + out[-3000:])
     details["vllm_env"] = json.loads(out.strip().splitlines()[-1])
-    _, freeze = sh(["uv", "pip", "freeze", "--python", str(VLLM_PY)]) if shutil.which("uv") else sh([str(VLLM_PY), "-m", "pip", "freeze"])
+    _, freeze = sh([_uv(), "pip", "freeze", "--python", str(VLLM_PY)])
     (OUT / "vllm-env-freeze.txt").write_text(freeze)
     details["kernel_env"] = {p: _pkg_version(p) for p in
                              ["torch", "transformers", "tokenizers", "huggingface-hub", "nvidia-ml-py",
                               "sentencepiece", "protobuf", "accelerate", "safetensors", "requests"]}
     RESULTS["environment"]["vllm_env"] = details["vllm_env"]
+    RESULTS["environment"]["vllm_env_action"] = details["env_action"]
     RESULTS["environment"]["kernel_env"] = details["kernel_env"]
     return details
 
@@ -455,6 +504,29 @@ def _download(key):
 
 for _key in MODE_MODELS:
     run_stage(f"download/{_key}", lambda k=_key: _download(k), requires=["gpu_detect"])
+
+# ---- vLLM tokenizer preflight -------------------------------------------------------
+# Initialise the chat model's tokenizer with vLLM's own get_tokenizer() inside the vLLM venv.
+# This catches a Transformers/vLLM mismatch in seconds instead of as a server crash.
+VLLM_PROBE_SRC = <<VLLM_PROBE_LITERAL>>
+
+
+def _tokenizer_preflight():
+    probe = OUT / "vllm_tokenizer_probe.py"
+    probe.write_text(VLLM_PROBE_SRC)
+    rc, out = sh([str(VLLM_PY), "-I", str(probe), str(MODEL_PATHS[CHAT_KEY])], timeout=900)
+    (OUT / "vllm-tokenizer-preflight.log").write_text(out)
+    try:
+        result = json.loads(out.strip().splitlines()[-1])
+    except Exception:
+        result = None
+    if rc != 0 or not result or not result.get("ok"):
+        err = (result or {}).get("tokenizers", {}).get(str(MODEL_PATHS[CHAT_KEY]), {}).get("error") or out[-2000:]
+        raise RuntimeError(f"vLLM could not initialise the {CONFIG['models'][CHAT_KEY]['repo']} tokenizer "
+                           f"with pins {VLLM_PINS}: {err}")
+    return result
+
+run_stage("vllm_tokenizer_preflight", _tokenizer_preflight, requires=["install", f"download/{CHAT_KEY}"])
 ''')
 
 # ---------------------------------------------------------------------------
@@ -561,9 +633,7 @@ print(f"{len(QUESTIONS)} questions · workload sha256 {WORKLOAD_SHA256}")
 # ---------------------------------------------------------------------------
 code(r'''
 # @title 7 · Benchmark helpers (memory sampler, vLLM server, chat client, BGE-M3, checker)
-# ---- bench_core.py (inlined verbatim by build_notebook.py; tested on CPU in tests/) ----
-# <<BENCH_CORE>>
-# ---- end bench_core.py ----
+# Pure logic (consume_sse, cancellation_verdict, evaluate_config, ...) comes from bench_core in cell 4.
 import gc, secrets, signal, statistics, threading
 import requests
 
@@ -1014,7 +1084,7 @@ code(r'''
 # @title 8 · Run the selected mode (each stage is saved as soon as it finishes)
 from concurrent.futures import ThreadPoolExecutor
 
-READY = ["install", *[f"download/{k}" for k in MODE_MODELS], "workload", "helpers"]
+READY = ["install", *[f"download/{k}" for k in MODE_MODELS], "vllm_tokenizer_preflight", "workload", "helpers"]
 
 
 def run_config(util, idx):
@@ -1373,7 +1443,25 @@ except Exception as exc:
 
 
 BENCH_CORE = HERE / "bench_core.py"
+PINS_FILE = HERE / "vllm-env-pins.txt"
+PROBE = HERE / "vllm_tokenizer_probe.py"
 MARKER = "# <<BENCH_CORE>>"
+
+
+def _pins() -> dict:
+    sys.path.insert(0, str(HERE))
+    try:
+        from bench_core import parse_pins
+    finally:
+        sys.path.pop(0)
+    return parse_pins(PINS_FILE.read_text())
+
+
+def _probe_source() -> str:
+    text = PROBE.read_text()
+    if "\'\'\'" in text or text.rstrip().endswith("\\"):
+        raise ValueError("vllm_tokenizer_probe.py cannot be embedded in a raw triple-quoted string")
+    return text
 
 
 def render() -> str:
@@ -1392,6 +1480,8 @@ def render() -> str:
     for i, (kind, src) in enumerate(CELLS):
         if MARKER in src:
             src = src.replace(MARKER, core)
+        src = src.replace("<<VLLM_PINS>>", repr(_pins()))
+        src = src.replace("<<VLLM_PROBE_LITERAL>>", "r" + "'" * 3 + _probe_source() + "'" * 3)
         cell = {"cell_type": kind, "id": f"cell-{i:02d}", "metadata": {}, "source": src.splitlines(keepends=True)}
         if kind == "code":
             cell.update(execution_count=None, outputs=[])
@@ -1405,8 +1495,6 @@ def build() -> None:
 
 
 if __name__ == "__main__":
-    import sys
-
     if "--check" in sys.argv:
         if TARGET.read_text() != render():
             sys.exit("m1_gpu_feasibility.ipynb is stale: run python ml/gpu-feasibility/build_notebook.py")

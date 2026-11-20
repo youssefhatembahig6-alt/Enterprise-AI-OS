@@ -13,6 +13,18 @@ Open in Colab: <https://colab.research.google.com/github/youssefhatembahig6-alt/
 
 After this branch is merged, change `feature/m1-gpu-feasibility` to `main` in that link.
 
+## Retry after the Transformers startup failure
+
+The first free-Colab run failed at vLLM startup with `AttributeError: Qwen2Tokenizer has no attribute all_special_tokens_extended`. The cause: vLLM 0.11.0 declares `transformers>=4.55.2` with no upper bound, so the install resolved Transformers 5.23.0, which removed that attribute.
+
+The fix has three parts:
+
+* **Pins.** [`vllm-env-pins.txt`](vllm-env-pins.txt) now pins `vllm==0.11.0` and `transformers==4.56.2`.
+* **Repair on rerun.** Cell 4 reuses an existing `/content/vllm-env` only if every pin matches exactly. Otherwise it repairs the environment in place, or rebuilds it if the repair fails.
+* **Preflight.** A new stage, `vllm_tokenizer_preflight`, at the end of cell 5 initialises the chat model's tokenizer through vLLM's own `get_tokenizer()` before any server starts.
+
+You don't need to delete anything. The same runtime, or a fresh one, both work.
+
 ## Run the small mode (default)
 
 1. Open the link, sign in to Google, and choose **File → Save a copy in Drive**.
@@ -29,7 +41,8 @@ Follow the same steps, but in cell 2 choose `MODE = "target"` from the drop-down
 ## What is recorded
 
 * **Environment (cell 1):** GPU name, compute capability, driver and CUDA version, and GPU, host and disk memory, all recorded before anything is installed.
-* **Software:** vLLM 0.11.0 in its own uv venv, with the full package freeze, plus the kernel's torch and transformers versions.
+* **Software:** the pinned vLLM environment in its own uv venv: what was installed before, the action taken (`create`, `reuse` or `repair`), the installed versions afterwards, and the full package freeze. Plus the kernel's torch and transformers versions.
+* **Tokenizer preflight:** the tokenizer class, vocabulary size and special-token count as seen through vLLM, recorded before vLLM starts.
 * **Models:** for each downloaded model, the repository, requested revision, resolved commit SHA, files, bytes, download seconds and license.
 * **Stages:** status, duration, details, and any error with its traceback. `failures[]` lists every failure, with OOMs classified separately.
 * **Memory:** NVML samples every 100 ms give peak GPU use, minimum headroom, the kernel's torch allocator peaks and peak host RAM, overall and for each stage.
@@ -64,7 +77,7 @@ The failure is recorded in `results.json` and in the vLLM log inside the zip, an
 
 * `vllm.enforce_eager: True`, if CUDA-graph capture fails or runs out of memory
 * `vllm.attention_backend: "TRITON_ATTN"` or `"FLEX_ATTENTION"`, if the default attention backend is rejected on the T4
-* `vllm_version`, to compare another pinned release
+* `vllm-env-pins.txt` (in the repository), to test another vLLM and Transformers pair. Change it there, regenerate the notebook, and the CPU tokenizer test checks the new pair.
 
 ## Editing and tests
 
@@ -77,7 +90,7 @@ The notebook is generated, so don't edit it directly:
   python ml/gpu-feasibility/build_notebook.py
   ```
 
-* **Run the tests:** these are CPU-only and use the standard library only.
+* **Run the tests:** these are CPU-only and use the standard library only. The two vLLM tokenizer tests are skipped unless `EAIOS_VLLM_PYTHON` is set (see below).
 
   ```bash
   python -m unittest discover -s ml/gpu-feasibility/tests -v
@@ -85,6 +98,7 @@ The notebook is generated, so don't edit it directly:
 
   They cover:
 
+  * the reuse, repair and create decisions for the vLLM venv, plus the real cell 4 run against a simulated venv holding the old `vllm 0.11.0` + `transformers 5.23.0` pair
   * natural early completion versus client interruption of a mocked stream
   * failed, skipped and untested restarts
   * candidate selection
@@ -92,4 +106,18 @@ The notebook is generated, so don't edit it directly:
   * the default mode
   * downloading only the models for the selected mode
 
-CI runs `build_notebook.py --check` and the tests in the `gpu-feasibility-notebook` job.
+* **Run the real vLLM tokenizer test on CPU:** this installs the pinned environment with CPU torch, downloads only the tokenizer files of Qwen3-1.7B and Qwen3-8B-AWQ at pinned revisions, then initialises both tokenizers through vLLM's `get_tokenizer()`.
+
+  ```bash
+  uv venv --python 3.12 /tmp/vllm-env
+  ```
+
+  ```bash
+  uv pip install --python /tmp/vllm-env/bin/python --torch-backend cpu -r ml/gpu-feasibility/vllm-env-pins.txt
+  ```
+
+  ```bash
+  EAIOS_VLLM_PYTHON=/tmp/vllm-env/bin/python python -m unittest ml/gpu-feasibility/tests/test_vllm_tokenizer.py -v
+  ```
+
+CI runs `build_notebook.py --check` and the stdlib tests in the `gpu-feasibility-notebook` job. The `vllm-tokenizer` job runs the real tokenizer test as required, not skipped.
