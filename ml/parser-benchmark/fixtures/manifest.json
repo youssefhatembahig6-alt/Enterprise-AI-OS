@@ -1,0 +1,137 @@
+{
+ "generator": "m1-parser-fixtures-v1",
+ "generator_script": "ml/parser-benchmark/fixtures/generate.py",
+ "label": "Synthetic benchmark fixture. Not a NileTech publication.",
+ "provenance": {
+  "baseline-public": {
+   "archive": "niletech-0.1.6.zip (owner-supplied, outside the repository)",
+   "archive_sha256": "e220664ca64a21a78450fb1abcc649c45e1038a18064bc33aabadff866fb42d3",
+   "path": "documents/niletech/PUBLIC/PUBLIC/about.md",
+   "sha256": "aa97fe160e32b993b4b3dbb51d12448e408ef8303ca937457d2d0ac4c157e14d",
+   "classification": "PUBLIC"
+  },
+  "baseline-sales": {
+   "path": "backend/fixtures/business/niletech-0.1.6/tables",
+   "normalized_fingerprint": "e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127",
+   "cross_checks": "Q1 2026 net 80,934,385.00 / 291 orders / tax 11,330,813.90 / pending 12,605,562.00 / cancelled 9,447,839.00"
+  },
+  "synthetic": "Text written for this benchmark in generate.py; not a NileTech publication.",
+  "excluded": "INTERNAL, CONFIDENTIAL and RESTRICTED baseline documents (public repository)."
+ },
+ "fonts": {
+  "DejaVuSans.ttf": "57f73e11f51999432bf7ab22ce55b6f945d5eca1bf824404cfa9ec2e3718c84e",
+  "DejaVuSans-Bold.ttf": "a4c5bc453ca281d90ea079e596da7ae0dfeb5777497c29ec254e76d97ff6f890"
+ },
+ "fixtures": [
+  {
+   "id": "digital-company-overview",
+   "case": "digital_pdf",
+   "file": "files/digital-company-overview.pdf",
+   "media_type": "application/pdf",
+   "bytes": 44632,
+   "sha256": "3c47e7f1fc13cb553d178d37bf1adbc78ccb530d7c01bba8cbf0266d0adba625",
+   "gold": "gold/digital-company-overview.json",
+   "gold_sha256": "6620832d00ca95c85eb20642f69b1ddce1e2b556f6e417877a746e527ea3f37c",
+   "sources": [
+    "baseline-public",
+    "synthetic"
+   ],
+   "notes": "about.md verbatim plus a labelled synthetic section; single column; logical content order",
+   "label": "SYNTHETIC"
+  },
+  {
+   "id": "two-column-newsletter",
+   "case": "two_column_pdf",
+   "file": "files/two-column-newsletter.pdf",
+   "media_type": "application/pdf",
+   "bytes": 45184,
+   "sha256": "f88af22ce0843c93ef5a0c7946a222143b75b9fefcf4b0ee0393598544042594",
+   "gold": "gold/two-column-newsletter.json",
+   "gold_sha256": "638e9bc75c753b652af37abca6cfd72f86185928334f2fb89e6c55de6bd5df5b",
+   "sources": [
+    "synthetic"
+   ],
+   "notes": "two columns; a paragraph continues across the column break; content stream drawn out of reading order",
+   "label": "SYNTHETIC"
+  },
+  {
+   "id": "table-heavy-sales-q1-2026",
+   "case": "table_heavy_pdf",
+   "file": "files/table-heavy-sales-q1-2026.pdf",
+   "media_type": "application/pdf",
+   "bytes": 47401,
+   "sha256": "a0dd67b85b2976392235c05bf1be30a9b8be9fa198138208caeed6596af61365",
+   "gold": "gold/table-heavy-sales-q1-2026.json",
+   "gold_sha256": "706192c9067ba64821187ae7a0ffbd145ee0539b917d0bb58e98561140ea662b",
+   "sources": [
+    "baseline-sales",
+    "synthetic"
+   ],
+   "notes": "four table styles: full grid, borderless, merged two-level header, zebra table split over a page break",
+   "label": "SYNTHETIC"
+  },
+  {
+   "id": "scanned-delivery-note",
+   "case": "scanned_pdf",
+   "file": "files/scanned-delivery-note.pdf",
+   "media_type": "application/pdf",
+   "bytes": 233986,
+   "sha256": "9b30e8436ab7ffa971d8ae2c0cabe3a6cb81d1e7ce75ac6e1b59566f3255799f",
+   "gold": "gold/scanned-delivery-note.json",
+   "gold_sha256": "69fbf437ba88ba99f518e91c0a02e6f81135df8b775d5f6c9647759eb3acf780",
+   "sources": [
+    "baseline-sales",
+    "synthetic"
+   ],
+   "notes": "image-only page at 200 dpi, rotated 0.8 degrees, speckle noise and blur; no text layer",
+   "label": "SYNTHETIC"
+  },
+  {
+   "id": "tricky-customers-csv",
+   "case": "csv",
+   "file": "files/tricky-customers.csv",
+   "media_type": "text/csv",
+   "bytes": 770,
+   "sha256": "02f3ca381bbb449414dcea4541f1a56b67832d94a8fbb5a22e22c899f6166dc2",
+   "gold": "gold/tricky-customers-csv.json",
+   "gold_sha256": "8154e207fb8b4cc9e15a32232225fe7526a7de0412d7a4bf58cb7f496eca6824",
+   "sources": [
+    "baseline-sales",
+    "synthetic"
+   ],
+   "notes": "UTF-8 BOM, CRLF, quoted commas, doubled quotes, embedded newline, Arabic, emoji, leading zeros, formula-like text",
+   "label": "SYNTHETIC"
+  },
+  {
+   "id": "semicolon-cp1252-csv",
+   "case": "csv",
+   "file": "files/semicolon-cp1252.csv",
+   "media_type": "text/csv",
+   "bytes": 385,
+   "sha256": "ad0ccbb89c35197199b45d75f2bc7d7029d9bc0a3b50baca5771d807b1d2481b",
+   "gold": "gold/semicolon-cp1252-csv.json",
+   "gold_sha256": "266756699cb56b3aa2c75186bb247055ade4346e90e28945c9567c5ec18db7e3",
+   "sources": [
+    "synthetic"
+   ],
+   "notes": "semicolon delimiter, cp1252 encoding (euro sign 0x80), decimal commas, quoted delimiter",
+   "label": "SYNTHETIC"
+  },
+  {
+   "id": "multi-sheet-workbook",
+   "case": "xlsx",
+   "file": "files/multi-sheet-q1.xlsx",
+   "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+   "bytes": 21205,
+   "sha256": "572016e7abef5b27fe5870f621868a9d52b6b975e50b9c4c5444966f287894b9",
+   "gold": "gold/multi-sheet-workbook.json",
+   "gold_sha256": "0e51f019dfeb0ed7064978c9b5c01620d3e9367c1013fb98620b19d47f5f3537",
+   "sources": [
+    "baseline-sales",
+    "synthetic"
+   ],
+   "notes": "four sheets (one hidden), merged title, formulas with cached values, typed dates, wrapped text, Arabic, text-number",
+   "label": "SYNTHETIC"
+  }
+ ]
+}

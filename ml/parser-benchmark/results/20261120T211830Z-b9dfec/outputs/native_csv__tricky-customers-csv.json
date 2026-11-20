@@ -1,0 +1,87 @@
+{
+ "rows": [
+  [
+   "customer_code",
+   "name",
+   "country",
+   "city",
+   "credit_limit_usd",
+   "since_date",
+   "notes"
+  ],
+  [
+   "00017",
+   "Abbott, Williams and Ibarra (NT-118)",
+   "EG",
+   "Cairo",
+   "1,250,000.00",
+   "2021-04-14",
+   "Key account"
+  ],
+  [
+   "00102",
+   "Nile Delta Trading, S.A.E.",
+   "EG",
+   "Alexandria",
+   "98000.50",
+   "2022-11-03",
+   "Prefers \"net 45\" terms"
+  ],
+  [
+   "00230",
+   "شركة النيل للتقنية",
+   "EG",
+   "القاهرة",
+   "45000",
+   "2023-01-09",
+   "Arabic name and city"
+  ],
+  [
+   "01005",
+   "Zürich Analytics GmbH",
+   "CH",
+   "Zürich",
+   "-1200.00",
+   "2020-06-30",
+   "Line one\nLine two"
+  ],
+  [
+   "00999",
+   "Café Système SARL",
+   "FR",
+   "Paris",
+   "",
+   "2024-02-29",
+   ""
+  ],
+  [
+   "00042",
+   "Gulf Ventures LLC 🚀",
+   "AE",
+   "Dubai",
+   "300000",
+   "2019-12-31",
+   "  leading and trailing spaces  "
+  ],
+  [
+   "00007",
+   "=1+1 Holdings",
+   "AE",
+   "Abu Dhabi",
+   "0",
+   "2025-01-01",
+   "Starts with = (formula-injection text)"
+  ],
+  [
+   "00311",
+   "Aguilar, Garcia and Jackson (NT-029)",
+   "SA",
+   "Riyadh",
+   "75,500",
+   "2018-07-15",
+   "comma, inside; and semicolon"
+  ]
+ ],
+ "encoding": "utf-8-sig",
+ "delimiter": ","
+}

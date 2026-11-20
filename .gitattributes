@@ -7,3 +7,6 @@
 *.gz binary
 # Source baseline bytes are verified by SHA-256; never normalize them.
 backend/fixtures/business/** -text
+# Parser-benchmark fixtures are verified by SHA-256 (the CSV is CRLF on purpose); never normalize them.
+ml/parser-benchmark/fixtures/files/** -text
+ml/parser-benchmark/results/colab-zips/** -text

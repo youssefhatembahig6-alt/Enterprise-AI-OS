@@ -1,0 +1,31 @@
+{
+ "text": "## NileTech Solutions DELIVERY NOTE\n\nDeliverynoteno.DN-001809\n\nOrder: SO-001809 Order date:2026-01-01\n\nCustomer:Brown andSons (NT-009)\n\n| SKU      | Description                   |   Qty |   Unit price (USD) |   Line total (USD) |\n|----------|-------------------------------|-------|--------------------|--------------------|\n| NIL-0009 | Workflow Automation Platform2 |     9 |          47,089.00 |         423,801.00 |\n| NIL-0010 | WorkflowAutomation Platform2  |    12 |          10,558.00 |         126,696.00 |\n\nSubtotal: USD550,497.00\n\nTax14%: USD 77,069.58\n\nTotal: USD627,566.58\n\nGoods remain the property of NileTech Solutions until paid in full. Report any damage or shortage within7days of delivery.",
+ "tables": [
+  [
+   [
+    "SKU",
+    "Description",
+    "Qty",
+    "Unit price (USD)",
+    "Line total (USD)"
+   ],
+   [
+    "NIL-0009",
+    "Workflow Automation Platform2",
+    "9",
+    "47,089.00",
+    "423,801.00"
+   ],
+   [
+    "NIL-0010",
+    "WorkflowAutomation Platform2",
+    "12",
+    "10,558.00",
+    "126,696.00"
+   ]
+  ]
+ ],
+ "headings": [
+  "NileTech Solutions DELIVERY NOTE"
+ ]
+}

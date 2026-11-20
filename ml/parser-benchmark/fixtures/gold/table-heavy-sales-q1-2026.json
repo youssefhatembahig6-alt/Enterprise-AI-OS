@@ -1,0 +1,408 @@
+{
+ "case": "table_heavy_pdf",
+ "file": "table-heavy-sales-q1-2026.pdf",
+ "file_sha256": "a0dd67b85b2976392235c05bf1be30a9b8be9fa198138208caeed6596af61365",
+ "fixture": "table-heavy-sales-q1-2026",
+ "furniture": [
+  "Q1 2026 sales tables (synthetic fixture) · Page 1",
+  "Q1 2026 sales tables (synthetic fixture) · Page 2"
+ ],
+ "headings": [
+  "NileTech Q1 2026 sales tables",
+  "Table 1. Fulfilled sales by month",
+  "Table 2. Q1 2026 orders by status",
+  "Table 3. Fulfilled net sales by region and month (USD)",
+  "Table 4. Product sales from fulfilled Q1 2026 orders"
+ ],
+ "reading_order": [
+  "NileTech Q1 2026 sales tables",
+  "Synthetic benchmark fixture. Not a NileTech",
+  "Figures cover orders dated 2026-01-01 to",
+  "Table 1. Fulfilled sales by month",
+  "January 2026 97 26,703,207.00 3,738,448.98 30,441,655.98",
+  "Total 291 80,934,385.00 11,330,813.90 92,265,198.90",
+  "Table 2. Q1 2026 orders by",
+  "FULFILLED 291 80,934,385.00",
+  "All statuses 359 102,987,786.00",
+  "Table 3. Fulfilled net sales by",
+  "EMEA 8,408,107.00 9,338,188.00 5,074,658.00 22,820,953.00",
+  "NORTH_AFRICA 8,002,006.00 4,057,189.00 9,020,173.00 21,079,368.00",
+  "Table 4. Product sales from fulfilled",
+  "NIL-0001 Workflow Automation Platform Enterprise 129 4,742,169.00",
+  "NIL-0025 Workflow Automation Platform 4 Enterprise 176 4,819,056.00"
+ ],
+ "tables": [
+  {
+   "header_rows": [
+    [
+     "Month",
+     "Orders",
+     "Net sales (USD)",
+     "Tax (USD)",
+     "Gross (USD)"
+    ]
+   ],
+   "id": "T1",
+   "rows": [
+    [
+     "January 2026",
+     "97",
+     "26,703,207.00",
+     "3,738,448.98",
+     "30,441,655.98"
+    ],
+    [
+     "February 2026",
+     "97",
+     "27,474,894.00",
+     "3,846,485.16",
+     "31,321,379.16"
+    ],
+    [
+     "March 2026",
+     "97",
+     "26,756,284.00",
+     "3,745,879.76",
+     "30,502,163.76"
+    ],
+    [
+     "Total",
+     "291",
+     "80,934,385.00",
+     "11,330,813.90",
+     "92,265,198.90"
+    ]
+   ],
+   "style": "full grid",
+   "title": "Table 1. Fulfilled sales by month"
+  },
+  {
+   "header_rows": [
+    [
+     "Status",
+     "Orders",
+     "Net value (USD)"
+    ]
+   ],
+   "id": "T2",
+   "rows": [
+    [
+     "FULFILLED",
+     "291",
+     "80,934,385.00"
+    ],
+    [
+     "PENDING",
+     "40",
+     "12,605,562.00"
+    ],
+    [
+     "CANCELLED",
+     "28",
+     "9,447,839.00"
+    ],
+    [
+     "All statuses",
+     "359",
+     "102,987,786.00"
+    ]
+   ],
+   "style": "borderless",
+   "title": "Table 2. Q1 2026 orders by status"
+  },
+  {
+   "header_rows": [
+    [
+     "Region",
+     "Q1 2026",
+     "",
+     "",
+     ""
+    ],
+    [
+     "Region",
+     "January",
+     "February",
+     "March",
+     "Quarter"
+    ]
+   ],
+   "id": "T3",
+   "rows": [
+    [
+     "EMEA",
+     "8,408,107.00",
+     "9,338,188.00",
+     "5,074,658.00",
+     "22,820,953.00"
+    ],
+    [
+     "EUROPE",
+     "5,281,829.00",
+     "9,942,048.00",
+     "8,905,679.00",
+     "24,129,556.00"
+    ],
+    [
+     "GULF",
+     "5,011,265.00",
+     "4,137,469.00",
+     "3,755,774.00",
+     "12,904,508.00"
+    ],
+    [
+     "NORTH_AFRICA",
+     "8,002,006.00",
+     "4,057,189.00",
+     "9,020,173.00",
+     "21,079,368.00"
+    ]
+   ],
+   "style": "grid with merged two-level header",
+   "title": "Table 3. Fulfilled net sales by region and month (USD)"
+  },
+  {
+   "header_rows": [
+    [
+     "SKU",
+     "Product",
+     "Tier",
+     "Units",
+     "Net sales (USD)"
+    ]
+   ],
+   "id": "T4",
+   "rows": [
+    [
+     "NIL-0001",
+     "Workflow Automation Platform",
+     "Enterprise",
+     "129",
+     "4,742,169.00"
+    ],
+    [
+     "NIL-0002",
+     "Workflow Automation Platform",
+     "Business",
+     "166",
+     "2,914,628.00"
+    ],
+    [
+     "NIL-0003",
+     "Document Intelligence Suite",
+     "Enterprise",
+     "117",
+     "2,499,120.00"
+    ],
+    [
+     "NIL-0004",
+     "Document Intelligence Suite",
+     "Business",
+     "187",
+     "2,222,495.00"
+    ],
+    [
+     "NIL-0005",
+     "Integration Gateway",
+     "Standard",
+     "131",
+     "610,853.00"
+    ],
+    [
+     "NIL-0006",
+     "Analytics Workspace",
+     "Business",
+     "93",
+     "833,280.00"
+    ],
+    [
+     "NIL-0007",
+     "Managed Support Retainer",
+     "Standard",
+     "140",
+     "817,600.00"
+    ],
+    [
+     "NIL-0008",
+     "Implementation Services",
+     "Professional",
+     "198",
+     "3,839,220.00"
+    ],
+    [
+     "NIL-0009",
+     "Workflow Automation Platform 2",
+     "Enterprise",
+     "239",
+     "11,254,271.00"
+    ],
+    [
+     "NIL-0010",
+     "Workflow Automation Platform 2",
+     "Business",
+     "207",
+     "2,185,506.00"
+    ],
+    [
+     "NIL-0011",
+     "Document Intelligence Suite 2",
+     "Enterprise",
+     "163",
+     "4,045,171.00"
+    ],
+    [
+     "NIL-0012",
+     "Document Intelligence Suite 2",
+     "Business",
+     "145",
+     "2,133,820.00"
+    ],
+    [
+     "NIL-0013",
+     "Integration Gateway 2",
+     "Standard",
+     "185",
+     "946,830.00"
+    ],
+    [
+     "NIL-0014",
+     "Analytics Workspace 2",
+     "Business",
+     "250",
+     "1,784,500.00"
+    ],
+    [
+     "NIL-0015",
+     "Managed Support Retainer 2",
+     "Standard",
+     "238",
+     "982,464.00"
+    ],
+    [
+     "NIL-0016",
+     "Implementation Services 2",
+     "Professional",
+     "156",
+     "4,456,296.00"
+    ],
+    [
+     "NIL-0017",
+     "Workflow Automation Platform 3",
+     "Enterprise",
+     "247",
+     "8,904,103.00"
+    ],
+    [
+     "NIL-0018",
+     "Workflow Automation Platform 3",
+     "Business",
+     "171",
+     "2,358,261.00"
+    ],
+    [
+     "NIL-0019",
+     "Document Intelligence Suite 3",
+     "Enterprise",
+     "210",
+     "6,803,580.00"
+    ],
+    [
+     "NIL-0020",
+     "Document Intelligence Suite 3",
+     "Business",
+     "206",
+     "2,376,004.00"
+    ],
+    [
+     "NIL-0021",
+     "Integration Gateway 3",
+     "Standard",
+     "152",
+     "1,349,760.00"
+    ],
+    [
+     "NIL-0022",
+     "Analytics Workspace 3",
+     "Business",
+     "243",
+     "2,387,232.00"
+    ],
+    [
+     "NIL-0023",
+     "Managed Support Retainer 3",
+     "Standard",
+     "257",
+     "651,752.00"
+    ],
+    [
+     "NIL-0024",
+     "Implementation Services 3",
+     "Professional",
+     "219",
+     "5,016,414.00"
+    ],
+    [
+     "NIL-0025",
+     "Workflow Automation Platform 4",
+     "Enterprise",
+     "176",
+     "4,819,056.00"
+    ]
+   ],
+   "style": "horizontal rules, zebra, split across pages with repeated header",
+   "title": "Table 4. Product sales from fulfilled Q1 2026 orders"
+  }
+ ],
+ "text": "NileTech Q1 2026 sales tables\n\nSynthetic benchmark fixture. Not a NileTech publication.\n\nFigures cover orders dated 2026-01-01 to 2026-03-31. Net sales exclude tax; tax is 14%. Amounts are in USD. Values are derived from the niletech-0.1.6 sales baseline.\n\nTable 1. Fulfilled sales by month\n\nMonth Orders Net sales (USD) Tax (USD) Gross (USD)\n\nJanuary 2026 97 26,703,207.00 3,738,448.98 30,441,655.98\n\nFebruary 2026 97 27,474,894.00 3,846,485.16 31,321,379.16\n\nMarch 2026 97 26,756,284.00 3,745,879.76 30,502,163.76\n\nTotal 291 80,934,385.00 11,330,813.90 92,265,198.90\n\nTable 2. Q1 2026 orders by status\n\nStatus Orders Net value (USD)\n\nFULFILLED 291 80,934,385.00\n\nPENDING 40 12,605,562.00\n\nCANCELLED 28 9,447,839.00\n\nAll statuses 359 102,987,786.00\n\nTable 3. Fulfilled net sales by region and month (USD)\n\nRegion Q1 2026\n\nJanuary February March Quarter\n\nEMEA 8,408,107.00 9,338,188.00 5,074,658.00 22,820,953.00\n\nEUROPE 5,281,829.00 9,942,048.00 8,905,679.00 24,129,556.00\n\nGULF 5,011,265.00 4,137,469.00 3,755,774.00 12,904,508.00\n\nNORTH_AFRICA 8,002,006.00 4,057,189.00 9,020,173.00 21,079,368.00\n\nTable 4. Product sales from fulfilled Q1 2026 orders\n\nSKU Product Tier Units Net sales (USD)\n\nNIL-0001 Workflow Automation Platform Enterprise 129 4,742,169.00\n\nNIL-0002 Workflow Automation Platform Business 166 2,914,628.00\n\nNIL-0003 Document Intelligence Suite Enterprise 117 2,499,120.00\n\nNIL-0004 Document Intelligence Suite Business 187 2,222,495.00\n\nNIL-0005 Integration Gateway Standard 131 610,853.00\n\nNIL-0006 Analytics Workspace Business 93 833,280.00\n\nNIL-0007 Managed Support Retainer Standard 140 817,600.00\n\nNIL-0008 Implementation Services Professional 198 3,839,220.00\n\nNIL-0009 Workflow Automation Platform 2 Enterprise 239 11,254,271.00\n\nNIL-0010 Workflow Automation Platform 2 Business 207 2,185,506.00\n\nNIL-0011 Document Intelligence Suite 2 Enterprise 163 4,045,171.00\n\nNIL-0012 Document Intelligence Suite 2 Business 145 2,133,820.00\n\nNIL-0013 Integration Gateway 2 Standard 185 946,830.00\n\nNIL-0014 Analytics Workspace 2 Business 250 1,784,500.00\n\nNIL-0015 Managed Support Retainer 2 Standard 238 982,464.00\n\nNIL-0016 Implementation Services 2 Professional 156 4,456,296.00\n\nNIL-0017 Workflow Automation Platform 3 Enterprise 247 8,904,103.00\n\nNIL-0018 Workflow Automation Platform 3 Business 171 2,358,261.00\n\nNIL-0019 Document Intelligence Suite 3 Enterprise 210 6,803,580.00\n\nNIL-0020 Document Intelligence Suite 3 Business 206 2,376,004.00\n\nNIL-0021 Integration Gateway 3 Standard 152 1,349,760.00\n\nNIL-0022 Analytics Workspace 3 Business 243 2,387,232.00\n\nNIL-0023 Managed Support Retainer 3 Standard 257 651,752.00\n\nNIL-0024 Implementation Services 3 Professional 219 5,016,414.00\n\nNIL-0025 Workflow Automation Platform 4 Enterprise 176 4,819,056.00",
+ "text_blocks": [
+  "NileTech Q1 2026 sales tables",
+  "Synthetic benchmark fixture. Not a NileTech publication.",
+  "Figures cover orders dated 2026-01-01 to 2026-03-31. Net sales exclude tax; tax is 14%. Amounts are in USD. Values are derived from the niletech-0.1.6 sales baseline.",
+  "Table 1. Fulfilled sales by month",
+  "Month Orders Net sales (USD) Tax (USD) Gross (USD)",
+  "January 2026 97 26,703,207.00 3,738,448.98 30,441,655.98",
+  "February 2026 97 27,474,894.00 3,846,485.16 31,321,379.16",
+  "March 2026 97 26,756,284.00 3,745,879.76 30,502,163.76",
+  "Total 291 80,934,385.00 11,330,813.90 92,265,198.90",
+  "Table 2. Q1 2026 orders by status",
+  "Status Orders Net value (USD)",
+  "FULFILLED 291 80,934,385.00",
+  "PENDING 40 12,605,562.00",
+  "CANCELLED 28 9,447,839.00",
+  "All statuses 359 102,987,786.00",
+  "Table 3. Fulfilled net sales by region and month (USD)",
+  "Region Q1 2026",
+  "January February March Quarter",
+  "EMEA 8,408,107.00 9,338,188.00 5,074,658.00 22,820,953.00",
+  "EUROPE 5,281,829.00 9,942,048.00 8,905,679.00 24,129,556.00",
+  "GULF 5,011,265.00 4,137,469.00 3,755,774.00 12,904,508.00",
+  "NORTH_AFRICA 8,002,006.00 4,057,189.00 9,020,173.00 21,079,368.00",
+  "Table 4. Product sales from fulfilled Q1 2026 orders",
+  "SKU Product Tier Units Net sales (USD)",
+  "NIL-0001 Workflow Automation Platform Enterprise 129 4,742,169.00",
+  "NIL-0002 Workflow Automation Platform Business 166 2,914,628.00",
+  "NIL-0003 Document Intelligence Suite Enterprise 117 2,499,120.00",
+  "NIL-0004 Document Intelligence Suite Business 187 2,222,495.00",
+  "NIL-0005 Integration Gateway Standard 131 610,853.00",
+  "NIL-0006 Analytics Workspace Business 93 833,280.00",
+  "NIL-0007 Managed Support Retainer Standard 140 817,600.00",
+  "NIL-0008 Implementation Services Professional 198 3,839,220.00",
+  "NIL-0009 Workflow Automation Platform 2 Enterprise 239 11,254,271.00",
+  "NIL-0010 Workflow Automation Platform 2 Business 207 2,185,506.00",
+  "NIL-0011 Document Intelligence Suite 2 Enterprise 163 4,045,171.00",
+  "NIL-0012 Document Intelligence Suite 2 Business 145 2,133,820.00",
+  "NIL-0013 Integration Gateway 2 Standard 185 946,830.00",
+  "NIL-0014 Analytics Workspace 2 Business 250 1,784,500.00",
+  "NIL-0015 Managed Support Retainer 2 Standard 238 982,464.00",
+  "NIL-0016 Implementation Services 2 Professional 156 4,456,296.00",
+  "NIL-0017 Workflow Automation Platform 3 Enterprise 247 8,904,103.00",
+  "NIL-0018 Workflow Automation Platform 3 Business 171 2,358,261.00",
+  "NIL-0019 Document Intelligence Suite 3 Enterprise 210 6,803,580.00",
+  "NIL-0020 Document Intelligence Suite 3 Business 206 2,376,004.00",
+  "NIL-0021 Integration Gateway 3 Standard 152 1,349,760.00",
+  "NIL-0022 Analytics Workspace 3 Business 243 2,387,232.00",
+  "NIL-0023 Managed Support Retainer 3 Standard 257 651,752.00",
+  "NIL-0024 Implementation Services 3 Professional 219 5,016,414.00",
+  "NIL-0025 Workflow Automation Platform 4 Enterprise 176 4,819,056.00"
+ ]
+}

@@ -1,0 +1,76 @@
+{
+ "case": "csv",
+ "checks": {
+  "decimal_comma": [
+   "1.234,50",
+   "12.000,75",
+   "-150,25"
+  ],
+  "non_ascii": [
+   "Müller & Söhne KG",
+   "Café Lumière",
+   "Señor Datos S.L.",
+   "Øresund Logistik A/S",
+   "€uro Systems SARL"
+  ],
+  "quoted_delimiter": "Price; quoted delimiter Ltd"
+ },
+ "delimiter": ";",
+ "encoding": "cp1252 (no BOM)",
+ "file": "semicolon-cp1252.csv",
+ "file_sha256": "ad0ccbb89c35197199b45d75f2bc7d7029d9bc0a3b50baca5771d807b1d2481b",
+ "fixture": "semicolon-cp1252-csv",
+ "kind": "csv",
+ "line_terminator": "LF",
+ "rows": [
+  [
+   "invoice_number",
+   "customer",
+   "amount_eur",
+   "issue_date",
+   "status"
+  ],
+  [
+   "INV-900101",
+   "Müller & Söhne KG",
+   "1.234,50",
+   "03.02.2026",
+   "PAID"
+  ],
+  [
+   "INV-900102",
+   "Café Lumière",
+   "980,00",
+   "10.02.2026",
+   "OPEN"
+  ],
+  [
+   "INV-900103",
+   "Señor Datos S.L.",
+   "12.000,75",
+   "28.02.2026",
+   "PAID"
+  ],
+  [
+   "INV-900104",
+   "Øresund Logistik A/S",
+   "-150,25",
+   "01.03.2026",
+   "CREDIT"
+  ],
+  [
+   "INV-900105",
+   "Price; quoted delimiter Ltd",
+   "5,00",
+   "15.03.2026",
+   "OPEN"
+  ],
+  [
+   "INV-900106",
+   "€uro Systems SARL",
+   "7.777,77",
+   "31.03.2026",
+   "OVERDUE"
+  ]
+ ]
+}

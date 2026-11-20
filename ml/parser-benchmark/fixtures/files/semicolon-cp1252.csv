@@ -1,0 +1,7 @@
+invoice_number;customer;amount_eur;issue_date;status
+INV-900101;Müller & Söhne KG;1.234,50;03.02.2026;PAID
+INV-900102;Café Lumière;980,00;10.02.2026;OPEN
+INV-900103;Señor Datos S.L.;12.000,75;28.02.2026;PAID
+INV-900104;Øresund Logistik A/S;-150,25;01.03.2026;CREDIT
+INV-900105;"Price; quoted delimiter Ltd";5,00;15.03.2026;OPEN
+INV-900106;€uro Systems SARL;7.777,77;31.03.2026;OVERDUE

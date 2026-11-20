@@ -1,0 +1,4 @@
+$ uv pip install --python /content/venv-docling/bin/python -r /content/eaios/ml/parser-benchmark/colab-docling-pins.txt
+Using Python 3.12.3 environment at: venv-docling
+Audited 7 packages in 18ms
+$ cd /content/eaios/ml/parser-benchmark && /content/venv-docling/bin/python -c 'import docling.document_converter, pymupdf, pymupdf4llm, rapidfuzz'

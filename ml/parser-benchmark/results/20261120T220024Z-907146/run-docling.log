@@ -1,0 +1,80 @@
+$ /content/venv-docling/bin/python -m bench.run --where colab --adapters docling,pymupdf_layout --runs 3 --batch 20261120T220024Z-907146 --out results
+[docling] digital-company-overview ...
+
+Loading weights:   0%|          | 0/770 [00:00<?, ?it/s]
+Loading weights:  55%|█████▍    | 422/770 [00:00<00:00, 4057.85it/s]
+Loading weights: 100%|██████████| 770/770 [00:00<00:00, 5279.31it/s]
+[docling] two-column-newsletter ...
+[docling] table-heavy-sales-q1-2026 ...
+[docling] scanned-delivery-note ...
+[33m[WARNING] 2026-11-20 22:06:18,540 [RapidOCR] provider_config.py:103: CUDAExecutionProvider is not in available providers (['AzureExecutionProvider', 'CPUExecutionProvider']). Use AzureExecutionProvider inference by default.[0m
+[33m[WARNING] 2026-11-20 22:06:18,588 [RapidOCR] provider_config.py:103: CUDAExecutionProvider is not in available providers (['AzureExecutionProvider', 'CPUExecutionProvider']). Use AzureExecutionProvider inference by default.[0m
+[33m[WARNING] 2026-11-20 22:06:20,942 [RapidOCR] provider_config.py:103: CUDAExecutionProvider is not in available providers (['AzureExecutionProvider', 'CPUExecutionProvider']). Use AzureExecutionProvider inference by default.[0m
+[33m[WARNING] 2026-11-20 22:06:20,988 [RapidOCR] provider_config.py:103: CUDAExecutionProvider is not in available providers (['AzureExecutionProvider', 'CPUExecutionProvider']). Use AzureExecutionProvider inference by default.[0m
+[33m[WARNING] 2026-11-20 22:06:21,156 [RapidOCR] provider_config.py:103: CUDAExecutionProvider is not in available providers (['AzureExecutionProvider', 'CPUExecutionProvider']). Use AzureExecutionProvider inference by default.[0m
+[33m[WARNING] 2026-11-20 22:06:21,274 [RapidOCR] provider_config.py:103: CUDAExecutionProvider is not in available providers (['AzureExecutionProvider', 'CPUExecutionProvider']). Use AzureExecutionProvider inference by default.[0m
+[docling] tricky-customers-csv ...
+[docling] semicolon-cp1252-csv ...
+Document is not UTF-8; decoded it as cp1252. Text in any other single-byte or multi-byte encoding will be wrong. Set the `encoding` backend option (for example `MarkdownBackendOptions(encoding="shift_jis")`) to decode it explicitly.
+Document is not UTF-8; decoded it as cp1252. Text in any other single-byte or multi-byte encoding will be wrong. Set the `encoding` backend option (for example `MarkdownBackendOptions(encoding="shift_jis")`) to decode it explicitly.
+Document is not UTF-8; decoded it as cp1252. Text in any other single-byte or multi-byte encoding will be wrong. Set the `encoding` backend option (for example `MarkdownBackendOptions(encoding="shift_jis")`) to decode it explicitly.
+Document is not UTF-8; decoded it as cp1252. Text in any other single-byte or multi-byte encoding will be wrong. Set the `encoding` backend option (for example `MarkdownBackendOptions(encoding="shift_jis")`) to decode it explicitly.
+[docling] multi-sheet-workbook ...
+[pymupdf_layout] digital-company-overview ...
+rapidocr_api using backend: rapidocr
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+[pymupdf_layout] two-column-newsletter ...
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+[pymupdf_layout] table-heavy-sales-q1-2026 ...
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+[pymupdf_layout] scanned-delivery-note ...
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+OCR on page.number=0/1.
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+OCR on page.number=0/1.
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+OCR on page.number=0/1.
+
+=== Document parser messages ===
+Using RapidOCR for OCR processing.
+OCR on page.number=0/1.
+wrote results/20261120T220551Z-200026.json

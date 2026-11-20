@@ -1,0 +1,1027 @@
+{
+ "run_id": "20261120T211830Z-b9dfec",
+ "batch": "20261120T211830Z-b9dfec",
+ "finished_at": "2026-11-20T21:18:39+00:00",
+ "environment": {
+  "where": "laptop",
+  "platform": "Linux-6.12.117+deb13-amd64-x86_64-with-glibc2.41",
+  "python": "3.13.5",
+  "machine": "x86_64",
+  "cpu_count": 12,
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13420H",
+  "ram_gib": 15.3,
+  "gpu": null
+ },
+ "packages": {
+  "openpyxl": "3.1.5",
+  "pandas": "2.3.3",
+  "pdfminer.six": "20260107",
+  "pdfplumber": "0.11.10",
+  "pymupdf": "2.1",
+  "rapidfuzz": "3.14.6",
+  "unstructured": "0.27.37"
+ },
+ "fixture_manifest_sha256": "7c740314d9907f92f95f1e6d4a99773bbf776ace431960e532a5ef984ade8e65",
+ "fixture_generator": "m1-parser-fixtures-v1",
+ "adapters": {
+  "pymupdf": {
+   "label": "PyMuPDF (no layout model)",
+   "config": "page.get_text('text'); page.find_tables(use_layout=False); pymupdf._layout_enabled=False",
+   "uses_models": "none",
+   "where": "laptop",
+   "notes": "Spec's digital-PDF fallback. Text in content-stream order."
+  },
+  "pymupdf_sorted": {
+   "label": "PyMuPDF sort=True (no layout model)",
+   "config": "page.get_text('text', sort=True); find_tables(use_layout=False)",
+   "uses_models": "none",
+   "where": "laptop",
+   "notes": "Same parser, geometric top-to-bottom sort."
+  },
+  "pdfplumber": {
+   "label": "pdfplumber",
+   "config": "page.extract_text(); page.extract_tables() with default settings",
+   "uses_models": "none",
+   "where": "laptop",
+   "notes": "Spec's targeted table/geometry tool."
+  },
+  "pymupdf_text_tables": {
+   "label": "PyMuPDF, text-strategy tables",
+   "config": "get_text('text'); find_tables(use_layout=False, strategy='text')",
+   "uses_models": "none",
+   "where": "laptop",
+   "notes": "Table finder variant for borderless tables."
+  },
+  "pdfplumber_text_tables": {
+   "label": "pdfplumber, text-strategy tables",
+   "config": "extract_tables({'vertical_strategy': 'text', 'horizontal_strategy': 'text'})",
+   "uses_models": "none",
+   "where": "laptop",
+   "notes": "Table finder variant for borderless tables."
+  },
+  "native_csv": {
+   "label": "Python csv (native)",
+   "config": "BOM/UTF-8/cp1252 decode; csv.Sniffer over , ; tab |; csv.reader",
+   "uses_models": "none",
+   "where": "laptop",
+   "notes": "Spec's native CSV parser."
+  },
+  "pandas_csv": {
+   "label": "pandas.read_csv (defaults)",
+   "config": "read_csv(dtype=str, keep_default_na=False); default sep and encoding",
+   "uses_models": "none",
+   "where": "laptop",
+   "notes": ""
+  },
+  "unstructured_csv": {
+   "label": "Unstructured partition_csv",
+   "config": "partition_csv(include_header=True); rows from text_as_html",
+   "uses_models": "none",
+   "where": "laptop",
+   "notes": ""
+  },
+  "openpyxl": {
+   "label": "openpyxl (values + formulas)",
+   "config": "load_workbook twice: data_only=True (cached values) and data_only=False (formulas)",
+   "uses_models": "none",
+   "where": "laptop",
+   "notes": "Spec's native Excel parser."
+  },
+  "pandas_excel": {
+   "label": "pandas.read_excel",
+   "config": "read_excel(sheet_name=None, header=None, engine='openpyxl')",
+   "uses_models": "none",
+   "where": "laptop",
+   "notes": ""
+  }
+ },
+ "routing": [
+  {
+   "fixture": "digital-company-overview",
+   "case": "digital_pdf",
+   "pages": 1,
+   "text_chars": 1375,
+   "pages_with_images": 0,
+   "route": "layout-aware text"
+  },
+  {
+   "fixture": "two-column-newsletter",
+   "case": "two_column_pdf",
+   "pages": 1,
+   "text_chars": 1973,
+   "pages_with_images": 0,
+   "route": "layout-aware text"
+  },
+  {
+   "fixture": "table-heavy-sales-q1-2026",
+   "case": "table_heavy_pdf",
+   "pages": 2,
+   "text_chars": 2869,
+   "pages_with_images": 0,
+   "route": "layout-aware text"
+  },
+  {
+   "fixture": "scanned-delivery-note",
+   "case": "scanned_pdf",
+   "pages": 1,
+   "text_chars": 0,
+   "pages_with_images": 1,
+   "route": "ocr+layout"
+  }
+ ],
+ "results": [
+  {
+   "adapter": "pymupdf",
+   "fixture": "digital-company-overview",
+   "case": "digital_pdf",
+   "runs": 5,
+   "cold_s": 0.0722,
+   "warm_s": [
+    0.0223,
+    0.0203,
+    0.0206,
+    0.0202,
+    0.0206
+   ],
+   "median_s": 0.0206,
+   "metrics": {
+    "chars_extracted": 1296,
+    "chars_gold": 1296,
+    "text_similarity": 1.0,
+    "word_recall": 1.0,
+    "word_precision": 1.0,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "spurious_tables": 0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pymupdf",
+   "fixture": "two-column-newsletter",
+   "case": "two_column_pdf",
+   "runs": 5,
+   "cold_s": 0.0312,
+   "warm_s": [
+    0.0305,
+    0.0304,
+    0.0302,
+    0.0316,
+    0.0309
+   ],
+   "median_s": 0.0305,
+   "metrics": {
+    "chars_extracted": 1923,
+    "chars_gold": 1923,
+    "text_similarity": 0.2194,
+    "word_recall": 1.0,
+    "word_precision": 1.0,
+    "anchors_found": 1.0,
+    "reading_order": 0.4706,
+    "spurious_tables": 0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pymupdf",
+   "fixture": "table-heavy-sales-q1-2026",
+   "case": "table_heavy_pdf",
+   "runs": 5,
+   "cold_s": 0.058,
+   "warm_s": [
+    0.057,
+    0.0571,
+    0.0606,
+    0.0588,
+    0.0604
+   ],
+   "median_s": 0.0588,
+   "metrics": {
+    "chars_extracted": 2770,
+    "chars_gold": 2731,
+    "text_similarity": 0.9859,
+    "word_recall": 1.0,
+    "word_precision": 0.9797,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "table_cells": 0.226,
+    "table_headers": 0.3333,
+    "table_cells_by_table": {
+     "T1": 1.0,
+     "T2": 0.0,
+     "T3": 1.0,
+     "T4": 0.0
+    },
+    "tables_returned": 2,
+    "tables_gold": 4,
+    "table_values_in_text": 1.0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pymupdf",
+   "fixture": "scanned-delivery-note",
+   "case": "scanned_pdf",
+   "runs": 5,
+   "cold_s": 0.001,
+   "warm_s": [
+    0.0006,
+    0.0006,
+    0.0005,
+    0.0005,
+    0.0006
+   ],
+   "median_s": 0.0006,
+   "metrics": {
+    "chars_extracted": 0,
+    "chars_gold": 510,
+    "text_similarity": 0.0,
+    "word_recall": 0.0,
+    "word_precision": 0.0,
+    "anchors_found": 0.0,
+    "reading_order": 0.0,
+    "table_cells": 0.0,
+    "table_headers": 0.0,
+    "table_cells_by_table": {
+     "S1": 0.0
+    },
+    "tables_returned": 0,
+    "tables_gold": 1,
+    "table_values_in_text": 0.0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pymupdf_sorted",
+   "fixture": "digital-company-overview",
+   "case": "digital_pdf",
+   "runs": 5,
+   "cold_s": 0.0256,
+   "warm_s": [
+    0.0256,
+    0.0255,
+    0.0256,
+    0.0276,
+    0.026
+   ],
+   "median_s": 0.0256,
+   "metrics": {
+    "chars_extracted": 1296,
+    "chars_gold": 1296,
+    "text_similarity": 1.0,
+    "word_recall": 1.0,
+    "word_precision": 1.0,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "spurious_tables": 0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pymupdf_sorted",
+   "fixture": "two-column-newsletter",
+   "case": "two_column_pdf",
+   "runs": 5,
+   "cold_s": 0.0377,
+   "warm_s": [
+    0.0376,
+    0.0383,
+    0.0375,
+    0.038,
+    0.0454
+   ],
+   "median_s": 0.038,
+   "metrics": {
+    "chars_extracted": 1923,
+    "chars_gold": 1923,
+    "text_similarity": 0.3599,
+    "word_recall": 1.0,
+    "word_precision": 1.0,
+    "anchors_found": 0.9412,
+    "reading_order": 0.6471,
+    "spurious_tables": 0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pymupdf_sorted",
+   "fixture": "table-heavy-sales-q1-2026",
+   "case": "table_heavy_pdf",
+   "runs": 5,
+   "cold_s": 0.0686,
+   "warm_s": [
+    0.066,
+    0.0665,
+    0.0691,
+    0.0677,
+    0.0666
+   ],
+   "median_s": 0.0666,
+   "metrics": {
+    "chars_extracted": 2770,
+    "chars_gold": 2731,
+    "text_similarity": 0.9809,
+    "word_recall": 1.0,
+    "word_precision": 0.9797,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "table_cells": 0.226,
+    "table_headers": 0.3333,
+    "table_cells_by_table": {
+     "T1": 1.0,
+     "T2": 0.0,
+     "T3": 1.0,
+     "T4": 0.0
+    },
+    "tables_returned": 2,
+    "tables_gold": 4,
+    "table_values_in_text": 1.0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pymupdf_sorted",
+   "fixture": "scanned-delivery-note",
+   "case": "scanned_pdf",
+   "runs": 5,
+   "cold_s": 0.001,
+   "warm_s": [
+    0.0006,
+    0.0005,
+    0.0005,
+    0.0005,
+    0.0005
+   ],
+   "median_s": 0.0005,
+   "metrics": {
+    "chars_extracted": 0,
+    "chars_gold": 510,
+    "text_similarity": 0.0,
+    "word_recall": 0.0,
+    "word_precision": 0.0,
+    "anchors_found": 0.0,
+    "reading_order": 0.0,
+    "table_cells": 0.0,
+    "table_headers": 0.0,
+    "table_cells_by_table": {
+     "S1": 0.0
+    },
+    "tables_returned": 0,
+    "tables_gold": 1,
+    "table_values_in_text": 0.0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pdfplumber",
+   "fixture": "digital-company-overview",
+   "case": "digital_pdf",
+   "runs": 5,
+   "cold_s": 0.0645,
+   "warm_s": [
+    0.0245,
+    0.0258,
+    0.0237,
+    0.0245,
+    0.0262
+   ],
+   "median_s": 0.0245,
+   "metrics": {
+    "chars_extracted": 1356,
+    "chars_gold": 1296,
+    "text_similarity": 0.9558,
+    "word_recall": 1.0,
+    "word_precision": 0.9698,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "spurious_tables": 0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pdfplumber",
+   "fixture": "two-column-newsletter",
+   "case": "two_column_pdf",
+   "runs": 5,
+   "cold_s": 0.0312,
+   "warm_s": [
+    0.0338,
+    0.0312,
+    0.051,
+    0.0323,
+    0.0305
+   ],
+   "median_s": 0.0323,
+   "metrics": {
+    "chars_extracted": 1923,
+    "chars_gold": 1923,
+    "text_similarity": 0.3599,
+    "word_recall": 1.0,
+    "word_precision": 1.0,
+    "anchors_found": 0.9412,
+    "reading_order": 0.6471,
+    "spurious_tables": 0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pdfplumber",
+   "fixture": "table-heavy-sales-q1-2026",
+   "case": "table_heavy_pdf",
+   "runs": 5,
+   "cold_s": 0.0612,
+   "warm_s": [
+    0.0618,
+    0.0658,
+    0.0631,
+    0.0628,
+    0.063
+   ],
+   "median_s": 0.063,
+   "metrics": {
+    "chars_extracted": 2770,
+    "chars_gold": 2731,
+    "text_similarity": 0.9809,
+    "word_recall": 1.0,
+    "word_precision": 0.9797,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "table_cells": 0.226,
+    "table_headers": 0.3333,
+    "table_cells_by_table": {
+     "T1": 1.0,
+     "T2": 0.0,
+     "T3": 1.0,
+     "T4": 0.0
+    },
+    "tables_returned": 2,
+    "tables_gold": 4,
+    "table_values_in_text": 1.0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pdfplumber",
+   "fixture": "scanned-delivery-note",
+   "case": "scanned_pdf",
+   "runs": 5,
+   "cold_s": 0.0012,
+   "warm_s": [
+    0.0008,
+    0.0008,
+    0.0008,
+    0.0008,
+    0.001
+   ],
+   "median_s": 0.0008,
+   "metrics": {
+    "chars_extracted": 0,
+    "chars_gold": 510,
+    "text_similarity": 0.0,
+    "word_recall": 0.0,
+    "word_precision": 0.0,
+    "anchors_found": 0.0,
+    "reading_order": 0.0,
+    "table_cells": 0.0,
+    "table_headers": 0.0,
+    "table_cells_by_table": {
+     "S1": 0.0
+    },
+    "tables_returned": 0,
+    "tables_gold": 1,
+    "table_values_in_text": 0.0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pymupdf_text_tables",
+   "fixture": "digital-company-overview",
+   "case": "digital_pdf",
+   "runs": 5,
+   "cold_s": 0.0448,
+   "warm_s": [
+    0.0428,
+    0.0429,
+    0.0428,
+    0.0428,
+    0.0426
+   ],
+   "median_s": 0.0428,
+   "metrics": {
+    "chars_extracted": 1296,
+    "chars_gold": 1296,
+    "text_similarity": 1.0,
+    "word_recall": 1.0,
+    "word_precision": 1.0,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "spurious_tables": 1,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pymupdf_text_tables",
+   "fixture": "two-column-newsletter",
+   "case": "two_column_pdf",
+   "runs": 5,
+   "cold_s": 0.0807,
+   "warm_s": [
+    0.079,
+    0.0784,
+    0.081,
+    0.0792,
+    0.0797
+   ],
+   "median_s": 0.0792,
+   "metrics": {
+    "chars_extracted": 1923,
+    "chars_gold": 1923,
+    "text_similarity": 0.2194,
+    "word_recall": 1.0,
+    "word_precision": 1.0,
+    "anchors_found": 1.0,
+    "reading_order": 0.4706,
+    "spurious_tables": 1,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pymupdf_text_tables",
+   "fixture": "table-heavy-sales-q1-2026",
+   "case": "table_heavy_pdf",
+   "runs": 5,
+   "cold_s": 0.1228,
+   "warm_s": [
+    0.1216,
+    0.1225,
+    0.1215,
+    0.1222,
+    0.1216
+   ],
+   "median_s": 0.1216,
+   "metrics": {
+    "chars_extracted": 2770,
+    "chars_gold": 2731,
+    "text_similarity": 0.9859,
+    "word_recall": 1.0,
+    "word_precision": 0.9797,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "table_cells": 0.3164,
+    "table_headers": 0.1667,
+    "table_cells_by_table": {
+     "T1": 0.2,
+     "T2": 0.0,
+     "T3": 0.0,
+     "T4": 0.416
+    },
+    "tables_returned": 2,
+    "tables_gold": 4,
+    "table_values_in_text": 1.0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pymupdf_text_tables",
+   "fixture": "scanned-delivery-note",
+   "case": "scanned_pdf",
+   "runs": 5,
+   "cold_s": 0.0012,
+   "warm_s": [
+    0.0006,
+    0.0006,
+    0.0005,
+    0.0006,
+    0.0006
+   ],
+   "median_s": 0.0006,
+   "metrics": {
+    "chars_extracted": 0,
+    "chars_gold": 510,
+    "text_similarity": 0.0,
+    "word_recall": 0.0,
+    "word_precision": 0.0,
+    "anchors_found": 0.0,
+    "reading_order": 0.0,
+    "table_cells": 0.0,
+    "table_headers": 0.0,
+    "table_cells_by_table": {
+     "S1": 0.0
+    },
+    "tables_returned": 0,
+    "tables_gold": 1,
+    "table_values_in_text": 0.0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pdfplumber_text_tables",
+   "fixture": "digital-company-overview",
+   "case": "digital_pdf",
+   "runs": 5,
+   "cold_s": 0.0495,
+   "warm_s": [
+    0.0811,
+    0.0469,
+    0.0496,
+    0.0475,
+    0.0477
+   ],
+   "median_s": 0.0477,
+   "metrics": {
+    "chars_extracted": 1356,
+    "chars_gold": 1296,
+    "text_similarity": 0.9558,
+    "word_recall": 1.0,
+    "word_precision": 0.9698,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "spurious_tables": 1,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pdfplumber_text_tables",
+   "fixture": "two-column-newsletter",
+   "case": "two_column_pdf",
+   "runs": 5,
+   "cold_s": 0.085,
+   "warm_s": [
+    0.0815,
+    0.0835,
+    0.0805,
+    0.0819,
+    0.0844
+   ],
+   "median_s": 0.0819,
+   "metrics": {
+    "chars_extracted": 1923,
+    "chars_gold": 1923,
+    "text_similarity": 0.3599,
+    "word_recall": 1.0,
+    "word_precision": 1.0,
+    "anchors_found": 0.9412,
+    "reading_order": 0.6471,
+    "spurious_tables": 1,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pdfplumber_text_tables",
+   "fixture": "table-heavy-sales-q1-2026",
+   "case": "table_heavy_pdf",
+   "runs": 5,
+   "cold_s": 0.1283,
+   "warm_s": [
+    0.1287,
+    0.1276,
+    0.1292,
+    0.1687,
+    0.1297
+   ],
+   "median_s": 0.1292,
+   "metrics": {
+    "chars_extracted": 2770,
+    "chars_gold": 2731,
+    "text_similarity": 0.9809,
+    "word_recall": 1.0,
+    "word_precision": 0.9797,
+    "anchors_found": 1.0,
+    "reading_order": 1.0,
+    "table_cells": 0.3164,
+    "table_headers": 0.1667,
+    "table_cells_by_table": {
+     "T1": 0.2,
+     "T2": 0.0,
+     "T3": 0.0,
+     "T4": 0.416
+    },
+    "tables_returned": 2,
+    "tables_gold": 4,
+    "table_values_in_text": 1.0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pdfplumber_text_tables",
+   "fixture": "scanned-delivery-note",
+   "case": "scanned_pdf",
+   "runs": 5,
+   "cold_s": 0.001,
+   "warm_s": [
+    0.0008,
+    0.0007,
+    0.0008,
+    0.0008,
+    0.0008
+   ],
+   "median_s": 0.0008,
+   "metrics": {
+    "chars_extracted": 0,
+    "chars_gold": 510,
+    "text_similarity": 0.0,
+    "word_recall": 0.0,
+    "word_precision": 0.0,
+    "anchors_found": 0.0,
+    "reading_order": 0.0,
+    "table_cells": 0.0,
+    "table_headers": 0.0,
+    "table_cells_by_table": {
+     "S1": 0.0
+    },
+    "tables_returned": 0,
+    "tables_gold": 1,
+    "table_values_in_text": 0.0,
+    "heading_recall": null
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "native_csv",
+   "fixture": "tricky-customers-csv",
+   "case": "csv",
+   "runs": 5,
+   "cold_s": 0.0003,
+   "warm_s": [
+    0.0001,
+    0.0001,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "median_s": 0.0,
+   "metrics": {
+    "field_exact": 1.0,
+    "field_normalized": 1.0,
+    "rows_match": 1.0,
+    "rows_extracted": 9,
+    "rows_gold": 9,
+    "checks": {
+     "non_ascii_exact": 1.0,
+     "leading_zeros": 1.0,
+     "embedded_newline": 1.0,
+     "doubled_quotes": 1.0,
+     "formula_text_kept": 1.0
+    }
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "native_csv",
+   "fixture": "semicolon-cp1252-csv",
+   "case": "csv",
+   "runs": 5,
+   "cold_s": 0.0004,
+   "warm_s": [
+    0.0001,
+    0.0,
+    0.0,
+    0.0001,
+    0.0
+   ],
+   "median_s": 0.0,
+   "metrics": {
+    "field_exact": 1.0,
+    "field_normalized": 1.0,
+    "rows_match": 1.0,
+    "rows_extracted": 7,
+    "rows_gold": 7,
+    "checks": {
+     "non_ascii_exact": 1.0,
+     "quoted_delimiter": 1.0,
+     "decimal_comma_text": 1.0
+    }
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pandas_csv",
+   "fixture": "tricky-customers-csv",
+   "case": "csv",
+   "runs": 5,
+   "cold_s": 0.1684,
+   "warm_s": [
+    0.0008,
+    0.0007,
+    0.0006,
+    0.0006,
+    0.0008
+   ],
+   "median_s": 0.0007,
+   "metrics": {
+    "field_exact": 1.0,
+    "field_normalized": 1.0,
+    "rows_match": 1.0,
+    "rows_extracted": 9,
+    "rows_gold": 9,
+    "checks": {
+     "non_ascii_exact": 1.0,
+     "leading_zeros": 1.0,
+     "embedded_newline": 1.0,
+     "doubled_quotes": 1.0,
+     "formula_text_kept": 1.0
+    }
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pandas_csv",
+   "fixture": "semicolon-cp1252-csv",
+   "case": "csv",
+   "runs": 5,
+   "status": "failed",
+   "error": "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xfc in position 65: invalid start byte",
+   "traceback_tail": [
+    "  File \"pandas/_libs/parsers.pyx\", line 2053, in pandas._libs.parsers.raise_parser_error",
+    "  File \"<frozen codecs>\", line 325, in decode",
+    "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xfc in position 65: invalid start byte"
+   ],
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "unstructured_csv",
+   "fixture": "tricky-customers-csv",
+   "case": "csv",
+   "runs": 5,
+   "cold_s": 0.2998,
+   "warm_s": [
+    0.0058,
+    0.0052,
+    0.005,
+    0.0053,
+    0.0053
+   ],
+   "median_s": 0.0053,
+   "metrics": {
+    "field_exact": 0.9683,
+    "field_normalized": 1.0,
+    "rows_match": 1.0,
+    "rows_extracted": 9,
+    "rows_gold": 9,
+    "checks": {
+     "non_ascii_exact": 1.0,
+     "leading_zeros": 1.0,
+     "embedded_newline": 0.0,
+     "doubled_quotes": 1.0,
+     "formula_text_kept": 1.0
+    }
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "unstructured_csv",
+   "fixture": "semicolon-cp1252-csv",
+   "case": "csv",
+   "runs": 5,
+   "status": "failed",
+   "error": "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xfc in position 12: invalid start byte",
+   "traceback_tail": [
+    "    ln.decode(self._encoding or \"utf-8\") for ln in file.readlines(num_bytes)",
+    "    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+    "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xfc in position 12: invalid start byte"
+   ],
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "openpyxl",
+   "fixture": "multi-sheet-workbook",
+   "case": "xlsx",
+   "runs": 5,
+   "cold_s": 0.1355,
+   "warm_s": [
+    0.0271,
+    0.0284,
+    0.0297,
+    0.0322,
+    0.0269
+   ],
+   "median_s": 0.0284,
+   "metrics": {
+    "cell_values": 1.0,
+    "sheets_found": 1.0,
+    "per_sheet": {
+     "Summary": 1.0,
+     "Orders Q1": 1.0,
+     "Notes": 1.0,
+     "Lookup": 1.0
+    },
+    "hidden_sheet": "flagged",
+    "formulas": 1.0,
+    "merged_title": 1.0,
+    "title_text": 1.0
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  },
+  {
+   "adapter": "pandas_excel",
+   "fixture": "multi-sheet-workbook",
+   "case": "xlsx",
+   "runs": 5,
+   "cold_s": 0.0211,
+   "warm_s": [
+    0.0144,
+    0.0148,
+    0.0177,
+    0.015,
+    0.0149
+   ],
+   "median_s": 0.0149,
+   "metrics": {
+    "cell_values": 1.0,
+    "sheets_found": 1.0,
+    "per_sheet": {
+     "Summary": 1.0,
+     "Orders Q1": 1.0,
+     "Notes": 1.0,
+     "Lookup": 1.0
+    },
+    "hidden_sheet": "unknown",
+    "formulas": null,
+    "merged_title": null,
+    "title_text": 1.0
+   },
+   "status": "ok",
+   "model_modules_loaded": []
+  }
+ ],
+ "rescored": [
+  {
+   "at": "2026-11-20T21:38:39+00:00",
+   "note": "PR #4 review: merged-title credit now requires the expected sheet and merge range (n/a without merge metadata); title text scored separately; hidden-sheet visibility 'unknown' when not exposed or sheets are unnamed.",
+   "changes": [
+    {
+     "adapter": "openpyxl",
+     "fixture": "multi-sheet-workbook",
+     "metric": "title_text",
+     "old": "<absent>",
+     "new": 1.0
+    },
+    {
+     "adapter": "pandas_excel",
+     "fixture": "multi-sheet-workbook",
+     "metric": "hidden_sheet",
+     "old": "unflagged",
+     "new": "unknown"
+    },
+    {
+     "adapter": "pandas_excel",
+     "fixture": "multi-sheet-workbook",
+     "metric": "merged_title",
+     "old": 1.0,
+     "new": null
+    },
+    {
+     "adapter": "pandas_excel",
+     "fixture": "multi-sheet-workbook",
+     "metric": "title_text",
+     "old": "<absent>",
+     "new": 1.0
+    }
+   ]
+  }
+ ]
+}
