@@ -57,8 +57,9 @@ Integration tests run on real PostgreSQL 17.6 and real Qdrant 1.15.4 with labell
 | FR-09 Verification (documents) | Exact quotes, numbers in quotes, development NLI checker, at most 2 repairs | `test_documents_answers.py::test_fabricated_quote_*`, `::test_one_repair_then_published`, `::test_checker_rejection_*` |
 | FR-10 Connectors (upload) | Upload with permissions, versions, reindex, delete; SeaweedFS storage | `test_documents_ingestion.py`, `scripts/m3_demo.py` |
 | FR-14 Evaluation | Frozen retrieval dev cases; `retrieval-eval` harness (dense vs hybrid) | `fixtures/evaluation/documents-dev-m3.toml`, `test_retrieval_eval.py` |
-| **Retrieval quality (BGE-M3)** | Harness implemented and run with fake vectors | **Not yet run with the real model**: needs the Colab gateway |
-| **Docling for complex PDFs** | M1's fallback path (pdfplumber) implemented | **Not integrated**: see ADR 0302 |
+| **Retrieval quality (BGE-M3)** | 22 frozen cases with real BGE-M3 and Qdrant. Dense / hybrid recall@5 0.909 / 0.909 and MRR@5 0.886 / 0.841. Kept dense and the lexical gate. | [Retrieval and relevance results](evidence/m3/README.md#retrieval-and-relevance-decisions) |
+| **Docling for complex PDFs** | Docling 2.151.1 through the gateway recovered 100% two-column reading order and table cells on the table-heavy fixture. The scan was ready with 97.2% text similarity. With the parse route unavailable, text-layer PDFs used pdfplumber and the scan was `needs_ocr`. | [Docling and fallback scores](evidence/m3/README.md#acceptance-checks), ADR 0302 |
+| **Real-model document answer** | Qwen3-8B-AWQ in Colab gateway mode published an answer with an exact, verified versioned citation for finance. Sales received the standard `no_sources` response. | [Colab capture](evidence/m3/2026-11-21-colab-demo.json) |
 
 ## Security tests T1–T10 status
 

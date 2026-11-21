@@ -1,0 +1,385 @@
+{
+  "captured_at": "20261121T130240Z",
+  "api": "http://127.0.0.1:18000",
+  "question": "How many invoices were overdue at the reference date?",
+  "authorized": {
+    "user": "niletech/finance-reader",
+    "run_id": "8c419302-b1ff-4b9c-ab61-f1a506cc2923",
+    "frames": [
+      {
+        "t": 0.073,
+        "id": "1",
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Request accepted",
+          "run_id": "8c419302-b1ff-4b9c-ab61-f1a506cc2923",
+          "state": "completed",
+          "step": "accepted",
+          "version": 1
+        }
+      },
+      {
+        "t": 0.075,
+        "id": "2",
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Checked your access",
+          "run_id": "8c419302-b1ff-4b9c-ab61-f1a506cc2923",
+          "state": "completed",
+          "step": "authorization",
+          "version": 1
+        }
+      },
+      {
+        "t": 0.588,
+        "id": "3",
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Searched documents you can access",
+          "run_id": "8c419302-b1ff-4b9c-ab61-f1a506cc2923",
+          "state": "completed",
+          "step": "retrieval",
+          "version": 1
+        }
+      },
+      {
+        "t": 77.909,
+        "id": "4",
+        "event": "status",
+        "data": {
+          "attempt": 1,
+          "inference": "gateway",
+          "label": "Drafted the answer",
+          "run_id": "8c419302-b1ff-4b9c-ab61-f1a506cc2923",
+          "state": "completed",
+          "step": "answer_drafting",
+          "version": 1
+        }
+      },
+      {
+        "t": 77.909,
+        "id": "5",
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Checked the answer against its sources",
+          "run_id": "8c419302-b1ff-4b9c-ab61-f1a506cc2923",
+          "state": "completed",
+          "step": "answer_verification",
+          "version": 1
+        }
+      },
+      {
+        "t": 77.91,
+        "id": "6",
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Published the verified result",
+          "run_id": "8c419302-b1ff-4b9c-ab61-f1a506cc2923",
+          "state": "completed",
+          "step": "publication",
+          "version": 1
+        }
+      },
+      {
+        "t": 77.924,
+        "id": "7",
+        "event": "token",
+        "data": {
+          "citations": [
+            "c1"
+          ],
+          "index": 0,
+          "message_id": "84e97cac-e897-461c-a87e-9f62fa1fe1b1",
+          "part": "text",
+          "run_id": "8c419302-b1ff-4b9c-ab61-f1a506cc2923",
+          "text": "370 open invoices were already past their due date at the reference date",
+          "version": 1
+        }
+      },
+      {
+        "t": 77.937,
+        "id": "8",
+        "event": "citation",
+        "data": {
+          "char_end": 509,
+          "char_start": 401,
+          "citation_id": "c1",
+          "document_id": "01caa43e-92c9-47f2-86df-8d59c62e1d3a",
+          "heading_path": [
+            "Q1 2026 finance commentary",
+            "Cash position"
+          ],
+          "page": null,
+          "quote": "Collections lagged revenue because 370 open invoices were already past their due date at the reference date.",
+          "run_id": "8c419302-b1ff-4b9c-ab61-f1a506cc2923",
+          "text_sha256": "383784699f7bb5718ce3bceede4689de217da5c1dff0f41fc419335a295da878",
+          "title": "Q1 2026 finance commentary",
+          "version": 1
+        }
+      },
+      {
+        "t": 77.949,
+        "id": "9",
+        "event": "done",
+        "data": {
+          "abstention": null,
+          "inference": "gateway",
+          "message_id": "84e97cac-e897-461c-a87e-9f62fa1fe1b1",
+          "outcome": "published",
+          "run_id": "8c419302-b1ff-4b9c-ab61-f1a506cc2923",
+          "verification": {
+            "access": "rechecked_at_publication",
+            "checker": {
+              "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+              "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb",
+              "scores": [
+                0.9879
+              ],
+              "status": "development_baseline_not_final_trained_checker",
+              "threshold": 0.5,
+              "threshold_status": "uncalibrated"
+            },
+            "inference_mode": "gateway",
+            "label": "answer_quotes_verified_dev_checked",
+            "numbers": "every_number_in_a_quote",
+            "quotes": "exact_spans_of_cited_versions"
+          },
+          "version": 1
+        }
+      }
+    ],
+    "run": {
+      "run_id": "8c419302-b1ff-4b9c-ab61-f1a506cc2923",
+      "status": "published",
+      "inference_mode": "gateway",
+      "outcome_code": "answer_quotes_verified_dev_checked",
+      "created_at": "2026-11-21T13:00:51.828799Z",
+      "finished_at": "2026-11-21T13:02:09.656431Z",
+      "last_event_id": 9,
+      "diagnostics": {
+        "timings": {
+          "draft": 77.16,
+          "verify": 0.385,
+          "prepare": 0.019,
+          "retrieve": 0.199
+        },
+        "max_repairs": 2,
+        "model_calls": [
+          {
+            "ttft": 33.1341573520001,
+            "tokens": 67,
+            "purpose": "answer",
+            "seconds": 77.152
+          }
+        ],
+        "model": {
+          "chat": {
+            "model": "Qwen/Qwen3-8B-AWQ",
+            "revision": "4da05a8edb55c6046cce958586c33b61da07bb79"
+          },
+          "mode": "gateway",
+          "embed": {
+            "model": "BAAI/bge-m3",
+            "revision": "5617a9f61b028005a4858fdac845db406aefb181"
+          },
+          "checker": {
+            "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+            "status": "development_baseline",
+            "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb"
+          },
+          "expected": {
+            "max_model_len": 4096,
+            "gpu_memory_utilization": 0.75
+          }
+        },
+        "checker_scores": [
+          0.9879
+        ],
+        "rejections": []
+      },
+      "result": {
+        "kind": "documents",
+        "answer": [
+          {
+            "text": "370 open invoices were already past their due date at the reference date",
+            "citations": [
+              "c1"
+            ]
+          }
+        ],
+        "citations": [
+          {
+            "page": null,
+            "quote": "Collections lagged revenue because 370 open invoices were already past their due date at the reference date.",
+            "title": "Q1 2026 finance commentary",
+            "version": 1,
+            "char_end": 509,
+            "point_id": "65da5521-e047-5f4e-9440-32f13d180f94",
+            "char_start": 401,
+            "generation": 1,
+            "citation_id": "c1",
+            "document_id": "01caa43e-92c9-47f2-86df-8d59c62e1d3a",
+            "text_sha256": "383784699f7bb5718ce3bceede4689de217da5c1dff0f41fc419335a295da878",
+            "heading_path": [
+              "Q1 2026 finance commentary",
+              "Cash position"
+            ]
+          }
+        ],
+        "message_id": "84e97cac-e897-461c-a87e-9f62fa1fe1b1",
+        "verification": {
+          "label": "answer_quotes_verified_dev_checked",
+          "access": "rechecked_at_publication",
+          "quotes": "exact_spans_of_cited_versions",
+          "checker": {
+            "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+            "scores": [
+              0.9879
+            ],
+            "status": "development_baseline_not_final_trained_checker",
+            "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb",
+            "threshold": 0.5,
+            "threshold_status": "uncalibrated"
+          },
+          "numbers": "every_number_in_a_quote",
+          "inference_mode": "gateway"
+        }
+      }
+    },
+    "citations": [
+      {
+        "run_id": "8c419302-b1ff-4b9c-ab61-f1a506cc2923",
+        "citation_id": "c1",
+        "document_id": "01caa43e-92c9-47f2-86df-8d59c62e1d3a",
+        "title": "Q1 2026 finance commentary",
+        "version": 1,
+        "current_version": 1,
+        "is_current_version": true,
+        "filename": "finance-q1-commentary.md",
+        "char_start": 401,
+        "char_end": 509,
+        "offset_unit": "unicode_code_point",
+        "text_sha256": "383784699f7bb5718ce3bceede4689de217da5c1dff0f41fc419335a295da878",
+        "before": "Q1 2026 were USD 80,934,385.00 across 291 orders. Pending and cancelled orders are excluded from this figure.\n\nThe largest single order in the quarter came from the Alexandria logistics segment and was invoiced in February.\n\nCash position\n\n",
+        "quote": "Collections lagged revenue because 370 open invoices were already past their due date at the reference date.",
+        "after": " The finance team will chase overdue balances weekly until the backlog falls below 100 invoices.\n\nBudget variance\n\n| Cost centre | Budget (USD) | Actual (USD) | Variance |\n| Cloud hosting | 410,000 | 452,300 | +10.3% |\n| Contractors | 1,200",
+        "context_start": 161,
+        "integrity": "verified"
+      }
+    ]
+  },
+  "no_access": {
+    "user": "niletech/sales-reader",
+    "run_id": "270b43e1-5a66-435d-b4e3-ffef28edb48e",
+    "frames": [
+      {
+        "t": 0.018,
+        "id": "1",
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Request accepted",
+          "run_id": "270b43e1-5a66-435d-b4e3-ffef28edb48e",
+          "state": "completed",
+          "step": "accepted",
+          "version": 1
+        }
+      },
+      {
+        "t": 0.526,
+        "id": "2",
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Checked your access",
+          "run_id": "270b43e1-5a66-435d-b4e3-ffef28edb48e",
+          "state": "completed",
+          "step": "authorization",
+          "version": 1
+        }
+      },
+      {
+        "t": 0.527,
+        "id": "3",
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Searched documents you can access",
+          "run_id": "270b43e1-5a66-435d-b4e3-ffef28edb48e",
+          "state": "completed",
+          "step": "retrieval",
+          "version": 1
+        }
+      },
+      {
+        "t": 30.318,
+        "id": "4",
+        "event": "done",
+        "data": {
+          "abstention": {
+            "code": "no_sources",
+            "message": "I couldn't find information in documents you can access that answers this."
+          },
+          "inference": "gateway",
+          "message_id": null,
+          "outcome": "abstained",
+          "run_id": "270b43e1-5a66-435d-b4e3-ffef28edb48e",
+          "verification": null,
+          "version": 1
+        }
+      }
+    ],
+    "run": {
+      "run_id": "270b43e1-5a66-435d-b4e3-ffef28edb48e",
+      "status": "abstained",
+      "inference_mode": "gateway",
+      "outcome_code": "no_sources",
+      "created_at": "2026-11-21T13:02:09.807823Z",
+      "finished_at": "2026-11-21T13:02:39.984392Z",
+      "last_event_id": 4,
+      "diagnostics": {
+        "timings": {
+          "draft": 30.064,
+          "prepare": 0.01,
+          "retrieve": 0.081
+        },
+        "max_repairs": 2,
+        "model_calls": [
+          {
+            "ttft": 28.42874710199999,
+            "tokens": 7,
+            "purpose": "answer",
+            "seconds": 30.062
+          }
+        ],
+        "model": {
+          "chat": {
+            "model": "Qwen/Qwen3-8B-AWQ",
+            "revision": "4da05a8edb55c6046cce958586c33b61da07bb79"
+          },
+          "mode": "gateway",
+          "embed": {
+            "model": "BAAI/bge-m3",
+            "revision": "5617a9f61b028005a4858fdac845db406aefb181"
+          },
+          "checker": {
+            "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+            "status": "development_baseline",
+            "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb"
+          },
+          "expected": {
+            "max_model_len": 4096,
+            "gpu_memory_utilization": 0.75
+          }
+        },
+        "rejections": []
+      },
+      "result": null
+    }
+  }
+}

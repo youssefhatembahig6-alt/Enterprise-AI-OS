@@ -1,0 +1,194 @@
+[
+  {
+    "fixture": "scanned-delivery-note",
+    "title": "Delivery note (scan)",
+    "version": 1,
+    "status": "ready",
+    "parser": "docling-2.151.1",
+    "parse_notes": {
+      "pages": 1,
+      "device": "cpu",
+      "pipeline": "default (layout, TableFormer, OCR)",
+      "docling_version": "2.151.1",
+      "docling_core_version": "2.108.0"
+    },
+    "text_sha256": "c4a9f7c7c5ebc94ffc7d70e7e866daf8007584402df181c4b15a7e82af380276",
+    "gold_sha256": "8b08d9c1087d484e0541fb92f7394b4b6895745231941bf6ab1aa0aae467c662",
+    "metrics": {
+      "text_similarity": 0.9725,
+      "word_recall": 0.6622,
+      "reading_order": 0.9167,
+      "table_cells": 0.8,
+      "table_headers": 1.0,
+      "table_values_in_text": 0.8,
+      "heading_recall": 0.0
+    },
+    "m1_docling": {
+      "text_similarity": 0.9725,
+      "word_recall": 0.6622,
+      "reading_order": 0.9167,
+      "table_cells": 0.8,
+      "table_headers": 1.0,
+      "table_values_in_text": 0.8,
+      "heading_recall": 0.0
+    }
+  },
+  {
+    "fixture": "digital-company-overview",
+    "title": "NileTech company overview",
+    "version": 1,
+    "status": "ready",
+    "parser": "docling-2.151.1",
+    "parse_notes": {
+      "pages": 1,
+      "device": "cpu",
+      "pipeline": "default (layout, TableFormer, OCR)",
+      "docling_version": "2.151.1",
+      "docling_core_version": "2.108.0"
+    },
+    "text_sha256": "82ddb05c1704afb442a9395fdec7519342a6af7218463f6862b45c37c34c8f36",
+    "gold_sha256": "8594389fa5b060304f64f0825d7accca93d16e42cc814d6d03041266dcd7f612",
+    "metrics": {
+      "text_similarity": 0.9861,
+      "word_recall": 0.9482,
+      "reading_order": 1.0,
+      "heading_recall": 1.0
+    },
+    "m1_docling": {
+      "text_similarity": 0.9954,
+      "word_recall": 0.9689,
+      "reading_order": 1.0,
+      "heading_recall": 1.0
+    }
+  },
+  {
+    "fixture": "two-column-newsletter",
+    "title": "NileTech field notes, autumn 2026",
+    "version": 1,
+    "status": "ready",
+    "parser": "docling-2.151.1",
+    "parse_notes": {
+      "pages": 1,
+      "device": "cpu",
+      "pipeline": "default (layout, TableFormer, OCR)",
+      "docling_version": "2.151.1",
+      "docling_core_version": "2.108.0"
+    },
+    "text_sha256": "5513437f9f01d5ca2c8f99ce992f80ef3435f15230f349edb207086c87e14d9a",
+    "gold_sha256": "cc2d012d2892f154b75494620dce1dd181109b52e43adf04569578e09b2a22d9",
+    "metrics": {
+      "text_similarity": 0.9995,
+      "word_recall": 0.9965,
+      "reading_order": 1.0,
+      "heading_recall": 1.0
+    },
+    "m1_docling": {
+      "text_similarity": 0.9995,
+      "word_recall": 0.9965,
+      "reading_order": 1.0,
+      "heading_recall": 1.0
+    }
+  },
+  {
+    "fixture": "table-heavy-sales-q1-2026",
+    "title": "Q1 2026 sales tables",
+    "version": 1,
+    "status": "ready",
+    "parser": "docling-2.151.1",
+    "parse_notes": {
+      "pages": 2,
+      "device": "cpu",
+      "pipeline": "default (layout, TableFormer, OCR)",
+      "docling_version": "2.151.1",
+      "docling_core_version": "2.108.0"
+    },
+    "text_sha256": "2f9e3357fa02665f00802f5362cda215e63c32aadb46f63d7e94edf0c84913d7",
+    "gold_sha256": "89dc57bdbda8ee5ed98ca0c52b1f275a2c45ba32e9b67d2f8219cd9aeb0b9d1b",
+    "metrics": {
+      "text_similarity": 0.912,
+      "word_recall": 0.9852,
+      "reading_order": 0.7333,
+      "table_cells": 1.0,
+      "table_headers": 0.7778,
+      "table_values_in_text": 1.0,
+      "heading_recall": 0.2
+    },
+    "m1_docling": {
+      "text_similarity": 0.9747,
+      "word_recall": 1.0,
+      "reading_order": 1.0,
+      "table_cells": 1.0,
+      "table_headers": 0.7778,
+      "table_values_in_text": 1.0,
+      "heading_recall": 0.2
+    }
+  },
+  {
+    "fixture": "scanned-delivery-note",
+    "title": "scanned-delivery-note.pdf (fallback check)",
+    "version": 1,
+    "status": "needs_ocr",
+    "parser": null,
+    "parse_notes": {},
+    "text_sha256": null,
+    "gold_sha256": "8b08d9c1087d484e0541fb92f7394b4b6895745231941bf6ab1aa0aae467c662"
+  },
+  {
+    "fixture": "table-heavy-sales-q1-2026",
+    "title": "table-heavy-sales-q1-2026.pdf (fallback check)",
+    "version": 1,
+    "status": "ready",
+    "parser": "pdfplumber-text-v1",
+    "parse_notes": {
+      "docling": "unavailable: GatewayUnavailable",
+      "fallback": "pdfplumber text layer (M1 documented fallback)",
+      "pages_without_text_layer": []
+    },
+    "text_sha256": "43ece84a46d832793a7036ec6e3055f6b8d6086a2f2b3819b602d0864e83d0f8",
+    "gold_sha256": "89dc57bdbda8ee5ed98ca0c52b1f275a2c45ba32e9b67d2f8219cd9aeb0b9d1b",
+    "metrics": {
+      "text_similarity": 0.9809,
+      "word_recall": 1.0,
+      "reading_order": 1.0,
+      "table_cells": 0.0,
+      "table_headers": 0.0,
+      "table_values_in_text": 1.0,
+      "heading_recall": 0.0
+    },
+    "m1_docling": {
+      "text_similarity": 0.9747,
+      "word_recall": 1.0,
+      "reading_order": 1.0,
+      "table_cells": 1.0,
+      "table_headers": 0.7778,
+      "table_values_in_text": 1.0,
+      "heading_recall": 0.2
+    }
+  },
+  {
+    "fixture": "two-column-newsletter",
+    "title": "two-column-newsletter.pdf (fallback check)",
+    "version": 1,
+    "status": "ready",
+    "parser": "pdfplumber-text-v1",
+    "parse_notes": {
+      "docling": "unavailable: GatewayUnavailable",
+      "fallback": "pdfplumber text layer (M1 documented fallback)",
+      "pages_without_text_layer": []
+    },
+    "text_sha256": "fd27c049906b6fb9c2012004b797676ca51674049ae2bba53dd5e60bcac8d66e",
+    "gold_sha256": "cc2d012d2892f154b75494620dce1dd181109b52e43adf04569578e09b2a22d9",
+    "metrics": {
+      "text_similarity": 0.3599,
+      "word_recall": 1.0,
+      "reading_order": 0.6471,
+      "heading_recall": 0.0
+    },
+    "m1_docling": {
+      "text_similarity": 0.9995,
+      "word_recall": 0.9965,
+      "reading_order": 1.0,
+      "heading_recall": 1.0
+    }
+  }
+]

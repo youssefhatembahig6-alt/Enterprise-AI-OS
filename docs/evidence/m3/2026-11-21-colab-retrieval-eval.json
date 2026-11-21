@@ -1,0 +1,1948 @@
+{
+  "case_count": 22,
+  "cases_sha256": "ac1d05b5c9986504e0d0f5e941910302e79357a357841281b73b4bfc253c4a66",
+  "chunk_count": 94,
+  "chunker": "header-recursive-v1",
+  "corpus_sha256sums": "51a77f36ce3390a5db2933e3e8193676ac057b6ff7d00e37b7dd487632f81c04",
+  "embed_seconds": 1.072,
+  "embedding_space": {
+    "dense_size": 1024,
+    "fake": false,
+    "model": "BAAI/bge-m3",
+    "revision": "5617a9f61b028005a4858fdac845db406aefb181"
+  },
+  "inference_mode": "gateway",
+  "lexical_gate": {
+    "dense": {
+      "gold_dropped_cases": [],
+      "gold_hits": 20,
+      "gold_hits_dropped": 0,
+      "other_document_hits": 51,
+      "other_document_hits_kept": 28
+    },
+    "hybrid": {
+      "gold_dropped_cases": [],
+      "gold_hits": 20,
+      "gold_hits_dropped": 0,
+      "other_document_hits": 54,
+      "other_document_hits_kept": 36
+    }
+  },
+  "model": {
+    "chat": {
+      "model": "Qwen/Qwen3-8B-AWQ",
+      "revision": "4da05a8edb55c6046cce958586c33b61da07bb79"
+    },
+    "checker": {
+      "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+      "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb",
+      "status": "development_baseline"
+    },
+    "embed": {
+      "model": "BAAI/bge-m3",
+      "revision": "5617a9f61b028005a4858fdac845db406aefb181"
+    },
+    "expected": {
+      "gpu_memory_utilization": 0.75,
+      "max_model_len": 4096
+    },
+    "mode": "gateway"
+  },
+  "parsers": {
+    "board-minutes": "builtin-text-v1",
+    "company-overview-pdf": "docling-2.151.1",
+    "customers-csv": "python-csv-v1",
+    "delivery-note-scan": "docling-2.151.1",
+    "draft-strategy": "builtin-text-v1",
+    "finance-q1-commentary": "builtin-text-v1",
+    "hr-leave-policy": "builtin-text-v1",
+    "it-security-handbook": "builtin-text-v1",
+    "newsletter-pdf": "docling-2.151.1",
+    "product-catalogue": "builtin-text-v1",
+    "q1-workbook": "openpyxl-values-v1",
+    "sales-tables-pdf": "docling-2.151.1"
+  },
+  "per_case_differences": [
+    {
+      "dense_rank": 1,
+      "hybrid_rank": 2,
+      "id": "fin-travel"
+    },
+    {
+      "dense_rank": 1,
+      "hybrid_rank": 2,
+      "id": "it-password-length"
+    }
+  ],
+  "prefetch": 20,
+  "results": {
+    "dense": {
+      "cases": [
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "finance-q1-commentary",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.6959
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5793
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.569
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5664
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5591
+            }
+          ],
+          "id": "fin-net-q1",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "finance-q1-commentary",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.7248
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.504
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4929
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4757
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4742
+            }
+          ],
+          "id": "fin-overdue",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "finance-q1-commentary",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.7475
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5342
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.4552
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4524
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4467
+            }
+          ],
+          "id": "fin-cloud-variance",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "finance-q1-commentary",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.555
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5022
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4107
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.41
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4094
+            }
+          ],
+          "id": "fin-travel",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "hr-leave-policy",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.8047
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.699
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5801
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5704
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5277
+            }
+          ],
+          "id": "hr-egypt-days",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "hr-leave-policy",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.759
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.6194
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.6106
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.595
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5762
+            }
+          ],
+          "id": "hr-carry-over",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "hr-leave-policy",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.7686
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5643
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.552
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.533
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.519
+            }
+          ],
+          "id": "hr-family",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "hr-leave-policy",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.7096
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.4091
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.403
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.377
+            },
+            {
+              "document": "customers-csv",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.3302
+            }
+          ],
+          "id": "hr-arabic-holiday",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "hr-leave-policy",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.6364
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.6163
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5105
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5105
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.4686
+            }
+          ],
+          "id": "hr-uae",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "it-security-handbook",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.7747
+            },
+            {
+              "document": "product-catalogue",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4795
+            },
+            {
+              "document": "customers-csv",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4778
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4559
+            },
+            {
+              "document": "customers-csv",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4506
+            }
+          ],
+          "id": "it-mfa",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "it-security-handbook",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.6273
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.459
+            },
+            {
+              "document": "customers-csv",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4298
+            },
+            {
+              "document": "customers-csv",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4108
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.409
+            }
+          ],
+          "id": "it-password-length",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "it-security-handbook",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.7117
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.4672
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.4457
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.4301
+            },
+            {
+              "document": "delivery-note-scan",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4254
+            }
+          ],
+          "id": "it-lost-laptop",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "it-security-handbook",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.7081
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.4648
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4509
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.4467
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.4337
+            }
+          ],
+          "id": "it-phishing",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "product-catalogue",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.6941
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4604
+            },
+            {
+              "document": "company-overview-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4536
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4505
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4423
+            }
+          ],
+          "id": "cat-integration",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "product-catalogue",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.6531
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5524
+            },
+            {
+              "document": "delivery-note-scan",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5343
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5106
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5
+            }
+          ],
+          "id": "cat-licensing",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "company-overview-pdf",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.7092
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5209
+            },
+            {
+              "document": "company-overview-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.4969
+            },
+            {
+              "document": "customers-csv",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4955
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4946
+            }
+          ],
+          "id": "pdf-offices",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "company-overview-pdf",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5999
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5855
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4902
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4884
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4727
+            }
+          ],
+          "id": "pdf-increments",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5828
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5561
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.54
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5397
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5382
+            }
+          ],
+          "id": "pdf-feb-net",
+          "rank": null
+        },
+        {
+          "document_rank": 2,
+          "hits": [
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.6958
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.6586
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.6045
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.6002
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5987
+            }
+          ],
+          "id": "pdf-pending",
+          "rank": null
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "customers-csv",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5347
+            },
+            {
+              "document": "customers-csv",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.4722
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4463
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.445
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4438
+            }
+          ],
+          "id": "csv-zurich",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "customers-csv",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.4801
+            },
+            {
+              "document": "company-overview-pdf",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.3913
+            },
+            {
+              "document": "customers-csv",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.3868
+            },
+            {
+              "document": "board-minutes",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.3623
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.3577
+            }
+          ],
+          "id": "csv-arabic",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "customers-csv",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5062
+            },
+            {
+              "document": "customers-csv",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.4939
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4278
+            },
+            {
+              "document": "board-minutes",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.3993
+            },
+            {
+              "document": "draft-strategy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.3875
+            }
+          ],
+          "id": "csv-emoji",
+          "rank": 2
+        }
+      ],
+      "document_recall_at_5": 1.0,
+      "median_query_ms": 3.94,
+      "mrr_at_5": 0.8864,
+      "recall_at_1": 0.8636,
+      "recall_at_5": 0.9091
+    },
+    "hybrid": {
+      "cases": [
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "finance-q1-commentary",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.6667
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.45
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.375
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.2667
+            }
+          ],
+          "id": "fin-net-q1",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "finance-q1-commentary",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.6667
+            },
+            {
+              "document": "company-overview-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.25
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.25
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.2
+            }
+          ],
+          "id": "fin-overdue",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "finance-q1-commentary",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.6667
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.45
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.3667
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.25
+            }
+          ],
+          "id": "fin-cloud-variance",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.8333
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.3333
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.25
+            },
+            {
+              "document": "delivery-note-scan",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.25
+            }
+          ],
+          "id": "fin-travel",
+          "rank": 2
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "hr-leave-policy",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.6667
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.3667
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.3667
+            }
+          ],
+          "id": "hr-egypt-days",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "hr-leave-policy",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5333
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5333
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.3333
+            }
+          ],
+          "id": "hr-carry-over",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "hr-leave-policy",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.6667
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.4
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.3333
+            }
+          ],
+          "id": "hr-family",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "hr-leave-policy",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "board-minutes",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4762
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.3333
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.25
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.25
+            }
+          ],
+          "id": "hr-arabic-holiday",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "hr-leave-policy",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.8333
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.8333
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.45
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.4167
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.3667
+            }
+          ],
+          "id": "hr-uae",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "it-security-handbook",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "customers-csv",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5833
+            },
+            {
+              "document": "product-catalogue",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.3333
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.3214
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.2917
+            }
+          ],
+          "id": "it-mfa",
+          "rank": 1
+        },
+        {
+          "document_rank": 2,
+          "hits": [
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.5
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.4762
+            },
+            {
+              "document": "company-overview-pdf",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.4583
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.2917
+            }
+          ],
+          "id": "it-password-length",
+          "rank": 2
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "it-security-handbook",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.5833
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.3333
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.25
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.2
+            }
+          ],
+          "id": "it-lost-laptop",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "it-security-handbook",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.5
+            },
+            {
+              "document": "company-overview-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4583
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.45
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.3667
+            }
+          ],
+          "id": "it-phishing",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "product-catalogue",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "company-overview-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4242
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.3333
+            },
+            {
+              "document": "company-overview-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.2588
+            }
+          ],
+          "id": "cat-integration",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "product-catalogue",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.6667
+            },
+            {
+              "document": "delivery-note-scan",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.45
+            },
+            {
+              "document": "company-overview-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.3929
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.3667
+            }
+          ],
+          "id": "cat-licensing",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "company-overview-pdf",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4444
+            },
+            {
+              "document": "delivery-note-scan",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.3929
+            },
+            {
+              "document": "hr-leave-policy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.325
+            }
+          ],
+          "id": "pdf-offices",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "company-overview-pdf",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.8333
+            },
+            {
+              "document": "delivery-note-scan",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.625
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5833
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.25
+            },
+            {
+              "document": "it-security-handbook",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.2
+            }
+          ],
+          "id": "pdf-increments",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4583
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.4242
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.4167
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.3214
+            }
+          ],
+          "id": "pdf-feb-net",
+          "rank": null
+        },
+        {
+          "document_rank": null,
+          "hits": [
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5833
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.3667
+            },
+            {
+              "document": "q1-workbook",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.3667
+            }
+          ],
+          "id": "pdf-pending",
+          "rank": null
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "customers-csv",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "customers-csv",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.4583
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.45
+            },
+            {
+              "document": "draft-strategy",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.3333
+            },
+            {
+              "document": "sales-tables-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.2778
+            }
+          ],
+          "id": "csv-zurich",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "customers-csv",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 1.0
+            },
+            {
+              "document": "customers-csv",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": true,
+              "score": 0.5833
+            },
+            {
+              "document": "company-overview-pdf",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.3333
+            },
+            {
+              "document": "finance-q1-commentary",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.2667
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.254
+            }
+          ],
+          "id": "csv-arabic",
+          "rank": 1
+        },
+        {
+          "document_rank": 1,
+          "hits": [
+            {
+              "document": "customers-csv",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.8333
+            },
+            {
+              "document": "customers-csv",
+              "gold": true,
+              "lexical_keep": true,
+              "same_document": true,
+              "score": 0.8333
+            },
+            {
+              "document": "newsletter-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.5
+            },
+            {
+              "document": "company-overview-pdf",
+              "gold": false,
+              "lexical_keep": true,
+              "same_document": false,
+              "score": 0.325
+            },
+            {
+              "document": "board-minutes",
+              "gold": false,
+              "lexical_keep": false,
+              "same_document": false,
+              "score": 0.3
+            }
+          ],
+          "id": "csv-emoji",
+          "rank": 2
+        }
+      ],
+      "document_recall_at_5": 0.9545,
+      "median_query_ms": 4.29,
+      "mrr_at_5": 0.8409,
+      "recall_at_1": 0.7727,
+      "recall_at_5": 0.9091
+    }
+  },
+  "skipped_documents": {},
+  "top_k": 5
+}
