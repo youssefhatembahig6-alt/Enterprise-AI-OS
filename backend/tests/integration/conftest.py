@@ -30,6 +30,7 @@ from sqlalchemy.engine import make_url
 
 from app.config import Settings
 from app.db.engine import create_app_engine
+from app.db.roles import report_role_settings_sql
 from app.fixtures import Foundation, load_foundation
 from app.main import create_app
 from app.seed import seed_foundation
@@ -60,8 +61,10 @@ class DbHarness:
     name: str
     owner_role: str
     app_role: str
+    report_role: str
     owner_url: str
     app_url: str
+    report_url: str
     owner_engine: Engine
     foundation: Foundation
     passwords: dict[str, dict[str, str]]
@@ -92,7 +95,9 @@ def disposable_database(*, seed: bool = True) -> Iterator[DbHarness]:
     suffix = uuid.uuid4().hex[:10]
     name = f"eaios_test_{suffix}"
     owner_role, app_role = f"eaios_t_owner_{suffix}", f"eaios_t_app_{suffix}"
+    report_role = f"eaios_t_rep_{suffix}"
     owner_pw, app_pw = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
+    report_pw = secrets.token_urlsafe(24)
 
     admin = create_engine(ADMIN_URL, poolclass=pool.NullPool, isolation_level="AUTOCOMMIT")
     with admin.connect() as conn:
@@ -104,9 +109,17 @@ def disposable_database(*, seed: bool = True) -> Iterator[DbHarness]:
             f"CREATE ROLE {app_role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"
             f" NOINHERIT PASSWORD '{app_pw}'"
         )
+        # The separate report query role, created exactly as init-roles.sh does.
+        conn.exec_driver_sql(
+            f"CREATE ROLE {report_role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"
+            f" NOINHERIT CONNECTION LIMIT 8 PASSWORD '{report_pw}'"
+        )
+        for statement in report_role_settings_sql(report_role):
+            conn.exec_driver_sql(statement)
         conn.exec_driver_sql(f"CREATE DATABASE {name} OWNER {owner_role}")
         conn.exec_driver_sql(f"REVOKE ALL ON DATABASE {name} FROM PUBLIC")
         conn.exec_driver_sql(f"GRANT CONNECT ON DATABASE {name} TO {app_role}")
+        conn.exec_driver_sql(f"GRANT CONNECT ON DATABASE {name} TO {report_role}")
     # PostgreSQL 15+: public schema is owned by pg_database_owner (the owner role).
     db_admin = create_engine(
         _with_credentials(ADMIN_URL, *_admin_creds(), name),
@@ -119,18 +132,21 @@ def disposable_database(*, seed: bool = True) -> Iterator[DbHarness]:
 
     owner_url = _with_credentials(ADMIN_URL, owner_role, owner_pw, name)
     app_url = _with_credentials(ADMIN_URL, app_role, app_pw, name)
+    report_url = _with_credentials(ADMIN_URL, report_role, report_pw, name)
 
-    previous_role = os.environ.get("EAIOS_APP_DB_ROLE")
-    os.environ["EAIOS_APP_DB_ROLE"] = app_role
+    role_env = {"EAIOS_APP_DB_ROLE": app_role, "EAIOS_REPORT_DB_ROLE": report_role}
+    previous = {key: os.environ.get(key) for key in role_env}
+    os.environ.update(role_env)
     try:
         config = Config("alembic.ini")
         config.attributes["url"] = owner_url
         command.upgrade(config, "head")
     finally:
-        if previous_role is None:
-            os.environ.pop("EAIOS_APP_DB_ROLE", None)
-        else:
-            os.environ["EAIOS_APP_DB_ROLE"] = previous_role
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     owner_engine = create_engine(owner_url, poolclass=pool.NullPool)
     foundation = load_foundation()
@@ -142,12 +158,14 @@ def disposable_database(*, seed: bool = True) -> Iterator[DbHarness]:
         name=name,
         owner_role=owner_role,
         app_role=app_role,
+        report_role=report_role,
         owner_url=owner_url,
         app_url=app_url,
+        report_url=report_url,
         owner_engine=owner_engine,
         foundation=foundation,
         passwords=credentials,
-        secrets=[owner_pw, app_pw, JWT_SECRET, *all_passwords],
+        secrets=[owner_pw, app_pw, report_pw, JWT_SECRET, *all_passwords],
     )
     try:
         yield db
@@ -156,6 +174,7 @@ def disposable_database(*, seed: bool = True) -> Iterator[DbHarness]:
         with admin.connect() as conn:
             conn.exec_driver_sql(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)")
             conn.exec_driver_sql(f"DROP ROLE IF EXISTS {app_role}")
+            conn.exec_driver_sql(f"DROP ROLE IF EXISTS {report_role}")
             conn.exec_driver_sql(f"DROP ROLE IF EXISTS {owner_role}")
         admin.dispose()
 
@@ -248,4 +267,41 @@ def login(client: TestClient, test_db: DbHarness, ref: str) -> str:
 
 def owner_exec(test_db: DbHarness, sql: str, params: dict[str, Any] | None = None) -> Any:
     with test_db.owner_engine.begin() as conn:
-        return conn.execute(text(sql), params or {})
+        result = conn.execute(text(sql), params or {})
+        # Buffer rows before the connection closes: fetching afterwards reads freed
+        # driver state (psycopg crashes when loading arrays such as rolconfig).
+        return result.freeze()() if result.returns_rows else result
+
+
+# --- M2 report fixtures ---------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def report_db() -> Iterator[DbHarness]:
+    """A separate disposable database with M0 fixtures and the NileTech sales import.
+
+    Report tests change group memberships and grants to exercise revocation, so they
+    do not share the session database used by the M0/M1 suites.
+    """
+
+    from app.business_data.loader import import_sales_dataset
+    from app.business_data.model import normalize
+    from app.business_data.source import verify_vendored
+
+    with disposable_database(seed=True) as db:
+        source = verify_vendored()
+        import_sales_dataset(db.owner_engine, source, normalize(source), environment="test")
+        yield db
+
+
+def report_settings(db: DbHarness, stub_http_url: str, **overrides: Any) -> Settings:
+    values: dict[str, Any] = {
+        "REPORT_DATABASE_URL": db.report_url,
+        "REPORT_DISPATCH": "inline",
+        "MODEL_MODE": "fake",
+        "SSE_POLL_INTERVAL_SECONDS": 0.05,
+        "SSE_HEARTBEAT_SECONDS": 0.5,
+        "SSE_MAX_STREAM_SECONDS": 60,
+    }
+    values.update(overrides)
+    return make_settings(db, stub_http_url, **values)

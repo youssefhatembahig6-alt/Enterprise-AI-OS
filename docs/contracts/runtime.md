@@ -26,6 +26,8 @@ Recorded 2026-11-20. Image digests are the ones pulled for the local acceptance 
 | Vite / plugin-react | 7.1.5 / 5.0.2 | Vite 7 requires Node ≥ 20.19 |
 | Tailwind CSS (+ Vite plugin) | 4.1.13 | |
 | TypeScript / ESLint / typescript-eslint | 5.9.2 / 9.35.0 / 8.43.0 | npm reports ESLint 9.35 as out of support; upgrade is a follow-up |
+| LangGraph (M2) | 1.2.19 | released 2026-10-30; pulls langchain-core 1.8.4 and langsmith 0.15.1 (tracing stays off unless LANGSMITH_TRACING is set) |
+| pglast (M2) | 7.22 | PostgreSQL 17 parser (libpg_query), released 2026-10-31 |
 
 Lockfiles: `backend/requirements.lock` and `backend/requirements-dev.lock` (pip-compile 7.5.0 with `--generate-hashes`; install with `pip install --require-hashes`), and `package-lock.json` (npm workspaces). Regenerate with `python scripts/dev.py lock` and `npm install`.
 
@@ -47,7 +49,11 @@ The steady total is about 2.4 GB, or 2.6 GB while `migrate` runs. The optional `
 
 ## External model boundary
 
-No model service runs in this stack, and no GPU or paid API key is needed. `LLM_BASE_URL` (Colab vLLM gateway, NFR-04) is optional and unused in M0; `/ready` reports `model_inference` as `not_configured` or `external_unchecked`, never as available. M1/M2 add the `LLMClient` with explicit chat/embed/check routes.
+No model service runs in this stack, and no GPU or paid API key is needed to start it. M2 reports call the external gateway (`LLM_BASE_URL` root + explicit paths, bearer `MODEL_GATEWAY_TOKEN`; [model-gateway.md](model-gateway.md), `ml/model-gateway/`). Without it, runs end with `model_unavailable`. `MODEL_MODE=fake` selects a labelled deterministic double for development and tests. `/ready` reports `model_inference` as `not_configured`, `external_unchecked` or `fake`, never as available.
+
+## Report query role (M2)
+
+`eaios_report` (password `EAIOS_REPORT_DB_PASSWORD`) is created by `infra/postgres/init-roles.sh` on a new volume, or by `python3 scripts/dev.py add-report-role` on an existing one, from `infra/postgres/report-role.sql`. The API and worker connect with it through `REPORT_DATABASE_URL`; migrations grant it only the `reporting` views ([ADR 0201](../adr/0201-restricted-report-sql.md)). Celery runs report jobs (`app.tasks.reports.run_report`, 1200 s hard limit) and beat re-dispatches pending jobs every 30 s.
 
 ## Start, restart and reset
 

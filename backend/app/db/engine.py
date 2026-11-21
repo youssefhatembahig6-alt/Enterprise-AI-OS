@@ -31,7 +31,7 @@ def _discard_on_checkin(dbapi_connection: Any, _record: Any) -> None:
         dbapi_connection.autocommit = previous
 
 
-def create_app_engine(url: str, pool_size: int = 5) -> Engine:
+def create_app_engine(url: str, pool_size: int = 5, application_name: str = "eaios-app") -> Engine:
     engine = create_engine(
         url,
         pool_size=pool_size,
@@ -40,7 +40,7 @@ def create_app_engine(url: str, pool_size: int = 5) -> Engine:
         pool_reset_on_return="rollback",
         connect_args={
             "connect_timeout": 3,
-            "application_name": "eaios-app",
+            "application_name": application_name,
             # DISCARD ALL deallocates prepared statements, so psycopg must not
             # auto-prepare server-side statements on pooled connections.
             "prepare_threshold": None,

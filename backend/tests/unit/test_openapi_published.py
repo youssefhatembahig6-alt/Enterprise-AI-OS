@@ -32,4 +32,11 @@ def test_published_openapi_matches_app() -> None:
         "/api/v1/auth/login",
         "/api/v1/auth/logout",
         "/api/v1/me",
+        "/api/v1/chat",
+        "/api/v1/runs/{run_id}",
+        "/api/v1/runs/{run_id}/events",
+        "/api/v1/runs/{run_id}/cancel",
+        "/api/v1/evidence/{evidence_id}",
     }
+    chat = generated["paths"]["/api/v1/chat"]["post"]["responses"]["200"]["content"]
+    assert "text/event-stream" in chat

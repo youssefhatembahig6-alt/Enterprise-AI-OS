@@ -39,8 +39,11 @@ def test_login_and_identity_are_server_derived(client: TestClient, test_db: DbHa
     user = tenant.users["finance-reader"]
     assert body["user_id"] == str(user.id)
     assert body["tenant"] == {"id": str(tenant.id), "slug": "niletech", "name": tenant.name}
-    assert body["roles"] == ["reader"]
-    assert body["capabilities"] == [{"capability": "resource.read", "scope_department": None}]
+    assert body["roles"] == ["reader", "report_reader"]
+    assert body["capabilities"] == [
+        {"capability": "dataset.query", "scope_department": None},
+        {"capability": "resource.read", "scope_department": None},
+    ]
     assert body["groups"] == ["all-staff", "finance-team"]
     assert body["attributes"] == {
         "clearance": "confidential",

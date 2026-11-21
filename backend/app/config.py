@@ -15,6 +15,19 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 _PLACEHOLDER_MARKERS = ("change-me", "changeme", "example")
 
 
+class ModelMode(StrEnum):
+    # Real inference through the external gateway (Colab GPU). Never on the laptop.
+    GATEWAY = "gateway"
+    # Explicit deterministic double for development and tests. Every run, event and
+    # screen produced in this mode is labelled as fake inference.
+    FAKE = "fake"
+
+
+class ReportDispatch(StrEnum):
+    CELERY = "celery"  # Compose: durable job row + Celery worker
+    INLINE = "inline"  # tests and single-process development: API thread pool
+
+
 class Environment(StrEnum):
     DEVELOPMENT = "development"
     TEST = "test"
@@ -34,8 +47,73 @@ class Settings(BaseSettings):
     qdrant_url: str = Field(alias="QDRANT_URL")
     s3_endpoint_url: str = Field(alias="S3_ENDPOINT_URL")
 
-    # External model gateway (Colab). Optional in M0: no model capability is claimed.
+    # External model gateway (Colab). One root URL; routes are composed from the
+    # explicit paths below (docs/contracts/model-gateway.md). The root must not end
+    # in /v1: the chat and embedding paths already carry it.
     model_gateway_url: str | None = Field(default=None, alias="LLM_BASE_URL")
+    model_mode: ModelMode = Field(default=ModelMode.GATEWAY, alias="MODEL_MODE")
+    model_gateway_token: SecretStr | None = Field(default=None, alias="MODEL_GATEWAY_TOKEN")
+    model_chat_path: str = Field(default="/v1/chat/completions", alias="MODEL_CHAT_PATH")
+    model_embed_path: str = Field(default="/v1/embeddings", alias="MODEL_EMBED_PATH")
+    model_check_path: str = Field(default="/check", alias="MODEL_CHECK_PATH")
+    model_health_path: str = Field(default="/health", alias="MODEL_HEALTH_PATH")
+    # Measured M1 T4 configuration (ml/gpu-feasibility/reports/2026-11-20-target-t4.md).
+    model_chat_name: str = Field(default="Qwen/Qwen3-8B-AWQ", alias="MODEL_CHAT_NAME")
+    model_chat_revision: str = Field(
+        default="4da05a8edb55c6046cce958586c33b61da07bb79", alias="MODEL_CHAT_REVISION"
+    )
+    model_embed_name: str = Field(default="BAAI/bge-m3", alias="MODEL_EMBED_NAME")
+    model_embed_revision: str = Field(
+        default="5617a9f61b028005a4858fdac845db406aefb181", alias="MODEL_EMBED_REVISION"
+    )
+    model_checker_name: str = Field(
+        default="MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli", alias="MODEL_CHECKER_NAME"
+    )
+    model_checker_revision: str = Field(
+        default="6f5cf0a2b59cabb106aca4c287eed12e357e90eb", alias="MODEL_CHECKER_REVISION"
+    )
+    model_expected_gpu_memory_utilization: float = Field(
+        default=0.75, alias="MODEL_EXPECTED_GPU_MEMORY_UTILIZATION", gt=0, lt=1
+    )
+    model_expected_max_model_len: int = Field(
+        default=4096, alias="MODEL_EXPECTED_MAX_MODEL_LEN", ge=512
+    )
+    model_connect_timeout_seconds: float = Field(
+        default=5.0, alias="MODEL_CONNECT_TIMEOUT_SECONDS", gt=0, le=60
+    )
+    # Longest gap between streamed chunks before the call fails.
+    model_read_timeout_seconds: float = Field(
+        default=60.0, alias="MODEL_READ_TIMEOUT_SECONDS", gt=0, le=600
+    )
+    # Whole-call deadline (the measured 400-token report took 113.5 s at 0.75).
+    model_call_deadline_seconds: float = Field(
+        default=240.0, alias="MODEL_CALL_DEADLINE_SECONDS", gt=0, le=1800
+    )
+    # Development NLI baseline threshold: uncalibrated (M1 report); M7 calibrates.
+    checker_entailment_threshold: float = Field(
+        default=0.5, alias="CHECKER_ENTAILMENT_THRESHOLD", gt=0, lt=1
+    )
+
+    # Separate read-only report query role (M2). Unset: reports are unavailable.
+    report_database_url: SecretStr | None = Field(default=None, alias="REPORT_DATABASE_URL")
+    report_pool_size: int = Field(default=2, alias="REPORT_POOL_SIZE", ge=1, le=8)
+    report_statement_timeout_ms: int = Field(
+        default=5000, alias="REPORT_STATEMENT_TIMEOUT_MS", ge=100, le=30000
+    )
+    report_max_rows: int = Field(default=200, alias="REPORT_MAX_ROWS", ge=1, le=5000)
+    report_max_repairs: int = Field(default=2, alias="REPORT_MAX_REPAIRS", ge=0, le=2)
+    report_dispatch: ReportDispatch = Field(default=ReportDispatch.CELERY, alias="REPORT_DISPATCH")
+    report_job_lease_seconds: int = Field(
+        default=900, alias="REPORT_JOB_LEASE_SECONDS", ge=30, le=3600
+    )
+    report_job_max_attempts: int = Field(default=3, alias="REPORT_JOB_MAX_ATTEMPTS", ge=1, le=10)
+    sse_poll_interval_seconds: float = Field(
+        default=0.5, alias="SSE_POLL_INTERVAL_SECONDS", gt=0, le=5
+    )
+    sse_heartbeat_seconds: float = Field(default=15.0, alias="SSE_HEARTBEAT_SECONDS", gt=0, le=60)
+    sse_max_stream_seconds: float = Field(
+        default=1200.0, alias="SSE_MAX_STREAM_SECONDS", gt=0, le=7200
+    )
 
     jwt_secret: SecretStr = Field(alias="JWT_SECRET")
     jwt_issuer: str = Field(default="eaios-api", alias="JWT_ISSUER")
@@ -94,12 +172,36 @@ class Settings(BaseSettings):
             raise ValueError("JWT_SECRET must be at least 32 bytes")
         return value
 
+    @field_validator("model_gateway_url")
+    @classmethod
+    def _gateway_root(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        root = value.strip().rstrip("/")
+        if not root.startswith(("http://", "https://")):
+            raise ValueError("LLM_BASE_URL must be an http(s) gateway root")
+        if root.endswith("/v1"):
+            raise ValueError(
+                "LLM_BASE_URL is the gateway root; remove the trailing /v1 "
+                "(MODEL_CHAT_PATH already starts with /v1)"
+            )
+        return root
+
+    @field_validator("model_chat_path", "model_embed_path", "model_check_path", "model_health_path")
+    @classmethod
+    def _path(cls, value: str) -> str:
+        if not value.startswith("/") or "://" in value or ".." in value:
+            raise ValueError("model gateway paths must be absolute paths such as /check")
+        return value
+
     @model_validator(mode="after")
     def _production_guards(self) -> Settings:
         if self.environment is Environment.PRODUCTION:
             secret = self.jwt_secret.get_secret_value().lower()
             if any(marker in secret for marker in _PLACEHOLDER_MARKERS):
                 raise ValueError("JWT_SECRET looks like a placeholder; refusing production start")
+            if self.model_mode is ModelMode.FAKE:
+                raise ValueError("MODEL_MODE=fake is development/test only")
         return self
 
 

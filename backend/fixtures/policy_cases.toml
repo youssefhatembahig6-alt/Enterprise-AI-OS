@@ -183,3 +183,77 @@ resource = "isolation-test/finance-report"
 action = "resource.admin"
 expect = "allow"
 reason = "allow"
+
+# --- M2: dataset.query on the sales reporting dataset ------------------------
+# The dataset is one tenant-wide resource: an allowed user may query all of the
+# tenant's sales rows; there is no finer row-level business permission (ADR 0202).
+
+[[cases]]
+user = "niletech/finance-reader"
+resource = "niletech/sales-reporting"
+action = "dataset.query"
+expect = "allow"
+reason = "allow"
+note = "report_reader capability + finance-team dataset.query grant + attributes + clearance"
+
+[[cases]]
+user = "niletech/sales-reader"
+resource = "niletech/sales-reporting"
+action = "dataset.query"
+expect = "deny"
+reason = "deny.missing_capability"
+note = "authenticated same-tenant user without the report capability"
+
+[[cases]]
+user = "niletech/denied-reader"
+resource = "niletech/sales-reporting"
+action = "dataset.query"
+expect = "deny"
+reason = "deny.explicit_deny"
+note = "explicit deny wins over the finance-team allow"
+
+[[cases]]
+user = "niletech/board-member"
+resource = "niletech/sales-reporting"
+action = "dataset.query"
+expect = "deny"
+reason = "deny.missing_capability"
+note = "restricted clearance does not imply report access"
+
+[[cases]]
+user = "niletech/inactive-reader"
+resource = "niletech/sales-reporting"
+action = "dataset.query"
+expect = "deny"
+reason = "deny.inactive_subject"
+
+[[cases]]
+user = "niletech/finance-reader"
+resource = "niletech/sales-reporting"
+action = "resource.read"
+expect = "deny"
+reason = "deny.no_grant"
+note = "dataset.query grants do not grant resource.read"
+
+[[cases]]
+user = "niletech/access-admin"
+resource = "niletech/sales-reporting"
+action = "dataset.query"
+expect = "deny"
+reason = "deny.missing_capability"
+note = "admin metadata rights never imply data access"
+
+[[cases]]
+user = "isolation-test/finance-reader"
+resource = "isolation-test/sales-reporting"
+action = "dataset.query"
+expect = "allow"
+reason = "allow"
+note = "allowed in its own tenant, which holds no business rows"
+
+[[cases]]
+user = "isolation-test/finance-reader"
+resource = "niletech/sales-reporting"
+action = "dataset.query"
+expect = "deny"
+reason = "deny.tenant_mismatch"

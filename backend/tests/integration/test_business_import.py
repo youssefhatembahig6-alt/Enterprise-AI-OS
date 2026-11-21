@@ -430,7 +430,8 @@ def test_business_tables_have_rls_and_are_read_only_for_app(
 ) -> None:
     rows = owner_exec(
         test_db,
-        "SELECT relname, relrowsecurity FROM pg_class WHERE relname = ANY(:n)",
+        "SELECT relname, relrowsecurity FROM pg_class"
+        " WHERE relname = ANY(:n) AND relnamespace = 'public'::regnamespace",
         {"n": list(SALES_TABLES)},
     ).all()
     assert len(rows) == len(SALES_TABLES) and all(r.relrowsecurity for r in rows)

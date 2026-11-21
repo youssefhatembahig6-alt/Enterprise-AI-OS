@@ -1,13 +1,14 @@
 # Enterprise AI OS
 
-Application repository for the Enterprise AI OS graduation project. This branch delivers **milestone M0**: a runnable local foundation with tenant isolation, login and a tested reference authorization policy. There are no LLM, RAG, SQL-agent or connector features yet.
+Application repository for the Enterprise AI OS graduation project. **M0** delivered the runnable foundation (tenant isolation, login, reference authorization policy) and **M1** the NileTech data baseline and feasibility measurements. **M2** adds the first feature: login → router → read-only SQL through a separate restricted role → report → verification → verified result streamed over SSE, with an authorized evidence view ([contract](docs/contracts/reports.md)). Document answering (RAG), connectors and the desktop shell come in later milestones.
 
 | Path | Contents |
 | --- | --- |
 | `backend/` | FastAPI app (`app/api`, `services`, `repositories`, `security`, `tasks`, `db`), Alembic migrations, fixtures, tests |
 | `apps/web/` | React + Vite + Tailwind sign-in and identity screen |
 | `packages/ui/` | Shared React components and theme tokens (reused by the later Electron shell) |
-| `scripts/` | Portable Python helpers: `dev.py` and `smoke_stack.py` |
+| `scripts/` | Portable Python helpers: `dev.py`, `smoke_stack.py`, `m2_demo_capture.py` |
+| `ml/model-gateway/` | Colab GPU gateway (chat/embed/check/health) used by M2 |
 | `infra/postgres/` | First-run role bootstrap for the PostgreSQL container |
 | `docs/` | ADRs, contracts, runbook, OpenAPI schema and traceability |
 

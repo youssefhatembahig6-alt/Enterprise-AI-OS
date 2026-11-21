@@ -3,7 +3,9 @@
 # tenant-specific branches. No passwords are stored here: the explicit dev seed
 # generates them and writes them to a git-ignored, owner-only file.
 #
-# Capabilities used:  resource.read, resource.admin   (see app/security/policy.py)
+# Capabilities used:  resource.read, resource.admin, dataset.query (see app/security/policy.py)
+# Resource kinds:     document (default), dataset (M2 report sources)
+# Grant actions:      resource.read (default), dataset.query
 # Attributes used:    clearance (public < internal < confidential < restricted),
 #                     country (ISO 3166-1 alpha-2), department (lowercase key)
 
@@ -22,6 +24,11 @@ name = "NileTech Solutions"
   key = "department_admin"
   name = "Department administrator"
   capabilities = ["resource.admin"]
+
+  [[tenants.roles]]
+  key = "report_reader"
+  name = "Sales report reader"
+  capabilities = ["dataset.query"]
 
   [[tenants.roles]]
   key = "access_admin"
@@ -44,7 +51,7 @@ name = "NileTech Solutions"
   clearance = "confidential"
   country = "EG"
   department = "finance"
-  roles = [{ role = "reader" }]
+  roles = [{ role = "reader" }, { role = "report_reader" }]
   groups = ["all-staff", "finance-team"]
 
   [[tenants.users]]
@@ -66,7 +73,7 @@ name = "NileTech Solutions"
   clearance = "confidential"
   country = "EG"
   department = "finance"
-  roles = [{ role = "reader" }]
+  roles = [{ role = "reader" }, { role = "report_reader" }]
   groups = ["all-staff", "finance-team"]
 
   [[tenants.users]]
@@ -110,7 +117,7 @@ name = "NileTech Solutions"
   clearance = "confidential"
   country = "EG"
   department = "finance"
-  roles = [{ role = "reader" }]
+  roles = [{ role = "reader" }, { role = "report_reader" }]
   groups = ["all-staff", "finance-team"]
 
   [[tenants.resources]]
@@ -152,6 +159,40 @@ name = "NileTech Solutions"
   allowed_countries = ["EG"]
   grants = [{ user = "board-member", effect = "allow" }]
 
+  # M2: the whole tenant sales dataset as one protected report source. There are
+  # no finer row-level business permissions inside a tenant (ADR 0202).
+  [[tenants.resources]]
+  key = "sales-reporting"
+  kind = "dataset"
+  title = "Sales reporting dataset"
+  classification = "confidential"
+  department = "finance"
+  department_restricted = true
+  allowed_countries = ["EG"]
+  grants = [
+    { group = "finance-team", effect = "allow", action = "dataset.query" },
+    { user = "denied-reader", effect = "deny", action = "dataset.query" },
+  ]
+
+  # Tenant configuration for the first supported report. Application code reads
+  # these values; it has no tenant-specific branches.
+  [[tenants.report_profiles]]
+  key = "sales.fulfilled"
+  resource = "sales-reporting"
+  version = 1
+  [tenants.report_profiles.config]
+  title = "Fulfilled sales"
+  currency = "USD"
+  date_basis = "order_date"
+  included_statuses = ["FULFILLED"]
+  status_domain = ["FULFILLED", "PENDING", "CANCELLED"]
+  net_measure = "subtotal"
+  tax_measure = "tax"
+  gross_measure = "total"
+  tax_treatment = "net sales are tax-exclusive; gross = net + tax"
+  periods = ["quarter", "month"]
+  fiscal_year_start_month = 1
+
 # Second tenant: exists only to prove isolation. It mirrors the shape of the
 # first tenant with different identifiers and markers.
 [[tenants]]
@@ -167,6 +208,11 @@ name = "Isolation Test Tenant"
   key = "department_admin"
   name = "Department administrator"
   capabilities = ["resource.admin"]
+
+  [[tenants.roles]]
+  key = "report_reader"
+  name = "Sales report reader"
+  capabilities = ["dataset.query"]
 
   [[tenants.groups]]
   key = "all-staff"
@@ -184,7 +230,7 @@ name = "Isolation Test Tenant"
   clearance = "restricted"
   country = "EG"
   department = "finance"
-  roles = [{ role = "reader" }]
+  roles = [{ role = "reader" }, { role = "report_reader" }]
   groups = ["all-staff", "finance-team"]
 
   [[tenants.users]]
@@ -206,7 +252,7 @@ name = "Isolation Test Tenant"
   clearance = "restricted"
   country = "EG"
   department = "finance"
-  roles = [{ role = "reader" }]
+  roles = [{ role = "reader" }, { role = "report_reader" }]
   groups = ["all-staff", "finance-team"]
 
   [[tenants.users]]
@@ -239,7 +285,7 @@ name = "Isolation Test Tenant"
   clearance = "restricted"
   country = "EG"
   department = "finance"
-  roles = [{ role = "reader" }]
+  roles = [{ role = "reader" }, { role = "report_reader" }]
   groups = ["all-staff", "finance-team"]
 
   [[tenants.resources]]
@@ -280,3 +326,37 @@ name = "Isolation Test Tenant"
   department_restricted = true
   allowed_countries = ["EG"]
   grants = [{ user = "board-member", effect = "allow" }]
+
+  # M2: the whole tenant sales dataset as one protected report source. There are
+  # no finer row-level business permissions inside a tenant (ADR 0202).
+  [[tenants.resources]]
+  key = "sales-reporting"
+  kind = "dataset"
+  title = "Sales reporting dataset"
+  classification = "confidential"
+  department = "finance"
+  department_restricted = true
+  allowed_countries = ["EG", "AE"]
+  grants = [
+    { group = "finance-team", effect = "allow", action = "dataset.query" },
+    { user = "denied-reader", effect = "deny", action = "dataset.query" },
+  ]
+
+  # Tenant configuration for the first supported report. Application code reads
+  # these values; it has no tenant-specific branches.
+  [[tenants.report_profiles]]
+  key = "sales.fulfilled"
+  resource = "sales-reporting"
+  version = 1
+  [tenants.report_profiles.config]
+  title = "Fulfilled sales"
+  currency = "USD"
+  date_basis = "order_date"
+  included_statuses = ["FULFILLED"]
+  status_domain = ["FULFILLED", "PENDING", "CANCELLED"]
+  net_measure = "subtotal"
+  tax_measure = "tax"
+  gross_measure = "total"
+  tax_treatment = "net sales are tax-exclusive; gross = net + tax"
+  periods = ["quarter", "month"]
+  fiscal_year_start_month = 1

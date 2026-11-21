@@ -85,7 +85,23 @@ def main() -> None:
     status, me, _ = call("GET", f"{args.api}/api/v1/me", token=token,
                          headers={"X-Tenant-Id": "00000000-0000-0000-0000-000000000000"})
     check("identity is server-derived", status == 200 and me["tenant"]["slug"] == tenant
-          and me["email"] == email and me["roles"] == ["reader"])
+          and me["email"] == email and me["roles"] == ["reader", "report_reader"])
+
+    # M2: a report run streams status events and ends with exactly one terminal event.
+    # Without a gateway it fails with model_unavailable; with MODEL_MODE=fake it publishes.
+    request = urllib.request.Request(
+        f"{args.api}/api/v1/chat",
+        data=json.dumps({"question": "Fulfilled sales for Q1 2026?"}).encode(),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=300) as response:  # noqa: S310
+        stream = response.read().decode()
+    events = [line[7:] for line in stream.splitlines() if line.startswith("event: ")]
+    first_content = min((i for i, e in enumerate(events) if e in ("token", "citation")), default=None)
+    check("report run ends with one done event", events.count("done") == 1 and events[-1] == "done")
+    check("no content before publication",
+          first_content is None or "publication" in stream.split("event: token", 1)[0])
 
     status, _, _ = call("POST", f"{args.api}/api/v1/auth/logout", token=token)
     check("logout 204", status == 204)

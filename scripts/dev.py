@@ -6,6 +6,8 @@
     python scripts/dev.py seed                explicit, idempotent development seed
     python scripts/dev.py import-business-data  explicit NileTech sales import (verifies source first)
     python scripts/dev.py business-data-report  verify source; print fingerprint, counts, anomalies
+    python scripts/dev.py add-report-role     existing volumes only: add EAIOS_REPORT_DB_PASSWORD to
+                                              .env if missing and create/update the M2 report role
     python scripts/dev.py status              docker compose ps
     python scripts/dev.py down                stop containers (data volumes are kept)
     python scripts/dev.py test-backend        backend suite in Compose against real PostgreSQL/Redis
@@ -66,6 +68,7 @@ def init_env() -> None:
         "POSTGRES_SUPERUSER_PASSWORD": secrets.token_urlsafe(24),
         "EAIOS_OWNER_DB_PASSWORD": secrets.token_urlsafe(24),
         "EAIOS_APP_DB_PASSWORD": secrets.token_urlsafe(24),
+        "EAIOS_REPORT_DB_PASSWORD": secrets.token_urlsafe(24),
         "REDIS_PASSWORD": secrets.token_urlsafe(24),
         "JWT_SECRET": secrets.token_urlsafe(48),
     }
@@ -77,6 +80,39 @@ def init_env() -> None:
     with os.fdopen(fd, "w") as handle:
         handle.write("\n".join(lines) + "\n")
     print("wrote .env with random secrets (owner-only permissions)")
+
+
+def add_report_role() -> None:
+    """Existing data volumes predate M2: create the report query role in place.
+
+    Idempotent. Appends a random EAIOS_REPORT_DB_PASSWORD to .env if it is missing,
+    then runs infra/postgres/report-role.sql as the superuser inside the postgres
+    container (password passed as a psql variable, never on the command line).
+    """
+
+    target = ROOT / ".env"
+    if not target.exists():
+        sys.exit(".env is missing; run init-env first")
+    lines = target.read_text().splitlines()
+    values = dict(line.split("=", 1) for line in lines if "=" in line and not line.startswith("#"))
+    password = values.get("EAIOS_REPORT_DB_PASSWORD", "")
+    if not password or password == "change-me":
+        password = secrets.token_urlsafe(24)
+        lines = [line for line in lines if not line.startswith("EAIOS_REPORT_DB_PASSWORD=")]
+        lines.append(f"EAIOS_REPORT_DB_PASSWORD={password}")
+        target.write_text("\n".join(lines) + "\n")
+        os.chmod(target, 0o600)
+        print("added EAIOS_REPORT_DB_PASSWORD to .env")
+    base = shlex.split(os.environ.get("DOCKER_COMPOSE", "docker compose"))
+    sql = (ROOT / "infra" / "postgres" / "report-role.sql").read_text()
+    cmd = [*base, "exec", "-T", "-e", "REPORT_PW", "postgres", "sh", "-c",
+           'psql -v ON_ERROR_STOP=1 -U postgres -d postgres -v report_pw="$REPORT_PW"']
+    print("+", " ".join(cmd[:-1]), "<psql script>", flush=True)
+    result = subprocess.run(cmd, input=sql, text=True, cwd=ROOT,
+                            env={**os.environ, "REPORT_PW": password}, check=False)
+    if result.returncode != 0:
+        sys.exit(result.returncode)
+    print("report role ready; now run: python3 scripts/dev.py up")
 
 
 def seed() -> None:
@@ -127,6 +163,7 @@ def main() -> None:
         "up": lambda: compose("up", "--build", "-d", "--wait"),
         "seed": seed,
         "status": lambda: compose("ps"),
+        "add-report-role": add_report_role,
         "import-business-data": lambda: compose(
             "run", "--rm", "migrate", "python", "-m", "app.cli", "import-business-data"
         ),

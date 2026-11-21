@@ -10,3 +10,6 @@ celery[redis]==5.5.3
 pyjwt==2.10.1
 argon2-cffi==25.1.0
 httpx==0.28.1
+# M2: LangGraph workflow and the PostgreSQL 17 parser (libpg_query) for SQL validation.
+langgraph==1.2.19
+pglast==7.22
