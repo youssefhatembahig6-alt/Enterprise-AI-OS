@@ -33,7 +33,7 @@ Third review round (after `16811379`):
 | Two tenants with different packs and connectors, no code change; direct request for a disabled capability | Implemented and tested | `test_m4_tenant_config.py` (8 tests); [Compose smoke](2026-11-21-compose-smoke.json) |
 | Live runner reliability (exact run correlation, document-specific citation, nonzero exit) | Implemented and tested without credentials | `test_m4_acceptance_runner.py` (5 tests: delayed worker, earlier success and scheduled run ignored, timeout exits 2 with evidence, wrong document exits 1); `test_sync_request_returns_its_own_run` |
 | **Live Drive folder, direct user share: authorized answer → revoke sharing → sync → denied** | **OPEN — not performed (no app credentials, no second reader account)** | Runner ready: `scripts/m4_drive_acceptance.py`. Rehearsal with the Drive double: [revocation run](2026-11-21-drive-double-revocation.json) |
-| Admin console browser walkthrough | **OPEN — sign-in blocked** | See "Browser walkthrough" below |
+| Admin console browser walkthrough (read-only) | **Done for tenant admin and finance department admin**, with one recorded UI mismatch; Sources refusal **verified by API only** | See "Browser walkthrough" below |
 | **Real Workspace group verification** (`group_membership: "directory"` against a real directory) | **OPEN, separate from the direct-share demo** | Needs a Google Workspace or Cloud Identity organization and the Directory read-only member scope. Only the mocked API is tested (`test_drive_client.py`) |
 
 A fake Drive does not complete FR-10 (roadmap). The live item stays open until the runner passes against real Drive.
@@ -112,7 +112,40 @@ Real PostgreSQL, real Qdrant, the M3 ingestion and answer path, **fake** inferen
 
 ## Browser walkthrough
 
-Not run. The admin console loads at `http://localhost:3000` in the built-in browser pane, but signing in needs a development password. The seed writes those passwords only to the owner-only file `var/dev-credentials.json`. In this session the Claude Code auto-mode classifier denied reading that file ("Unauthorized Access"). Reading it with another tool would work around that decision, so I did not. To unblock it, either sign in yourself in the browser pane (for example as `access.admin@niletech.example` or `finance.admin@niletech.example`), or add a permission rule that allows reading `var/dev-credentials.json`.
+**Done (read-only) on 21 November 2026.** The owner signed in to the local Compose stack (migration 0009, `MODEL_MODE=fake`) in the built-in browser pane, switching between accounts, and I read what the UI showed. I did not type or see any password, and I submitted no admin change.
+
+### Tenant Access Admin (`access.admin@niletech.example`, `access_admin`, tenant-wide)
+
+Identity card: department `it`, capabilities `audit.read, identity.admin, resource.admin, tenant.config`. The Administration card showed all six tabs.
+
+| Tab | What the UI showed | Verified |
+| --- | --- | --- |
+| Documents | All 11 NileTech documents across finance, hr, it, marketing and sales, with source `upload`, sharing (for example `allow:group:finance-team, deny:user:denied.reader@…`), and access. *Draft strategy memo* shows sharing `nobody` and access `denied` (permissions unknown). The text "Managing a document never lets you read it" is shown | Tenant-wide document scope; sharing and access are metadata only |
+| Sources | "No Google Drive sources in your scope" and the add-folder form | Empty state matches no Drive credentials configured. The `drive_not_configured` refusal is **verified by API only** ([Compose smoke](2026-11-21-compose-smoke.json), 422): submitting a probe source in the UI was blocked by the auto-mode classifier and not retried |
+| Users | All 7 users across `it`, `finance` and `sales` (including the inactive reader, with an **Activate** button). Roles render as `role` / `role@department` (for example `department_admin@finance`). Group fields are editable | Tenant-wide `identity.admin` scope. No change was submitted |
+| Roles & groups | `access_admin`, `department_admin`, `reader`, `report_reader` with their capabilities; groups `all-staff` and `finance-team`, with no linked Google groups | Matches the fixtures |
+| Audit | 50 events newest first, from several actors (including `finance.admin`, `sales.reader` and `system`), with `allow`/`info`/`deny` decisions. **Older events** loaded a second page: 100 distinct rows back to 06:09. No document text appeared (probed "370 open invoices", "past their due date", "meal allowance") | Tenant-wide audit scope, paging, no content in audit |
+| Organization | documents, sales_reports, upload and google_drive all on; sync "Every 15 minutes (demo)"; controls editable | Tenant-wide `tenant.config` |
+
+### Department admin (`finance.admin@niletech.example`, `department_admin` scoped to finance)
+
+Identity card: department `finance`, capabilities `audit.read (finance), identity.admin (finance), resource.admin (finance)`.
+
+| Check | Observed | Result |
+| --- | --- | --- |
+| Tabs | Sources, Documents, Users, Roles & groups, Audit. **Organization is absent** | Matches (no `tenant.config`) |
+| Documents (admin tab) | 5 rows, all `finance`: Q1 2026 finance commentary, Board minutes, Draft strategy memo (sharing `nobody`, access `denied`), Q1 2026 sales tables, Q1 2026 workbook. The tenant admin saw 11 across five departments | Matches |
+| Documents card above the admin panel | The same 5 finance documents and the upload form (the department admin holds `resource.admin` for finance; no `resource.read`) | Matches |
+| Users | 5 users, all `finance` (board member, denied reader, finance admin, finance reader, inactive reader). No `it` or `sales` users. Every **group field is disabled**, with no group Save button | Matches (group membership is tenant-wide) |
+| Audit | Page 1: 50 events; page 2 (**Older events**): 100 distinct events back to 01:31. Every row is by a finance user (`finance.admin`, `finance.reader`, `inactive.reader`) or concerns a finance resource (the five finance documents or the Sales reporting dataset). `access.admin` appears only on its five `document.upload` rows for finance documents. No `sales.reader` events and none of the tenant admin's own logins, which the tenant admin's view showed. No document text in the audit view | Matches the documented scope (finance resource, finance actor, or `details.department = finance`) |
+| Roles & groups | Read-only lists of the four roles and two groups; no edit controls | Matches |
+| Sources | Empty state and add form | Matches (refusal verified by API only, as above) |
+
+**Mismatch (presentation only).** In Users, the department admin still sees an editable roles field with **Save** for every user, including tenant-wide assignments such as `reader`, and a **Deactivate** button on their own row. The backend refuses these: changing a tenant-wide assignment returns `403`, and deactivating yourself returns `422` (`test_role_assignment_cannot_escalate`, `test_scoped_admin_cannot_remove_tenant_wide_assignments`, `test_admins_cannot_lock_themselves_out`). I did not press them in the UI. The UI does not hide every control the backend refuses; hiding them is a follow-up.
+
+### Reader (`finance.reader@niletech.example`)
+
+Seen briefly while switching accounts: only Ask, Documents and Your identity; no Administration card and no upload form. This matches a user without admin capabilities.
 
 ## Test results
 
@@ -132,6 +165,6 @@ The CI results for the final commit are in the PR.
 ## Not done in M4
 
 - Live Drive run (above).
-- Browser walk-through of the admin console. It is built and passes lint, typecheck and build, and its API calls are covered by the tests above, but in this session it was not exercised by signing in through a browser.
+- Write actions through the admin console UI (the walkthrough was read-only), and hiding controls the backend refuses for department admins (see the walkthrough mismatch).
 - Verified Google Groups membership on a real Workspace directory. The code path exists (`group_membership: "directory"`) and is unit-tested against a mocked API only. Without it, Drive group shares deny.
 - The Changes API for cheaper incremental listing. Each sync re-reads the tree and every ACL, which is what makes a run "verified" for the small corpus.
