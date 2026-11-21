@@ -2,14 +2,22 @@
 
 Prepared 21 November 2026 on branch `feature/m4-drive-admin-config`, starting from `origin/main` at `e875759`. Updated the same day after review of `943a3c9`: Drive group access now needs verified Google membership, stale syncs are fenced in the database, the operator allowlist is rechecked on every sync, role-definition edits cannot remove the editor's own admin rights, and the live runner waits for the exact run it requested.
 
+Second review round (after `47200796`):
+- an internal group removal or unlink now applies immediately to Drive documents;
+- the upgrade to 0009 fails closed for Drive access granted under the earlier rules;
+- redelivery of a manual sync run id is safe.
+
 **Labels.** "Drive double" means the in-memory test double in `tests/integration/drive_support.py`. It is not Google Drive. "Fake inference" means `MODEL_MODE=fake`. No result in this folder comes from live Google Drive.
 
 ## Status
 
 | Acceptance item | Status | Evidence |
 | --- | --- | --- |
-| Drive sync: first import, incremental updates, moves, deletions, sharing changes | **Implemented; tested against the Drive double** | `test_m4_drive_sync.py` (24 tests), `test_drive_client.py` (15 tests, HTTP client against a mocked Drive API) |
+| Drive sync: first import, incremental updates, moves, deletions, sharing changes | **Implemented; tested against the Drive double** | `test_m4_drive_sync.py` (34 tests), `test_drive_client.py` (15 tests, HTTP client against a mocked Drive API) |
 | Drive group shares only with verified Google membership | Implemented and tested (double) | `test_group_access_needs_verified_current_google_membership`. The user stays in the internal group throughout. Unknown membership: denied. Verified member: allowed. Google membership revoked: denied. Unknown again after another successful sync: still denied. A direct share on the same file keeps working |
+| Internal group removal or unlink applies immediately (no Drive sync) | Implemented and tested (Drive double); mutation-checked (without the live-membership join, 5 of the 7 tests fail) | `test_internal_group_removal_applies_without_a_drive_sync` (membership, link): fresh question `no_sources`, citation reopen 404, replay `access_revoked`, no new sync run. `test_internal_group_removal_blocks_an_active_answer` (membership at draft and at publish, link at publish). `test_direct_share_survives_internal_group_removal` (membership, link) |
+| Upgrade fails closed | Implemented and tested | `test_m4_upgrade.py`: a database at 0007 (unverified group grant) and one at 0008 (group-derived user grant) are upgraded to head. The Drive document is denied (`deny.unknown_input`) before any sync, the source is `upgrade_resync_required`, the fingerprints are cleared, and the M3 upload-group document stays readable |
+| Manual sync redelivery | Implemented and tested (Drive double) | `test_duplicate_delivery_during_and_after_a_run`: no Drive work, one version, run `succeeded` attempt 1. `test_redelivery_recovers_a_dead_worker_without_applying_work_twice`: a duplicate before the lease expires; after expiry, recovery as attempt 2 ends `succeeded`, with each file at exactly 1 version. `test_older_attempt_cannot_overwrite_the_recovered_run`: the old attempt ends `superseded`, and the run row stays `succeeded` attempt 2 |
 | Stale syncs cannot restore access | Implemented and tested (double); mutation-checked (with the fence disabled, all three tests fail) | `test_policy_change_during_a_sync_fences_the_running_sync`, `test_newer_worker_after_lease_expiry_fences_the_older_one`, `test_older_worker_cannot_tombstone_or_release_the_newer_claim` |
 | Operator allowlist enforced on every sync | Implemented and tested (double) | `test_root_removed_from_allowlist_fails_before_any_drive_request`: no Drive call is made, the run fails `root_not_allowed`, and the previously readable document is denied |
 | 15-minute demo / nightly schedule; last verified sync time shown | Implemented and tested | `test_schedule_is_fifteen_minutes_in_demo_and_nightly_otherwise`; Sources tab; Compose worker runs `dispatch_due_syncs` every minute |
@@ -18,8 +26,9 @@ Prepared 21 November 2026 on branch `feature/m4-drive-admin-config`, starting fr
 | Removing access: next request / before an active answer is published / on reopen | Implemented and tested for deactivation, group removal, role removal and clearance downgrade | `test_removal_applies_to_the_next_request`, `test_removal_during_an_active_run_blocks_publication` (draft, verify, publish), `test_deactivation_during_an_active_run_blocks_publication`, `test_removal_hides_published_answers_on_reopen_and_replay` |
 | Two tenants with different packs and connectors, no code change; direct request for a disabled capability | Implemented and tested | `test_m4_tenant_config.py` (8 tests); [Compose smoke](2026-11-21-compose-smoke.json) |
 | Live runner reliability (exact run correlation, document-specific citation, nonzero exit) | Implemented and tested without credentials | `test_m4_acceptance_runner.py` (5 tests: delayed worker, earlier success and scheduled run ignored, timeout exits 2 with evidence, wrong document exits 1); `test_sync_request_returns_its_own_run` |
-| **Live Drive folder: authorized answer → revoke sharing → sync → denied** | **OPEN — blocked on account access** | Runner ready: `scripts/m4_drive_acceptance.py`. Rehearsal with the Drive double: [revocation run](2026-11-21-drive-double-revocation.json) |
+| **Live Drive folder, direct user share: authorized answer → revoke sharing → sync → denied** | **OPEN — not performed (no app credentials, no second reader account)** | Runner ready: `scripts/m4_drive_acceptance.py`. Rehearsal with the Drive double: [revocation run](2026-11-21-drive-double-revocation.json) |
 | Admin console browser walkthrough | **OPEN — sign-in blocked** | See "Browser walkthrough" below |
+| **Real Workspace group verification** (`group_membership: "directory"` against a real directory) | **OPEN, separate from the direct-share demo** | Needs a Google Workspace or Cloud Identity organization and the Directory read-only member scope. Only the mocked API is tested (`test_drive_client.py`) |
 
 A fake Drive does not complete FR-10 (roadmap). The live item stays open until the runner passes against real Drive.
 
@@ -109,8 +118,8 @@ cd backend && .venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv
 
 | Run | Result |
 | --- | --- |
-| Full suite | 728 passed |
-| M4 subset (`test_m4_drive_sync.py`, `test_m4_admin.py`, `test_m4_tenant_config.py`, `test_drive_client.py`, `test_admin_scope.py`, `test_m4_acceptance_runner.py`), 3 repeats | 86 passed each time |
+| Full suite | 740 passed |
+| M4 subset (`test_m4_drive_sync.py`, `test_m4_admin.py`, `test_m4_tenant_config.py`, `test_m4_upgrade.py`, `test_drive_client.py`, `test_admin_scope.py`, `test_m4_acceptance_runner.py`), 3 repeats | 98 passed each time |
 
 The CI results for the final commit are in the PR.
 

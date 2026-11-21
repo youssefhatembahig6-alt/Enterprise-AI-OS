@@ -24,6 +24,29 @@ PERMISSIONS_CURRENT_SQL = """(r.permission_state = 'verified' AND (r.source_id I
                    AS permissions_current"""
 
 
+# M4 (ADR 0401): a Drive group share becomes an allow only while the Google group is
+# still linked to the internal group *and* the user is still in that internal group.
+# Removing either inside the application takes effect at the next authorization point.
+DRIVE_GROUP_GRANTS_SQL = """
+    SELECT dg.resource_id, dg.user_id FROM drive_group_grants dg
+      JOIN external_group_links l
+        ON l.tenant_id = dg.tenant_id AND l.provider = 'google'
+       AND l.external_email = dg.external_email AND l.group_id = dg.group_id
+      JOIN group_memberships gm
+        ON gm.tenant_id = dg.tenant_id AND gm.group_id = dg.group_id AND gm.user_id = dg.user_id
+     WHERE dg.resource_id = ANY(:ids)
+"""
+
+
+def _drive_group_grants(conn: Connection, ids: list[UUID]) -> dict[UUID, list[Grant]]:
+    out: dict[UUID, list[Grant]] = {}
+    for row in conn.execute(text(DRIVE_GROUP_GRANTS_SQL), {"ids": ids}).all():
+        out.setdefault(row.resource_id, []).append(
+            Grant(effect="allow", action="resource.read", user_id=row.user_id)
+        )
+    return out
+
+
 def load_resource_meta(conn: Connection, resource_id: UUID) -> ResourceMeta | None:
     row = conn.execute(
         text(
@@ -45,6 +68,7 @@ def load_resource_meta(conn: Connection, resource_id: UUID) -> ResourceMeta | No
         ),
         {"tid": row.tenant_id, "rid": resource_id},
     ).all()
+    derived = _drive_group_grants(conn, [resource_id]).get(resource_id, [])
     return ResourceMeta(
         tenant_id=row.tenant_id,
         resource_id=row.id,
@@ -57,7 +81,8 @@ def load_resource_meta(conn: Connection, resource_id: UUID) -> ResourceMeta | No
         grants=tuple(
             Grant(effect=g.effect, action=g.action, user_id=g.user_id, group_id=g.group_id)
             for g in grants
-        ),
+        )
+        + tuple(derived),
     )
 
 
@@ -88,6 +113,8 @@ def load_resource_metas(conn: Connection, resource_ids: list[UUID]) -> dict[UUID
         grants.setdefault(g.resource_id, []).append(
             Grant(effect=g.effect, action=g.action, user_id=g.user_id, group_id=g.group_id)
         )
+    for rid, derived in _drive_group_grants(conn, resource_ids).items():
+        grants.setdefault(rid, []).extend(derived)
     return {
         row.id: ResourceMeta(
             tenant_id=row.tenant_id,

@@ -7,9 +7,11 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import pytest
 from sqlalchemy import text
 
 from app.connectors.drive import DrivePermission
@@ -746,3 +748,228 @@ def test_sync_request_returns_its_own_run(m4: M4) -> None:
             "UPDATE connector_sources SET sync_claimed_until = NULL WHERE id = :s",
             {"s": source_id},
         )
+
+
+# -- internal group removal takes effect without a Drive sync ---------------------------------
+
+GROUP_Q = "What is the linked group marker phrase?"
+GROUP_TEXT = "# Linked group\n\nThe linked group marker phrase is cobalt wren.\n"
+
+
+def group_doc(m4: M4, *, direct: bool = False) -> tuple[str, str]:
+    """A file shared with the finance Google group (membership verified), optionally
+    also shared directly with the finance reader. Returns (source_id, document_id)."""
+
+    drive = m4.new_drive()
+    drive.group_members[FINANCE_GROUP_EMAIL] = {m4.user_email(FINANCE)}
+    file_id = drive.file(
+        "linked-group.md",
+        GROUP_TEXT,
+        groups=(FINANCE_GROUP_EMAIL,),
+        users=(m4.user_email(FINANCE),) if direct else (),
+    )
+    admin = m4.token(ADMIN)
+    source_id = m4.create_source(admin, drive.root_id)["source_id"]
+    assert m4.sync(admin, source_id)["status"] == "succeeded"
+    doc = m4.document_for(source_id, file_id)
+    assert doc
+    m4.wait_ready(doc)
+    return source_id, doc
+
+
+def remove_in_app(m4: M4, kind: str) -> None:
+    admin = m4.token(ADMIN)
+    if kind == "membership":
+        user = m4.db.foundation.tenants["niletech"].users["finance-reader"].id
+        response = m4.client.put(
+            f"/api/v1/admin/users/{user}/groups",
+            json={"groups": ["all-staff"]},
+            headers=auth(admin),
+        )
+    else:
+        response = m4.client.put(
+            "/api/v1/admin/groups/finance-team/links",
+            json={"google_groups": []},
+            headers=auth(admin),
+        )
+    assert response.status_code == 200, response.text
+
+
+@pytest.fixture
+def restore_group(m4: M4) -> Iterator[None]:
+    yield
+    admin = m4.token(ADMIN)
+    user = m4.db.foundation.tenants["niletech"].users["finance-reader"].id
+    m4.client.put(
+        f"/api/v1/admin/users/{user}/groups",
+        json={"groups": ["all-staff", "finance-team"]},
+        headers=auth(admin),
+    )
+    m4.client.put(
+        "/api/v1/admin/groups/finance-team/links",
+        json={"google_groups": [FINANCE_GROUP_EMAIL]},
+        headers=auth(admin),
+    )
+
+
+@pytest.mark.parametrize("kind", ["membership", "link"])
+def test_internal_group_removal_applies_without_a_drive_sync(
+    m4: M4, kind: str, restore_group: None
+) -> None:
+    source_id, _ = group_doc(m4)
+    token = m4.token(FINANCE)
+    published = ask(m4.client, token, GROUP_Q, mode="documents")
+    assert published.done["outcome"] == "published", published.raw[-400:]
+    cid = published.of("citation")[0].data["citation_id"]
+    runs_before = owner_exec(
+        m4.db, "SELECT count(*) FROM connector_sync_runs WHERE source_id = :s", {"s": source_id}
+    ).scalar_one()
+    remove_in_app(m4, kind)
+    fresh = ask(m4.client, token, GROUP_Q, mode="documents")
+    assert fresh.done["abstention"]["code"] == "no_sources"
+    assert "cobalt wren" not in fresh.raw
+    reopen = m4.client.get(f"/api/v1/runs/{published.run_id}/citations/{cid}", headers=auth(token))
+    assert reopen.status_code == 404
+    again = replay(m4.client, token, str(published.run_id))
+    assert again.of("error")[-1].data["code"] == "access_revoked"
+    assert "cobalt wren" not in again.raw
+    runs_after = owner_exec(
+        m4.db, "SELECT count(*) FROM connector_sync_runs WHERE source_id = :s", {"s": source_id}
+    ).scalar_one()
+    assert runs_after == runs_before  # no Drive sync was involved
+
+
+@pytest.mark.parametrize(
+    ("kind", "node"), [("membership", "draft"), ("membership", "publish"), ("link", "publish")]
+)
+def test_internal_group_removal_blocks_an_active_answer(
+    m4: M4, kind: str, node: str, restore_group: None
+) -> None:
+    group_doc(m4)
+    workflow = m4.client.app.state.report_runner.documents_workflow  # type: ignore[attr-defined]
+
+    def before(name: str, _: Any) -> None:
+        if name == node:
+            remove_in_app(m4, kind)
+
+    workflow.deps.before_node = before
+    try:
+        stream = ask(m4.client, m4.token(FINANCE), GROUP_Q, mode="documents")
+    finally:
+        workflow.deps.before_node = None
+    assert stream.done["outcome"] == "failed", stream.raw[-400:]
+    assert {f.data["code"] for f in stream.of("error")} == {"access_revoked"}
+    assert not stream.of("token") and not stream.of("citation")
+    assert "cobalt wren" not in stream.raw
+
+
+@pytest.mark.parametrize("kind", ["membership", "link"])
+def test_direct_share_survives_internal_group_removal(
+    m4: M4, kind: str, restore_group: None
+) -> None:
+    group_doc(m4, direct=True)
+    remove_in_app(m4, kind)
+    stream = ask(m4.client, m4.token(FINANCE), GROUP_Q, mode="documents")
+    assert stream.done["outcome"] == "published", stream.raw[-400:]
+
+
+# -- manual sync redelivery ---------------------------------------------------------------
+
+
+class WorkerDied(BaseException):
+    """Simulates a worker process dying mid-sync (not caught as a sync failure)."""
+
+
+def test_duplicate_delivery_during_and_after_a_run(m4: M4) -> None:
+    drive, source_id, file_id, doc = setup_source(m4)
+    run_id = uuid.uuid4()
+    duplicates: list[Any] = []
+
+    def redeliver() -> None:
+        calls = len(drive.calls)
+        duplicates.append(m4.sync_direct(source_id, run_id))
+        assert len(drive.calls) == calls  # the duplicate did no Drive work
+
+    drive.hooks[("list_permissions", file_id)] = redeliver
+    first = m4.sync_direct(source_id, run_id)
+    (during,) = duplicates
+    assert during.duplicate and during.status == "running"
+    assert first.status == "succeeded" and not first.duplicate
+    calls = len(drive.calls)
+    after = m4.sync_direct(source_id, run_id)
+    assert after.duplicate and after.status == "succeeded" and len(drive.calls) == calls
+    run = m4.run_row(run_id)
+    assert (run.status, run.attempt) == ("succeeded", 1)
+    versions = owner_exec(
+        m4.db, "SELECT count(*) FROM document_versions WHERE document_id = :d", {"d": doc}
+    ).scalar_one()
+    assert versions == 1
+    assert m4.source_row(source_id).permissions_current is True
+
+
+def expire_lease(m4: M4, source_id: str) -> None:
+    owner_exec(
+        m4.db,
+        "UPDATE connector_sources SET sync_claimed_until = now() - interval '1 second'"
+        " WHERE id = :s",
+        {"s": source_id},
+    )
+
+
+def test_redelivery_recovers_a_dead_worker_without_applying_work_twice(m4: M4) -> None:
+    drive = m4.new_drive()
+    reader = (m4.user_email(FINANCE),)
+    admin = m4.token(ADMIN)
+    source_id = m4.create_source(admin, drive.root_id)["source_id"]
+    first = drive.file("a-first.md", "# First\n\nFirst recovery text.\n", users=reader)
+    second = drive.file("b-second.md", "# Second\n\nSecond recovery text.\n", users=reader)
+    run_id = uuid.uuid4()
+
+    def die() -> None:
+        raise WorkerDied
+
+    drive.hooks[("list_permissions", second)] = die
+    with pytest.raises(WorkerDied):
+        m4.sync_direct(source_id, run_id)  # applied the first file, then died
+    assert m4.run_row(run_id).status == "running"
+    # Before the lease expires a redelivery is only a duplicate.
+    assert m4.sync_direct(source_id, run_id).duplicate
+    expire_lease(m4, source_id)
+    recovered = m4.sync_direct(source_id, run_id)
+    assert recovered.status == "succeeded" and recovered.attempt == 2
+    run = m4.run_row(run_id)
+    assert (run.status, run.attempt) == ("succeeded", 2)
+    docs = owner_exec(
+        m4.db,
+        "SELECT i.external_id, d.current_version,"
+        " (SELECT count(*) FROM document_versions v WHERE v.document_id = d.id) AS versions"
+        " FROM drive_items i JOIN documents d ON d.id = i.document_id WHERE i.source_id = :s",
+        {"s": source_id},
+    ).all()
+    assert {(r.external_id, r.current_version, r.versions) for r in docs} == {
+        (first, 1, 1),
+        (second, 1, 1),
+    }
+    assert m4.source_row(source_id).permissions_current is True
+
+
+def test_older_attempt_cannot_overwrite_the_recovered_run(m4: M4) -> None:
+    drive, source_id, file_id, _ = setup_source(m4)
+    run_id = uuid.uuid4()
+    recovered: list[Any] = []
+
+    def recover() -> None:  # the older attempt stalls; its lease expires; redelivery
+        expire_lease(m4, source_id)
+        recovered.append(m4.sync_direct(source_id, run_id))
+
+    drive.hooks[("list_permissions", file_id)] = recover
+    older = m4.sync_direct(source_id, run_id)
+    (newer,) = recovered
+    assert newer.status == "succeeded" and newer.attempt == 2
+    assert older.status == "superseded"
+    run = m4.run_row(run_id)
+    assert (run.status, run.attempt) == ("succeeded", 2)  # not overwritten by attempt 1
+    row = m4.source_row(source_id)
+    assert row.permissions_current is True and row.claim_run_id is None
+    assert row.last_verified_sync_at == run.started_at
+    assert answer(m4, FINANCE).done["outcome"] == "published"

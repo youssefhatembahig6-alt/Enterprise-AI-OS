@@ -24,7 +24,7 @@ Errors use the usual `{"error": {code, message, request_id}}`: missing admin cap
 | `GET /api/v1/admin/sources/{id}/runs/{run_id}` | as above | That run: `status` (`queued`, `running`, `succeeded`, `failed`, `skipped`, `superseded`), `terminal`, times, `error_code`, `stats` |
 | `GET /api/v1/admin/audit?limit&before&event_type&resource_id` | `audit.read` | Newest first, scoped; `next_before` pages. URL-encode `before` (it contains `+`) |
 
-`access` on a source: `current` (content served), `stale` (last verified sync older than the bound), `last_sync_failed` (including `root_not_allowed`), `resync_required` (an admin changed the source's policy; any running sync was fenced out), `never_verified`, `paused`, `connector_disabled`. Content is served only while `access = current` and the item's own permissions were readable.
+`access` on a source: `current` (content served), `stale` (last verified sync older than the bound), `last_sync_failed` (including `root_not_allowed`), `resync_required` (an admin changed the source's policy and any running sync was fenced out, or the database was upgraded to 0009), `never_verified`, `paused`, `connector_disabled`. Content is served only while `access = current` and the item's own permissions were readable.
 
 Existing M3 routes are unchanged, except: `PUT …/permissions`, `POST …/versions` and `DELETE` on a Drive-synced document return `422 managed_by_connector`; upload and new versions need the `upload` connector; `POST /api/v1/chat` returns `403 capability_disabled` for an explicit disabled pack. Runs that hit a disabled pack at start or at publication end with an `error` event `capability_disabled` and no content.
 
@@ -52,4 +52,4 @@ See ADR 0401. Per run:
 6. Tombstone what disappeared.
 7. Record `last_verified_sync_at` (the run start) and `permissions_current`.
 
-Every write runs in a transaction fenced on the run's claim and the source's policy version. Supported content: the M3 formats, plus Google Docs (exported as text) and Google Sheets (exported as CSV). Other Google-native files are listed as `unsupported` and never searchable.
+Every write runs in a transaction fenced on the run's claim token and the source's policy version. A Drive group share becomes access only while the Google group is linked to the internal group and the user is in that internal group: unlinking or removing the user applies immediately, with no sync. A redelivered manual run id is recognised. It is a duplicate while the run is live or finished, and it is recovered with `attempt + 1` once the lease expires. Supported content: the M3 formats, plus Google Docs (exported as text) and Google Sheets (exported as CSV). Other Google-native files are listed as `unsupported` and never searchable.

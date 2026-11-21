@@ -85,12 +85,13 @@ class M4:
         assert response.status_code == 201, response.text
         return dict(response.json())
 
-    def sync_direct(self, source_id: str) -> Any:
-        """Run one sync in the test thread (no HTTP), for deterministic race tests."""
+    def sync_direct(self, source_id: str, run_id: uuid.UUID | None = None) -> Any:
+        """Run one sync in the test thread (no HTTP), for deterministic race tests.
+        Passing the same ``run_id`` twice simulates a Celery redelivery."""
 
         tenant = self.db.foundation.tenants["niletech"].id
         return self.client.app.state.drive_sync.sync(  # type: ignore[attr-defined]
-            tenant, uuid.UUID(source_id), trigger="manual"
+            tenant, uuid.UUID(source_id), trigger="manual", run_id=run_id
         )
 
     def source_row(self, source_id: str) -> Any:
@@ -105,7 +106,8 @@ class M4:
     def run_row(self, run_id: Any) -> Any:
         return owner_exec(
             self.db,
-            "SELECT status, error_code, started_at FROM connector_sync_runs WHERE id = :r",
+            "SELECT status, error_code, started_at, attempt, stats FROM connector_sync_runs"
+            " WHERE id = :r",
             {"r": run_id},
         ).one()
 

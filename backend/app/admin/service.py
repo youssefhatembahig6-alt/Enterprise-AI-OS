@@ -641,7 +641,10 @@ class AdminService:
             access = "paused"
         elif r.last_verified_sync_at is None:
             access = "never_verified"
-        elif not r.permissions_current and r.last_error_code == "policy_changed":
+        elif not r.permissions_current and r.last_error_code in (
+            "policy_changed",
+            "upgrade_resync_required",
+        ):
             access = "resync_required"
         elif not r.permissions_current:
             access = "last_sync_failed"
