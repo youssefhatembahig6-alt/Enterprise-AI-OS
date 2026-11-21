@@ -10,7 +10,9 @@ notebook does (ml/gpu-feasibility/vllm-env-pins.txt in /content/vllm-env):
 It downloads the three models at their pinned revisions, starts vLLM on 127.0.0.1 with
 the measured flags (gpu_memory_utilization 0.75, max_model_len 4096), loads BGE-M3
 and the DeBERTa development checker in this kernel, and serves the gateway on
-127.0.0.1:8100. Exposing port 8100 through a tunnel is a separate, explicit step
+127.0.0.1:8100. M3: set ``DOCLING_PYTHON`` to the Docling venv's interpreter (M1
+pins, ``ml/parser-benchmark/colab-docling-pins.txt``) to enable ``POST /parse``;
+without it the backend uses the documented text-layer fallback. Exposing port 8100 through a tunnel is a separate, explicit step
 (README.md): check that it is permitted under your Colab usage terms first.
 """
 
@@ -85,6 +87,7 @@ def main() -> None:
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=GATEWAY_PORT, log_level="info"))
     threading.Thread(target=server.run, daemon=True).start()
     print(f"gateway listening on 127.0.0.1:{GATEWAY_PORT} (bearer GATEWAY_TOKEN required)")
+    print(f"docling /parse: {'enabled' if os.environ.get('DOCLING_PYTHON') else 'disabled'}")
 
 
 if __name__ == "__main__":

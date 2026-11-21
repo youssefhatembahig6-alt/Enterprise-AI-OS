@@ -150,8 +150,19 @@ def cmd_retrieval_eval(args: argparse.Namespace) -> None:
     )
     model = build_model_client(settings)
     qdrant = QdrantClient(args.qdrant, timeout=60.0)
+    docling = None
+    if args.docling:
+        from app.documents.parsers import DoclingUnavailable
+        from app.reporting.model_client import ModelError
+
+        def docling(filename: str, data: bytes) -> dict[str, Any]:
+            try:
+                return model.parse_document(filename, data)
+            except ModelError as exc:
+                raise DoclingUnavailable(type(exc).__name__) from exc
+
     try:
-        record = run_retrieval_eval(model, qdrant, top_k=args.top_k)
+        record = run_retrieval_eval(model, qdrant, top_k=args.top_k, docling=docling)
     finally:
         qdrant.close()
     out = Path(args.out)
@@ -159,6 +170,93 @@ def cmd_retrieval_eval(args: argparse.Namespace) -> None:
     out.write_text(json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
     print(markdown_summary(record))
     print(f"retrieval-eval: wrote {out} (inference_mode={record['inference_mode']})")
+
+
+def _m1_shape(text: str, elements: list[dict[str, Any]]) -> dict[str, Any]:
+    """The application's canonical document in the M1 scorer's PDF output shape."""
+
+    tables, headings = [], []
+    for element in elements:
+        body = text[element["start"] : element["end"]]
+        if element["type"] == "table":
+            tables.append(
+                [[cell.strip() for cell in line.split(" | ")] for line in body.split("\n")]
+            )
+        elif element["type"] == "heading":
+            headings.append(body)
+    return {"text": text, "tables": tables, "headings": headings}
+
+
+def cmd_parser_export(args: argparse.Namespace) -> None:
+    """Export the stored canonical text of every PDF version (owner role) so the M1
+    scorer can check reading order, tables and OCR as ingested by the application."""
+
+    from sqlalchemy import text
+
+    engine = create_engine(_owner_url(), poolclass=pool.NullPool)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT d.id, d.title, v.version, v.filename, v.status, v.error_code, v.parser,
+                       v.parse_notes, v.byte_sha256, v.text_sha256, v.canonical_text, v.elements
+                  FROM documents d JOIN document_versions v ON v.document_id = d.id
+                 WHERE lower(v.filename) LIKE '%.pdf' AND d.deleted_at IS NULL
+                 ORDER BY d.title, v.version
+                """
+            )
+        ).all()
+    engine.dispose()
+    record = []
+    for r in rows:
+        item = {
+            "document_id": str(r.id),
+            "title": r.title,
+            "version": r.version,
+            "filename": r.filename,
+            "status": r.status,
+            "error_code": r.error_code,
+            "parser": r.parser,
+            "parse_notes": r.parse_notes or {},
+            "byte_sha256": r.byte_sha256,
+            "text_sha256": r.text_sha256,
+            "elements": len(r.elements or []),
+            "element_types": sorted({e["type"] for e in (r.elements or [])}),
+        }
+        if r.canonical_text is not None:
+            item["out"] = _m1_shape(r.canonical_text, r.elements or [])
+        record.append(item)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
+    for item in record:
+        print(
+            f"{item['status']:<10} {item['parser'] or '-':<22}"
+            f" {item['filename']}  ({item['title']})"
+        )
+    print(f"parser-export: wrote {out}")
+
+
+def cmd_relevance_study(args: argparse.Namespace) -> None:
+    """Lexical gate versus BGE-M3 dense similarity on the labelled study pairs."""
+
+    from app.config import Settings
+    from app.documents.relevance import run_relevance_study, study_markdown
+    from app.reporting.model_client import build_model_client
+
+    settings = Settings(
+        DATABASE_URL=os.environ.get("DATABASE_URL", "postgresql+psycopg://unused@localhost/none"),
+        REDIS_URL=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+        QDRANT_URL=os.environ.get("QDRANT_URL", "http://localhost:6333"),
+        S3_ENDPOINT_URL=os.environ.get("S3_ENDPOINT_URL", "http://localhost:8333"),
+        JWT_SECRET=os.environ.get("JWT_SECRET", "relevance-study-only-not-a-real-secret-0"),
+    )
+    record = run_relevance_study(build_model_client(settings))
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+    print(study_markdown(record))
+    print(f"relevance-study: wrote {out} (inference_mode={record['inference_mode']})")
 
 
 def cmd_export_openapi(args: argparse.Namespace) -> None:
@@ -205,8 +303,21 @@ def main(argv: list[str] | None = None) -> None:
     evaluate = sub.add_parser("retrieval-eval", help="measure dense vs hybrid retrieval")
     evaluate.add_argument("--qdrant", default=os.environ.get("QDRANT_URL", "http://localhost:6333"))
     evaluate.add_argument("--top-k", type=int, default=5)
+    evaluate.add_argument(
+        "--docling",
+        action="store_true",
+        help="parse PDFs with the gateway's Docling route, as ingestion does",
+    )
     evaluate.add_argument("--out", default=str(BACKEND_ROOT.parent / "var" / "retrieval-eval.json"))
     evaluate.set_defaults(func=cmd_retrieval_eval)
+
+    study = sub.add_parser("relevance-study", help="lexical gate vs dense similarity")
+    study.add_argument("--out", default=str(BACKEND_ROOT.parent / "var" / "relevance-study.json"))
+    study.set_defaults(func=cmd_relevance_study)
+
+    parsed = sub.add_parser("parser-export", help="stored PDF canonical text for M1 scoring")
+    parsed.add_argument("--out", default=str(BACKEND_ROOT.parent / "var" / "parser-export.json"))
+    parsed.set_defaults(func=cmd_parser_export)
 
     export = sub.add_parser("export-openapi", help="write the OpenAPI schema")
     export.add_argument("--output", default=str(BACKEND_ROOT.parent / "docs/openapi.json"))

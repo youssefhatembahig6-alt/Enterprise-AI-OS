@@ -52,7 +52,7 @@ def login(api: str, creds: dict[str, Any], tenant: str, email: str) -> str:
     return str(call("POST", f"{api}/api/v1/auth/login", body=body)["access_token"])
 
 
-def seed(api: str, creds: dict[str, Any]) -> None:
+def seed(api: str, creds: dict[str, Any], timeout: float = 300.0) -> None:
     corpus = tomllib.loads((FIXTURES / "corpus.toml").read_text())
     tokens = {t: login(api, creds, t, u["admin"]) for t, u in USERS.items()}
     emails = {
@@ -86,7 +86,7 @@ def seed(api: str, creds: dict[str, Any]) -> None:
             }
         result = call("POST", f"{api}/api/v1/documents", tokens[doc["tenant"]], body)
         print(f"upload {doc['key']} -> {result['document_id']}")
-    deadline = time.monotonic() + 300
+    deadline = time.monotonic() + timeout  # Docling on the gateway can take minutes per PDF
     while time.monotonic() < deadline:
         docs = [d for t in tokens.values() for d in call("GET", f"{api}/api/v1/documents", t)]
         pending = [d["title"] for d in docs if d["status"] in ("queued", "parsing", "indexing")]
@@ -160,11 +160,15 @@ def main() -> None:
     parser.add_argument("command", choices=["seed", "capture"])
     parser.add_argument("--api", default="http://localhost:8000")
     parser.add_argument("--question", default=QUESTION)
+    parser.add_argument("--timeout", type=float, default=300.0, help="seed: ingestion wait (s)")
     parser.add_argument("--credentials", default=str(ROOT / "var" / "dev-credentials.json"))
     args = parser.parse_args()
     creds = json.loads(Path(args.credentials).read_text())
     try:
-        seed(args.api, creds) if args.command == "seed" else capture(args.api, creds, args.question)
+        if args.command == "seed":
+            seed(args.api, creds, args.timeout)
+        else:
+            capture(args.api, creds, args.question)
     except urllib.error.HTTPError as exc:
         sys.exit(f"HTTP {exc.code}: {exc.read().decode()[:400]}")
 

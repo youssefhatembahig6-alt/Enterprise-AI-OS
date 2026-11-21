@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 ElementType = Literal["heading", "paragraph", "list_item", "table"]
 SEPARATOR = "\n\n"
@@ -81,3 +81,45 @@ def build_canonical(
         parser=parser,
         notes=dict(notes or {}),
     )
+
+
+def elements_to_json(doc: CanonicalDocument) -> list[dict[str, Any]]:
+    """Element spans as stored with the version (``document_versions.elements``)."""
+
+    return [
+        {
+            "type": placed.element.element_type,
+            "start": placed.start,
+            "end": placed.end,
+            "page": placed.element.page,
+            "heading_path": list(placed.element.heading_path),
+            "header_end": placed.element.header_end,
+        }
+        for placed in doc.elements
+    ]
+
+
+def from_stored(
+    text: str,
+    text_sha256: str,
+    stored: list[dict[str, Any]],
+    parser: str,
+    notes: dict[str, object] | None = None,
+) -> CanonicalDocument:
+    """Rebuild a canonical document from stored text and element spans. The text hash
+    is verified, so a rebuilt document is exactly the one that was cited."""
+
+    if sha256_text(text) != text_sha256:
+        raise ValueError("stored canonical text does not match its SHA-256")
+    placed = []
+    for item in stored:
+        start, end = int(item["start"]), int(item["end"])
+        element = Element(
+            element_type=item["type"],
+            text=text[start:end],
+            page=item.get("page"),
+            heading_path=tuple(item.get("heading_path") or ()),
+            header_end=item.get("header_end"),
+        )
+        placed.append(PlacedElement(element, start, end))
+    return CanonicalDocument(text, text_sha256, tuple(placed), parser, dict(notes or {}))

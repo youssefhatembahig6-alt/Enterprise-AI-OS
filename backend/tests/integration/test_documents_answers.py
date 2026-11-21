@@ -456,6 +456,7 @@ def test_t9_every_search_branch_carries_the_eligible_id_filter(
                         "it-security-handbook",
                         "product-catalogue",
                         "company-overview-pdf",
+                        "newsletter-pdf",
                         "customers-csv",
                     )
                 ]

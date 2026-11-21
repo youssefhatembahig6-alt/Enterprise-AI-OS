@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import RetrievalMode
+from app.documents.answers import lexical_keep
 from app.documents.chunker import CHUNKER_VERSION, chunk_document
 from app.documents.parsers import ParseFailed, parse
 from app.documents.qdrant import QdrantClient, SparseVector
@@ -44,27 +45,39 @@ def run_retrieval_eval(
     top_k: int = 5,
     prefetch: int = 20,
     tenant: str = "niletech",
+    docling: Any = None,
 ) -> dict[str, Any]:
+    """``docling``: the same Docling call ingestion uses (``ModelClient.parse_document``
+    behind the documented fallback), so the index matches what the application stores."""
+
     corpus = tomllib.loads((CORPUS / "corpus.toml").read_text())
     cases = tomllib.loads(CASES.read_text())["cases"]
     space = model.embedding_space()
     collection = f"eval_{uuid.uuid4().hex[:10]}__{space.slug}"
     chunks: list[dict[str, Any]] = []
     skipped: dict[str, str] = {}
+    parsers: dict[str, str] = {}
     for doc in corpus["documents"]:
         if doc["tenant"] != tenant:
             continue
         try:
-            canonical = parse(doc["file"], (CORPUS / "files" / doc["file"]).read_bytes())
+            canonical = parse(
+                doc["file"], (CORPUS / "files" / doc["file"]).read_bytes(), docling=docling
+            )
         except ParseFailed as exc:
             skipped[doc["key"]] = exc.code
             continue
+        parsers[doc["key"]] = canonical.parser + (
+            f" ({canonical.notes['docling']})" if "docling" in canonical.notes else ""
+        )
         for chunk in chunk_document(canonical):
             chunks.append(
                 {
                     "id": str(uuid.uuid5(TENANT, f"{doc['key']}|{chunk.ordinal}")),
                     "document": doc["key"],
                     "text": chunk.text,
+                    "body": canonical.text[chunk.char_start : chunk.char_end],
+                    "prefix": chunk.prefix,
                 }
             )
     started = time.perf_counter()
@@ -125,7 +138,21 @@ def run_retrieval_eval(
                     (i for i, c in enumerate(ranked, start=1) if c["document"] == case["document"]),
                     None,
                 )
-                rows.append({"id": case["id"], "rank": rank, "document_rank": doc_rank})
+                # Per-hit data for the relevance-filter decision: is this the gold chunk,
+                # its fused/dense score, and whether the lexical gate would keep it.
+                gate = [
+                    {
+                        "document": c["document"],
+                        "gold": c["document"] == case["document"] and case["expect"] in c["text"],
+                        "same_document": c["document"] == case["document"],
+                        "score": round(h.score, 4),
+                        "lexical_keep": lexical_keep(case["question"], c["prefix"] + c["body"]),
+                    }
+                    for c, h in zip(ranked, hits, strict=True)
+                ]
+                rows.append(
+                    {"id": case["id"], "rank": rank, "document_rank": doc_rank, "hits": gate}
+                )
             n = len(rows)
             results[mode.value] = {
                 "recall_at_1": round(sum(1 for r in rows if r["rank"] == 1) / n, 4),
@@ -137,7 +164,16 @@ def run_retrieval_eval(
             }
     finally:
         qdrant.delete_collection(collection)
+    dense_rows = {r["id"]: r for r in results["dense"]["cases"]}
+    differences = [
+        {"id": r["id"], "dense_rank": dense_rows[r["id"]]["rank"], "hybrid_rank": r["rank"]}
+        for r in results["hybrid"]["cases"]
+        if r["rank"] != dense_rows[r["id"]]["rank"]
+    ]
     return {
+        "parsers": parsers,
+        "per_case_differences": differences,
+        "lexical_gate": {mode: _gate_summary(r["cases"]) for mode, r in results.items()},
         "inference_mode": model.mode.value,
         "embedding_space": {
             "model": space.model,
@@ -159,6 +195,20 @@ def run_retrieval_eval(
     }
 
 
+def _gate_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    gold = [h for r in rows for h in r["hits"] if h["gold"]]
+    other = [h for r in rows for h in r["hits"] if not h["same_document"]]
+    return {
+        "gold_hits": len(gold),
+        "gold_hits_dropped": sum(1 for h in gold if not h["lexical_keep"]),
+        "gold_dropped_cases": sorted(
+            r["id"] for r in rows for h in r["hits"] if h["gold"] and not h["lexical_keep"]
+        ),
+        "other_document_hits": len(other),
+        "other_document_hits_kept": sum(1 for h in other if h["lexical_keep"]),
+    }
+
+
 def markdown_summary(record: dict[str, Any]) -> str:
     space = record["embedding_space"]
     kind = "FAKE feature hashing, not a quality result" if space["fake"] else "real"
@@ -173,5 +223,14 @@ def markdown_summary(record: dict[str, Any]) -> str:
         lines.append(
             f"| {mode} | {r['recall_at_1']:.3f} | {r['recall_at_5']:.3f} | {r['mrr_at_5']:.3f} |"
             f" {r['document_recall_at_5']:.3f} | {r['median_query_ms']:.1f} |"
+        )
+    diffs = record.get("per_case_differences", [])
+    lines += ["", f"Per-case rank differences (dense → hybrid): {len(diffs)}"]
+    lines += [f"- {d['id']}: {d['dense_rank']} → {d['hybrid_rank']}" for d in diffs]
+    for mode, g in record.get("lexical_gate", {}).items():
+        lines.append(
+            f"Lexical gate on {mode} top-k: drops {g['gold_hits_dropped']}/{g['gold_hits']} gold"
+            f" hits, keeps {g['other_document_hits_kept']}/{g['other_document_hits']}"
+            " other-document hits."
         )
     return "\n".join(lines) + "\n"

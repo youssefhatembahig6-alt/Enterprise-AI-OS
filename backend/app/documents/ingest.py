@@ -36,12 +36,17 @@ from sqlalchemy import Engine, text
 from app.config import Settings
 from app.db.engine import tenant_transaction
 from app.documents import access, store
-from app.documents.canonical import CanonicalDocument
+from app.documents.canonical import CanonicalDocument, elements_to_json, from_stored
 from app.documents.chunker import CHUNKER_VERSION, ChunkSpec, chunk_document
-from app.documents.parsers import ParseFailed, detect, parse
+from app.documents.parsers import DoclingUnavailable, ParseFailed, detect, parse
 from app.documents.qdrant import QdrantClient, QdrantError, SparseVector
 from app.documents.storage import ObjectStore, StorageError, object_key, read_verified
-from app.reporting.model_client import ModelClient, ModelError
+from app.reporting.model_client import (
+    GatewayNotConfigured,
+    GatewayTimeout,
+    ModelClient,
+    ModelError,
+)
 from app.repositories.audit import record_audit_event
 from app.security.context import AccessContext
 
@@ -371,6 +376,8 @@ class DocumentService:
                     "error_code": v.error_code,
                     "byte_size": v.byte_size,
                     "created_at": v.created_at.isoformat(),
+                    "parser": v.parser,
+                    "parse_notes": v.parse_notes or {},
                 }
                 for v in versions
             ]
@@ -510,9 +517,8 @@ class IngestionRunner:
         dense_size: int,
     ) -> str:
         assert job.generation is not None  # noqa: S101
-        data = read_verified(self._objects, version.storage_key, version.byte_sha256)
         try:
-            canonical = parse(version.filename, data)
+            canonical = self._canonical(version)
         except ParseFailed as exc:
             status = "needs_ocr" if exc.code == "needs_ocr" else "failed"
             with tenant_transaction(self._engine, job.tenant_id) as conn:
@@ -547,6 +553,7 @@ class IngestionRunner:
                 canonical.text_sha256,
                 canonical.parser,
                 canonical.notes,
+                elements_to_json(canonical),
             )
             store.stage_generation(
                 conn,
@@ -627,6 +634,38 @@ class IngestionRunner:
             except QdrantError:
                 logger.warning("refused_generation_cleanup_failed")
         return "ready" if ok else reason
+
+    def _docling(self, filename: str, data: bytes) -> dict[str, Any]:
+        """Docling on the gateway (M1 parser choice for PDFs). Any model-side failure
+        becomes ``DoclingUnavailable`` so ``parse`` uses the documented fallback."""
+
+        if not self._settings.use_docling:
+            raise DoclingUnavailable("disabled")
+        try:
+            return self._model.parse_document(filename, data)
+        except GatewayNotConfigured as exc:
+            raise DoclingUnavailable("not_configured") from exc
+        except GatewayTimeout as exc:
+            raise DoclingUnavailable("timeout") from exc
+        except ModelError as exc:
+            raise DoclingUnavailable(type(exc).__name__) from exc
+
+    def _canonical(self, version: store.VersionRow) -> CanonicalDocument:
+        """Stored elements win: reindexing and retries rebuild the exact canonical
+        document that was cited, without re-running a parser that may have changed or
+        be unavailable. Otherwise parse the verified bytes."""
+
+        if version.canonical_text is not None and version.elements is not None:
+            assert version.text_sha256 is not None and version.parser is not None  # noqa: S101
+            return from_stored(
+                version.canonical_text,
+                version.text_sha256,
+                version.elements,
+                version.parser,
+                version.parse_notes,
+            )
+        data = read_verified(self._objects, version.storage_key, version.byte_sha256)
+        return parse(version.filename, data, docling=self._docling)
 
     def _space_strings(self) -> tuple[str]:
         space = self._model.embedding_space()

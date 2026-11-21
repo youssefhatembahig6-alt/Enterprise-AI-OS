@@ -512,3 +512,117 @@ def test_identical_bytes_under_other_tenants_or_permissions_stay_distinct(
     stream = ask(app_client, reader, "What is the minimum password length?", mode="documents")
     cited = {c.data["document_id"] for c in stream.of("citation")}
     assert cited <= {open_copy} and cited
+
+
+# -- Docling (M1 parser choice) and its documented fallback -------------------------------
+
+DOCLING_SCAN = {
+    "parser": "docling-test",
+    "elements": [
+        {
+            "type": "heading",
+            "text": "Delivery note DN-2026-0412",
+            "page": 1,
+            "heading_path": ["Delivery note DN-2026-0412"],
+        },
+        {
+            "type": "paragraph",
+            "text": "Delivered to Alexandria warehouse on 14 April 2026.",
+            "page": 1,
+            "heading_path": ["Delivery note DN-2026-0412"],
+        },
+        {
+            "type": "table",
+            "text": "Item | Qty\nPallet racks | 12",
+            "page": 1,
+            "heading_path": ["Delivery note DN-2026-0412"],
+            "header_end": 10,
+        },
+    ],
+    "notes": {"docling_version": "test", "pages": 1},
+}
+
+
+def version_row(db: DbHarness, document_id: str) -> Any:
+    return owner_exec(
+        db,
+        "SELECT parser, parse_notes, text_sha256, canonical_text, elements, status"
+        " FROM document_versions WHERE document_id = :d ORDER BY version DESC LIMIT 1",
+        {"d": document_id},
+    ).one()
+
+
+def test_docling_elements_are_stored_and_reindex_never_reparses(
+    app_client: TestClient, ingest_db: DbHarness
+) -> None:
+    from app.reporting.model_client import FakeModelClient, GatewayUnavailable
+
+    ingestion = runner(app_client)
+    real = ingestion._model
+    ingestion._model = FakeModelClient(parse_result=DOCLING_SCAN)
+    try:
+        document_id = upload(app_client, ingest_db, corpus_doc("delivery-note-scan"))
+        assert wait_status(ingest_db, document_id, {"ready", "needs_ocr", "failed"}) == "ready"
+    finally:
+        ingestion._model = real
+    first = version_row(ingest_db, document_id)
+    assert first.parser == "docling-test"
+    table = first.elements[2]
+    assert first.canonical_text[table["start"] : table["end"]] == "Item | Qty\nPallet racks | 12"
+    assert table["header_end"] == 10 and table["page"] == 1
+
+    # Docling now unavailable: a reindex rebuilds from the stored elements; the
+    # text-layer fallback (which would say needs_ocr for this scan) is never consulted.
+    ingestion._model = FakeModelClient(parse_result=GatewayUnavailable("down"))
+    try:
+        admin = login(app_client, ingest_db, "niletech/access-admin")
+        response = app_client.post(f"/api/v1/documents/{document_id}/reindex", headers=auth(admin))
+        assert response.status_code == 202
+        for _ in range(200):
+            if [g[1] for g in generations(ingest_db, document_id)] == ["retired", "active"]:
+                break
+            time.sleep(0.05)
+    finally:
+        ingestion._model = real
+    assert [g[1] for g in generations(ingest_db, document_id)] == ["retired", "active"]
+    again = version_row(ingest_db, document_id)
+    assert (again.parser, again.text_sha256, again.elements) == (
+        first.parser,
+        first.text_sha256,
+        first.elements,
+    )
+    detail = app_client.get(f"/api/v1/documents/{document_id}", headers=auth(admin)).json()
+    assert detail["versions"][0]["parser"] == "docling-test"
+
+
+def test_without_docling_pdfs_use_the_documented_fallback(
+    app_client: TestClient, ingest_db: DbHarness
+) -> None:
+    document_id = upload(app_client, ingest_db, corpus_doc("sales-tables-pdf"))
+    assert wait_status(ingest_db, document_id, {"ready", "failed"}) == "ready"
+    row = version_row(ingest_db, document_id)
+    assert row.parser == "pdfplumber-text-v1"
+    assert row.parse_notes["docling"] == "unavailable: not_configured"
+    assert row.parse_notes["fallback"] == "pdfplumber text layer (M1 documented fallback)"
+    assert row.elements and all(
+        row.canonical_text[e["start"] : e["end"]].strip() for e in row.elements
+    )
+    scan = upload(app_client, ingest_db, corpus_doc("delivery-note-scan"))
+    assert wait_status(ingest_db, scan, {"needs_ocr", "ready", "failed"}) == "needs_ocr"
+
+
+def test_a_malformed_docling_result_falls_back_instead_of_failing(
+    app_client: TestClient, ingest_db: DbHarness
+) -> None:
+    from app.reporting.model_client import FakeModelClient
+
+    ingestion = runner(app_client)
+    real = ingestion._model
+    ingestion._model = FakeModelClient(parse_result={"parser": "other", "elements": "x"})
+    try:
+        document_id = upload(app_client, ingest_db, corpus_doc("company-overview-pdf"))
+        assert wait_status(ingest_db, document_id, {"ready", "failed"}) == "ready"
+    finally:
+        ingestion._model = real
+    row = version_row(ingest_db, document_id)
+    assert row.parse_notes["docling"] == "unavailable: malformed_parse_result"

@@ -38,6 +38,14 @@ class RetrievalMode(StrEnum):
     HYBRID = "hybrid"  # dense + sparse prefetches fused with RRF
 
 
+class RelevanceFilter(StrEnum):
+    """Which retrieved passages reach the answer model (ADR 0304, M3 relevance study)."""
+
+    LEXICAL = "lexical"  # keep passages sharing a significant term with the question
+    DENSE_SCORE = "dense_score"  # keep passages whose dense cosine >= RELEVANCE_MIN_SCORE
+    NONE = "none"  # keep every authorized hit; the answer model and verifier decide
+
+
 class Environment(StrEnum):
     DEVELOPMENT = "development"
     TEST = "test"
@@ -67,6 +75,12 @@ class Settings(BaseSettings):
     model_embed_path: str = Field(default="/v1/embeddings", alias="MODEL_EMBED_PATH")
     model_check_path: str = Field(default="/check", alias="MODEL_CHECK_PATH")
     model_health_path: str = Field(default="/health", alias="MODEL_HEALTH_PATH")
+    # M3: Docling (M1 parser choice for PDFs) runs behind the gateway.
+    model_parse_path: str = Field(default="/parse", alias="MODEL_PARSE_PATH")
+    docling_timeout_seconds: float = Field(
+        default=600.0, alias="DOCLING_TIMEOUT_SECONDS", gt=0, le=1800
+    )
+    use_docling: bool = Field(default=True, alias="USE_DOCLING")
     # Measured M1 T4 configuration (ml/gpu-feasibility/reports/2026-11-20-target-t4.md).
     model_chat_name: str = Field(default="Qwen/Qwen3-8B-AWQ", alias="MODEL_CHAT_NAME")
     model_chat_revision: str = Field(
@@ -130,6 +144,10 @@ class Settings(BaseSettings):
     retrieval_mode: RetrievalMode = Field(default=RetrievalMode.DENSE, alias="RETRIEVAL_MODE")
     retrieval_top_k: int = Field(default=5, alias="RETRIEVAL_TOP_K", ge=1, le=10)
     retrieval_prefetch: int = Field(default=20, alias="RETRIEVAL_PREFETCH", ge=5, le=100)
+    relevance_filter: RelevanceFilter = Field(
+        default=RelevanceFilter.LEXICAL, alias="RELEVANCE_FILTER"
+    )
+    relevance_min_score: float = Field(default=0.0, alias="RELEVANCE_MIN_SCORE", ge=-1.0, le=1.0)
     ingestion_job_lease_seconds: int = Field(
         default=600, alias="INGESTION_JOB_LEASE_SECONDS", ge=30, le=3600
     )
@@ -217,7 +235,13 @@ class Settings(BaseSettings):
             )
         return root
 
-    @field_validator("model_chat_path", "model_embed_path", "model_check_path", "model_health_path")
+    @field_validator(
+        "model_chat_path",
+        "model_embed_path",
+        "model_check_path",
+        "model_health_path",
+        "model_parse_path",
+    )
     @classmethod
     def _path(cls, value: str) -> str:
         if not value.startswith("/") or "://" in value or ".." in value:
@@ -226,6 +250,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _production_guards(self) -> Settings:
+        if (
+            self.relevance_filter is RelevanceFilter.DENSE_SCORE
+            and self.retrieval_mode is not RetrievalMode.DENSE
+        ):
+            # RRF fusion scores are ranks, not cosine similarities.
+            raise ValueError("RELEVANCE_FILTER=dense_score requires RETRIEVAL_MODE=dense")
         if self.environment is Environment.PRODUCTION:
             secret = self.jwt_secret.get_secret_value().lower()
             if any(marker in secret for marker in _PLACEHOLDER_MARKERS):

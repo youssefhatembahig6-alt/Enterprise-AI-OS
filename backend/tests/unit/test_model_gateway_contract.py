@@ -12,7 +12,7 @@ import json
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 import pytest
@@ -145,3 +145,84 @@ def test_hybrid_embeddings_round_trip(gateway_client: Any) -> None:
     assert len(vectors) == 2 and len(vectors[0].dense) == 1024
     assert vectors[0].sparse == {7: 0.25, 3: 1.5}
     assert vectors[1].sparse == {7: 0.25, 5: 1.5}
+
+
+class StubParser:
+    info: ClassVar[dict[str, str]] = {"model": "docling", "version": "stub"}
+
+    def __init__(self) -> None:
+        self.seen: list[tuple[str, bytes]] = []
+
+    def parse(self, filename: str, data: bytes) -> dict[str, Any]:
+        self.seen.append((filename, data))
+        return {
+            "parser": "docling-stub",
+            "elements": [
+                {"type": "heading", "text": "Results", "page": 1, "heading_path": ["Results"]},
+                {
+                    "type": "table",
+                    "text": "Region | Net\nEMEA | 1.0",
+                    "page": 1,
+                    "heading_path": ["Results"],
+                    "header_end": 12,
+                },
+            ],
+            "notes": {"docling_version": "stub"},
+        }
+
+
+def test_docling_parse_route_feeds_the_backend_parser() -> None:
+    from app.documents.parsers import parse
+
+    gateway = load_gateway()
+    stub = StubParser()
+    app = gateway.create_app(
+        gateway.GatewayConfig(token=TOKEN), embedder=None, checker=None, parser=stub
+    )
+    pdf = b"%PDF-1.4\n" + b"x" * (400 * 1024)  # larger than the 256 KB JSON route limit
+    with TestClient(app, base_url=ROOT) as client:
+        model = backend_client(client)
+        assert model.served_models().raw["models"]["parser"]["model"] == "docling"
+        doc = parse("report.pdf", pdf, docling=model.parse_document)
+        assert client.post("/parse", json={}).status_code == 401
+    assert stub.seen == [("report.pdf", pdf)]
+    assert doc.parser == "docling-stub"
+    assert doc.text == "Results\n\nRegion | Net\nEMEA | 1.0"
+    table = doc.elements[1]
+    assert doc.text[table.start : table.end].startswith("Region | Net")
+    assert table.element.header_end == 12
+
+
+def test_gateway_without_docling_triggers_the_documented_fallback() -> None:
+    from app.documents.parsers import DoclingUnavailable
+
+    gateway = load_gateway()
+    app = gateway.create_app(gateway.GatewayConfig(token=TOKEN), embedder=None, checker=None)
+    with TestClient(app, base_url=ROOT) as client:
+        response = client.post(
+            "/parse",
+            json={"filename": "a.pdf", "content_base64": "JVBERg=="},
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "parser_not_loaded"
+        with pytest.raises(Exception) as caught:
+            backend_client(client).parse_document("a.pdf", b"%PDF-1.4")
+    assert not isinstance(caught.value, DoclingUnavailable)  # ingestion maps it
+
+
+def test_docling_subprocess_runs_the_worker_in_its_own_interpreter(tmp_path: Path) -> None:
+    gateway = load_gateway()
+    worker = tmp_path / "worker.py"
+    worker.write_text(
+        "import json, sys\n"
+        "data = open(sys.argv[1], 'rb').read()\n"
+        "json.dump({'parser': 'docling-x', 'elements': [], 'notes': {'size': len(data)}},"
+        " sys.stdout)\n"
+    )
+    runner = gateway.DoclingSubprocess.__new__(gateway.DoclingSubprocess)
+    runner._python, runner._timeout, runner._worker = sys.executable, 30.0, str(worker)
+    assert runner.parse("x.pdf", b"12345")["notes"] == {"size": 5}
+    worker.write_text("import sys\nsys.exit('boom')\n")
+    with pytest.raises(gateway.ParseError, match="boom"):
+        runner.parse("x.pdf", b"1")

@@ -34,7 +34,7 @@ from uuid import UUID
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import text
 
-from app.config import RetrievalMode
+from app.config import RelevanceFilter, RetrievalMode
 from app.documents import access, store
 from app.documents.qdrant import QdrantClient, SparseVector
 from app.reporting import store as runs
@@ -146,6 +146,23 @@ def significant_terms(text_: str) -> set[str]:
     return {
         _stem(t.lower()) for t in _TERM.findall(text_) if len(t) > 2 and t.lower() not in STOPWORDS
     }
+
+
+def lexical_keep(question: str, passage: str) -> bool:
+    return bool(significant_terms(question) & significant_terms(passage))
+
+
+def relevance_filter(
+    mode: RelevanceFilter, min_score: float, question: str, passages: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The configured relevance gate between retrieval and the answer model. It only
+    narrows authorized passages; it never widens access."""
+
+    if mode is RelevanceFilter.NONE:
+        return list(passages)
+    if mode is RelevanceFilter.DENSE_SCORE:
+        return [p for p in passages if float(p["score"]) >= min_score]
+    return [p for p in passages if lexical_keep(question, p["prefix"] + p["span_text"])]
 
 
 def locate_quote(span_text: str, quote: str) -> tuple[int, int] | None:
@@ -302,7 +319,7 @@ class DocumentAnswerWorkflow(ReportWorkflow):
         stats["embedding_space"] = self.deps.model.embedding_space().slug
         return {"answer_attempt": 0, "passages": []}
 
-    def retrieve(self, state: DocState) -> dict[str, Any]:  # noqa: PLR0915 - one linear, documented step
+    def retrieve(self, state: DocState) -> dict[str, Any]:
         settings = self.deps.settings
         tenant_id, user_id = state["tenant_id"], state["user_id"]
         with self._tx(state) as conn:
@@ -373,10 +390,11 @@ class DocumentAnswerWorkflow(ReportWorkflow):
                             "score": hit.score,
                         }
                     )
-        terms = significant_terms(state["question"])
-        relevant = [p for p in passages if terms & significant_terms(p["prefix"] + p["span_text"])]
+        relevant = relevance_filter(
+            settings.relevance_filter, settings.relevance_min_score, state["question"], passages
+        )
         if len(relevant) < len(passages):
-            dropped["no_term_overlap"] = len(passages) - len(relevant)
+            dropped[f"relevance_{settings.relevance_filter.value}"] = len(passages) - len(relevant)
         for i, p in enumerate(relevant, start=1):
             p["source_id"] = f"s{i}"
         stats = self._stats_for(state)

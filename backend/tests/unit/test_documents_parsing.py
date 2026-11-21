@@ -37,7 +37,7 @@ def test_reused_m1_fixtures_are_byte_identical() -> None:
     manifest = json.loads(M1_MANIFEST.read_text())
     m1 = {Path(f["file"]).name: f["sha256"] for f in manifest["fixtures"]}
     reused = [n for n in m1 if (FILES / n).exists()]
-    assert len(reused) == 5
+    assert len(reused) == 6
     for name in reused:
         assert hashlib.sha256((FILES / name).read_bytes()).hexdigest() == m1[name]
 

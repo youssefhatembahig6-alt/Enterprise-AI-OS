@@ -45,6 +45,7 @@ class VersionRow:
     parse_notes: dict[str, Any]
     created_at: datetime
     updated_at: datetime
+    elements: list[dict[str, Any]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -390,6 +391,7 @@ def load_version(conn: Connection, document_id: UUID, version: int) -> VersionRo
         parse_notes=row.parse_notes or {},
         created_at=row.created_at,
         updated_at=row.updated_at,
+        elements=row.elements,
     )
 
 
@@ -426,7 +428,11 @@ def set_canonical(
     sha: str,
     parser: str,
     notes: dict[str, Any],
+    elements: list[dict[str, Any]] | None = None,
 ) -> None:
+    """Store a version's canonical text once; element spans are stored once too (also
+    for versions parsed before elements were kept, provided the text hash matches)."""
+
     conn.execute(
         text(
             """
@@ -444,6 +450,17 @@ def set_canonical(
             "v": version,
         },
     )
+    if elements is not None:
+        conn.execute(
+            text(
+                """
+                UPDATE document_versions SET elements = CAST(:e AS jsonb)
+                 WHERE document_id = :d AND version = :v AND elements IS NULL
+                   AND text_sha256 = :sha
+                """
+            ),
+            {"e": json.dumps(elements), "d": document_id, "v": version, "sha": sha},
+        )
 
 
 # -- generations and chunks ------------------------------------------------------------

@@ -21,7 +21,9 @@ import csv
 import io
 import re
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from app.documents.canonical import CanonicalDocument, Element, build_canonical
 
@@ -231,7 +233,63 @@ def parse_pdf(data: bytes) -> CanonicalDocument:
     )
 
 
-def parse(filename: str, data: bytes) -> CanonicalDocument:
+class DoclingUnavailable(Exception):
+    """Docling could not run (gateway down, not configured, timed out, failed)."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+DoclingCall = Callable[[str, bytes], dict[str, Any]]
+ELEMENT_TYPES = ("heading", "paragraph", "list_item", "table")
+
+
+def elements_from_docling(payload: dict[str, Any]) -> CanonicalDocument:
+    """Validate the gateway's Docling element list and build the canonical document.
+
+    The gateway converts Docling's reading-order items to the same element contract the
+    local parsers use (headings, paragraphs, list items, tables as ``a | b`` rows with
+    the header row first), so chunking and citation offsets work identically.
+    """
+
+    raw = payload.get("elements")
+    parser = payload.get("parser")
+    if not isinstance(raw, list) or not isinstance(parser, str) or not parser.startswith("docling"):
+        raise DoclingUnavailable("malformed_parse_result")
+    elements: list[Element] = []
+    for item in raw:
+        if not isinstance(item, dict) or item.get("type") not in ELEMENT_TYPES:
+            raise DoclingUnavailable("malformed_parse_result")
+        text_value = item.get("text")
+        page = item.get("page")
+        path = item.get("heading_path") or []
+        header_end = item.get("header_end")
+        if not isinstance(text_value, str) or not isinstance(path, list):
+            raise DoclingUnavailable("malformed_parse_result")
+        elements.append(
+            Element(
+                item["type"],
+                text_value,
+                page if isinstance(page, int) else None,
+                tuple(str(p) for p in path),
+                header_end if isinstance(header_end, int) else None,
+            )
+        )
+    notes = dict(payload.get("notes") or {})
+    doc = build_canonical(elements, parser, notes)
+    if not doc.text.strip():
+        if notes.get("ocr_pages"):
+            raise NeedsOcr
+        raise ParseFailed("empty_document", "Docling found no text in the PDF.")
+    return doc
+
+
+def parse(filename: str, data: bytes, docling: DoclingCall | None = None) -> CanonicalDocument:
+    """Parse an upload. PDFs go to Docling when a Docling call is available (the M1
+    choice: layout, tables, OCR on the Colab GPU); if Docling is unavailable, the
+    documented fallback is the local text-layer parser, and scans become needs_ocr."""
+
     if len(data) > MAX_UPLOAD_BYTES:
         raise ParseFailed("too_large", "The file is larger than 10 MB.")
     if not data:
@@ -243,4 +301,14 @@ def parse(filename: str, data: bytes) -> CanonicalDocument:
         return parse_csv(data)
     if detected.extension == ".xlsx":
         return parse_xlsx(data)
-    return parse_pdf(data)
+    unavailable: str | None = None
+    if docling is not None:
+        try:
+            return elements_from_docling(docling(filename, data))
+        except DoclingUnavailable as exc:
+            unavailable = exc.code
+    doc = parse_pdf(data)
+    if unavailable is not None:
+        doc.notes["docling"] = f"unavailable: {unavailable}"
+        doc.notes["fallback"] = "pdfplumber text layer (M1 documented fallback)"
+    return doc

@@ -1,5 +1,5 @@
 # M3 document corpus fixture. Synthetic files only; every file is verified by
-# SHA256SUMS. Five files are copied byte-for-byte from the M1 parser benchmark
+# SHA256SUMS. Six files are copied byte-for-byte from the M1 parser benchmark
 # (ml/parser-benchmark/fixtures/files; checked against its manifest in tests).
 #
 # Permissions use the M0 vocabulary (classification, department, department
@@ -94,6 +94,18 @@ title = "NileTech company overview"
   grants = [{ group = "all-staff", effect = "allow" }]
 
 [[documents]]
+key = "newsletter-pdf"
+tenant = "niletech"
+file = "two-column-newsletter.pdf"
+title = "NileTech field notes, autumn 2026"
+  [documents.permissions]
+  classification = "public"
+  department = "marketing"
+  department_restricted = false
+  allowed_countries = ["*"]
+  grants = [{ group = "all-staff", effect = "allow" }]
+
+[[documents]]
 key = "sales-tables-pdf"
 tenant = "niletech"
 file = "table-heavy-sales-q1-2026.pdf"
@@ -134,7 +146,10 @@ key = "delivery-note-scan"
 tenant = "niletech"
 file = "scanned-delivery-note.pdf"
 title = "Delivery note (scan)"
+# Without Docling (fake mode, or the documented fallback) a scan has no text layer.
+# With Docling on the gateway, OCR makes it searchable.
 expect_status = "needs_ocr"
+expect_status_docling = "ready"
   [documents.permissions]
   classification = "internal"
   department = "sales"

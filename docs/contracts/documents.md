@@ -18,7 +18,7 @@ All routes need a session token. Unknown, foreign, deleted and unreadable docume
 | `POST /api/v1/chat` `{question, mode}` | anyone | `mode`: `auto` (default; sales/period questions go to the M2 report, the rest to documents), `documents` or `report` |
 | `GET /api/v1/runs/{run}/citations/{cid}` | run owner, current `resource.read` | The cited passage of the exact version used, sliced by Unicode code points on the server |
 
-Upload formats: PDF with a text layer, Markdown, plain text, CSV, XLSX; up to 10 MB. Document statuses: `queued`, `parsing`, `indexing`, `ready`, `failed`, `needs_ocr`. Failure codes include `malformed_file`, `empty_document`, `encoding_error`, `too_large`, `needs_ocr`, `parser_changed`, and while waiting `embedding_unavailable`, `storage_unavailable`, `index_unavailable` (retried, then `failed` with that reason).
+Upload formats: PDF (Docling on the gateway, including scans; without Docling a text layer is required), Markdown, plain text, CSV, XLSX; up to 10 MB. Admins see each version's `parser` and `parse_notes` (for a fallback parse, `docling: "unavailable: <reason>"` and `fallback`). Document statuses: `queued`, `parsing`, `indexing`, `ready`, `failed`, `needs_ocr`. Failure codes include `malformed_file`, `empty_document`, `encoding_error`, `too_large`, `needs_ocr`, `parser_changed`, and while waiting `embedding_unavailable`, `storage_unavailable`, `index_unavailable` (retried, then `failed` with that reason).
 
 ## Identity
 
@@ -30,7 +30,7 @@ Upload formats: PDF with a text layer, Markdown, plain text, CSV, XLSX; up to 10
 
 ## Retrieval
 
-For each question: eligible point ids are computed at policy epoch E0 by the reference evaluator (`resource.read`) over current PostgreSQL state, active generations only. The Qdrant request carries `must: [tenant_id = T, has_id: eligible]` on the dense query, or on each prefetch **and** the RRF fusion stage (`RETRIEVAL_MODE=hybrid`). An empty eligible set sends no query. Candidates are rechecked in a new transaction (current decision, not deleted, generation still active) before chunk text is loaded. A deterministic development relevance gate keeps passages that share at least one significant term with the question.
+For each question: eligible point ids are computed at policy epoch E0 by the reference evaluator (`resource.read`) over current PostgreSQL state, active generations only. The Qdrant request carries `must: [tenant_id = T, has_id: eligible]` on the dense query, or on each prefetch **and** the RRF fusion stage (`RETRIEVAL_MODE=hybrid`). An empty eligible set sends no query. Candidates are rechecked in a new transaction (current decision, not deleted, generation still active) before chunk text is loaded. A relevance gate (`RELEVANCE_FILTER`) then narrows the authorized passages: `lexical` keeps passages sharing a significant term with the question, `dense_score` keeps dense hits with cosine ≥ `RELEVANCE_MIN_SCORE` (dense mode only), `none` passes every authorized hit to the answer model and verifier. The default and its justification: [ADR 0304](../adr/0304-citations-and-refusals.md) and `docs/evidence/m3/`.
 
 ## Answers and events
 
@@ -50,4 +50,4 @@ Offsets are Unicode code points (start inclusive, end exclusive) in the canonica
 
 ## Embeddings and fakes
 
-`ModelClient.embed_text` returns BGE-M3 dense (1024) and sparse vectors from the gateway (`/v1/embeddings` with `return_sparse: true`). Collections are named per embedding space, `{prefix}__{model}_{revision}_{size}`, so fake and real vectors never mix. `MODEL_MODE=fake` uses deterministic feature-hashing vectors and a quoting answerer, labelled FAKE on every event. They exercise the pipeline and security tests; they are not retrieval-quality results.
+`ModelClient.parse_document` calls the gateway's `POST /parse` (`{filename, content_base64}` → `{parser, elements, notes}`). `ModelClient.embed_text` returns BGE-M3 dense (1024) and sparse vectors from the gateway (`/v1/embeddings` with `return_sparse: true`). Collections are named per embedding space, `{prefix}__{model}_{revision}_{size}`, so fake and real vectors never mix. `MODEL_MODE=fake` uses deterministic feature-hashing vectors and a quoting answerer, labelled FAKE on every event. They exercise the pipeline and security tests; they are not retrieval-quality results.

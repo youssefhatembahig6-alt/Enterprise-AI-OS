@@ -28,5 +28,4 @@ Status: accepted for M3, pending planning-agent review. Source: specification §
 ## Limits
 
 - Object-store writes happen before the database transaction; a failed transaction leaves an orphan object, which is deleted best-effort.
-- Docling (ADR 0302) is not wired.
-- There is no OCR, so scans are not indexed.
+- PDFs are parsed by Docling on the gateway (ADR 0302), including OCR of scans; without Docling the text-layer fallback applies and scans are `needs_ocr`.

@@ -18,6 +18,7 @@ the workflow stores that on the run and every event, and the UI labels it.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import math
@@ -166,6 +167,8 @@ class ModelClient(Protocol):
     def check(
         self, pairs: list[tuple[str, str]], *, cancel: CancelToken | None = None
     ) -> list[CheckResult]: ...
+
+    def parse_document(self, filename: str, data: bytes) -> dict[str, Any]: ...
 
 
 def _json_body(response: httpx.Response) -> Any:
@@ -421,6 +424,21 @@ class GatewayModelClient:
             raise GatewayProtocolError("check result count mismatch")
         return results
 
+    def parse_document(self, filename: str, data: bytes) -> dict[str, Any]:
+        """Docling on the gateway: canonical elements for a PDF (layout, tables, OCR)."""
+
+        with self._errors():
+            response = self._client.post(
+                self.url(self._s.model_parse_path),
+                json={"filename": filename, "content_base64": base64.b64encode(data).decode()},
+                timeout=self._s.docling_timeout_seconds,
+            )
+        self._raise_for_status(response)
+        body = _json_body(response)
+        if not isinstance(body, dict) or "elements" not in body:
+            raise GatewayProtocolError("malformed parse result")
+        return body
+
 
 # --- explicit fake ---------------------------------------------------------------
 
@@ -478,8 +496,10 @@ class FakeModelClient:
         checker: Callable[[str, str], CheckResult] | Exception | None = None,
         checker_available: bool = True,
         embed_error: Exception | None = None,
+        parse_result: dict[str, Any] | Exception | None = None,
     ) -> None:
         self._embed_error = embed_error
+        self._parse_result = parse_result
         self._script = {k: list(v) for k, v in (script or {}).items()}
         self._checker = checker
         self._checker_available = checker_available
@@ -549,6 +569,16 @@ class FakeModelClient:
         if self._checker is not None:
             return [self._checker(p, h) for p, h in pairs]
         return [CheckResult(entailment=0.99, neutral=0.005, contradiction=0.005) for _ in pairs]
+
+    def parse_document(self, filename: str, data: bytes) -> dict[str, Any]:
+        """No Docling in fake mode unless a test provides a canned result; ingestion then
+        uses the documented local fallback."""
+
+        if isinstance(self._parse_result, Exception):
+            raise self._parse_result
+        if self._parse_result is None:
+            raise GatewayNotConfigured("no Docling in fake mode")
+        return self._parse_result
 
 
 def _fake_answer(prompt: str) -> str:
@@ -664,6 +694,9 @@ class UnconfiguredModelClient:
     def check(
         self, pairs: list[tuple[str, str]], *, cancel: CancelToken | None = None
     ) -> list[CheckResult]:
+        raise GatewayNotConfigured(self._reason)
+
+    def parse_document(self, filename: str, data: bytes) -> dict[str, Any]:
         raise GatewayNotConfigured(self._reason)
 
 
