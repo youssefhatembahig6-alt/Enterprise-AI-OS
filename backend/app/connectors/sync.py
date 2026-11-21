@@ -327,6 +327,8 @@ class DriveSyncService:
         * running, lease expired  -> recovery: same run, attempt + 1, new claim token;
                                      the dead attempt is fenced out
         * running, claim moved on -> the run is ``superseded`` (truthful terminal state)
+        * a different run claims   -> every other run still ``running`` for the source is
+                                     closed as ``superseded`` (``claim_taken_over``)
         * queued / new            -> normal claim (or ``skipped`` with a reason)
         """
 
@@ -423,6 +425,18 @@ class DriveSyncService:
                 outcome = SyncOutcome("busy" if skip == "sync_in_progress" else "skipped")
                 outcome.run_id, outcome.error_code = run_id, skip
                 return outcome, None, ""
+            # Taking over: any *other* run of this source still marked running lost its
+            # claim (its worker died or it was fenced out) and is closed as superseded
+            # now, so it never stays "running" forever. A later delivery of it sees a
+            # terminal run and does nothing. Recovery of this same run id is excluded.
+            conn.execute(
+                text(
+                    "UPDATE connector_sync_runs SET status = 'superseded',"
+                    " error_code = 'claim_taken_over', finished_at = clock_timestamp()"
+                    " WHERE source_id = :s AND status = 'running' AND id <> :run"
+                ),
+                {"s": source_id, "run": run_id},
+            )
             conn.execute(
                 text(
                     """

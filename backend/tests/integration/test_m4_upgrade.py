@@ -125,5 +125,37 @@ def test_upgrade_denies_drive_access_until_resync(
         assert groups_left == 0
         with db.owner_engine.connect() as conn:
             assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-                "0009_drive_group_grants"
+                "0010_drive_group_grant_key"
             )
+
+
+def test_upgrade_from_0009_keys_group_grants_by_google_email() -> None:
+    """A database already at 0009 keeps its rows and can then hold one row per Google
+    group email for the same reader and internal group."""
+
+    with disposable_database(seed=True, revision="0009_drive_group_grants") as db:
+        tenant = db.foundation.tenants["niletech"]
+        doc = resource(db, source_id=None, key="keyed")
+        params = {
+            "t": tenant.id,
+            "r": doc,
+            "u": tenant.users["finance-reader"].id,
+            "g": tenant.groups["finance-team"].id,
+        }
+        insert = (
+            "INSERT INTO drive_group_grants (tenant_id, resource_id, user_id, group_id,"
+            " external_email) VALUES (:t, :r, :u, :g, :e)"
+        )
+        owner_exec(db, insert, {**params, "e": "a@drive.example"})
+        migrate(db, "head")
+        owner_exec(db, insert, {**params, "e": "b@drive.example"})  # no key collision now
+        emails = (
+            owner_exec(
+                db,
+                "SELECT external_email FROM drive_group_grants WHERE resource_id = :r ORDER BY 1",
+                {"r": doc},
+            )
+            .scalars()
+            .all()
+        )
+        assert emails == ["a@drive.example", "b@drive.example"]

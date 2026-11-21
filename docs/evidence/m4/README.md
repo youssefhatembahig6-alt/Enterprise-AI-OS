@@ -7,16 +7,22 @@ Second review round (after `47200796`):
 - the upgrade to 0009 fails closed for Drive access granted under the earlier rules;
 - redelivery of a manual sync run id is safe.
 
+Third review round (after `16811379`):
+- two Google groups linked to one internal group now grant independently (migration 0010);
+- an abandoned run is closed as superseded when a different run takes over its expired lease.
+
 **Labels.** "Drive double" means the in-memory test double in `tests/integration/drive_support.py`. It is not Google Drive. "Fake inference" means `MODEL_MODE=fake`. No result in this folder comes from live Google Drive.
 
 ## Status
 
 | Acceptance item | Status | Evidence |
 | --- | --- | --- |
-| Drive sync: first import, incremental updates, moves, deletions, sharing changes | **Implemented; tested against the Drive double** | `test_m4_drive_sync.py` (34 tests), `test_drive_client.py` (15 tests, HTTP client against a mocked Drive API) |
+| Drive sync: first import, incremental updates, moves, deletions, sharing changes | **Implemented; tested against the Drive double** | `test_m4_drive_sync.py` (37 tests), `test_drive_client.py` (15 tests, HTTP client against a mocked Drive API) |
 | Drive group shares only with verified Google membership | Implemented and tested (double) | `test_group_access_needs_verified_current_google_membership`. The user stays in the internal group throughout. Unknown membership: denied. Verified member: allowed. Google membership revoked: denied. Unknown again after another successful sync: still denied. A direct share on the same file keeps working |
 | Internal group removal or unlink applies immediately (no Drive sync) | Implemented and tested (Drive double); mutation-checked (without the live-membership join, 5 of the 7 tests fail) | `test_internal_group_removal_applies_without_a_drive_sync` (membership, link): fresh question `no_sources`, citation reopen 404, replay `access_revoked`, no new sync run. `test_internal_group_removal_blocks_an_active_answer` (membership at draft and at publish, link at publish). `test_direct_share_survives_internal_group_removal` (membership, link) |
 | Upgrade fails closed | Implemented and tested | `test_m4_upgrade.py`: a database at 0007 (unverified group grant) and one at 0008 (group-derived user grant) are upgraded to head. The Drive document is denied (`deny.unknown_input`) before any sync, the source is `upgrade_resync_required`, the fingerprints are cleared, and the M3 upload-group document stays readable |
+| Two Google groups linked to one internal group | Implemented and tested (Drive double); mutation-checked (without 0010 the sync fails `sync_internal_error`) | `test_two_google_groups_for_one_internal_group_are_independent` (unlink either address first): the sync succeeds with one row per address; unlinking one address keeps access; unlinking the last denies at once, with no sync run in between. `test_upgrade_from_0009_keys_group_grants_by_google_email` covers a database already at 0009 |
+| Abandoned run when a different run takes over | Implemented and tested (Drive double); mutation-checked | `test_abandoned_run_is_superseded_when_another_run_takes_over`: manual run A dies, its lease expires, and scheduled run B succeeds. A is `superseded` (`claim_taken_over`) and has `finished_at` without ever being redelivered. A late delivery of A does no Drive work, B's run row and the source's verified time are unchanged, and the document has 1 version. Same-run recovery is still covered by `test_redelivery_recovers_a_dead_worker_without_applying_work_twice` |
 | Manual sync redelivery | Implemented and tested (Drive double) | `test_duplicate_delivery_during_and_after_a_run`: no Drive work, one version, run `succeeded` attempt 1. `test_redelivery_recovers_a_dead_worker_without_applying_work_twice`: a duplicate before the lease expires; after expiry, recovery as attempt 2 ends `succeeded`, with each file at exactly 1 version. `test_older_attempt_cannot_overwrite_the_recovered_run`: the old attempt ends `superseded`, and the run row stays `succeeded` attempt 2 |
 | Stale syncs cannot restore access | Implemented and tested (double); mutation-checked (with the fence disabled, all three tests fail) | `test_policy_change_during_a_sync_fences_the_running_sync`, `test_newer_worker_after_lease_expiry_fences_the_older_one`, `test_older_worker_cannot_tombstone_or_release_the_newer_claim` |
 | Operator allowlist enforced on every sync | Implemented and tested (double) | `test_root_removed_from_allowlist_fails_before_any_drive_request`: no Drive call is made, the run fails `root_not_allowed`, and the previously readable document is denied |
@@ -118,8 +124,8 @@ cd backend && .venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv
 
 | Run | Result |
 | --- | --- |
-| Full suite | 740 passed |
-| M4 subset (`test_m4_drive_sync.py`, `test_m4_admin.py`, `test_m4_tenant_config.py`, `test_m4_upgrade.py`, `test_drive_client.py`, `test_admin_scope.py`, `test_m4_acceptance_runner.py`), 3 repeats | 98 passed each time |
+| Full suite (local) | 744 passed, 0 skipped, 0 failed |
+| M4 subset (`test_m4_drive_sync.py`, `test_m4_admin.py`, `test_m4_tenant_config.py`, `test_m4_upgrade.py`, `test_drive_client.py`, `test_admin_scope.py`, `test_m4_acceptance_runner.py`), 3 repeats (local) | 102 passed each time, 0 skipped |
 
 The CI results for the final commit are in the PR.
 

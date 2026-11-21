@@ -973,3 +973,111 @@ def test_older_attempt_cannot_overwrite_the_recovered_run(m4: M4) -> None:
     assert row.permissions_current is True and row.claim_run_id is None
     assert row.last_verified_sync_at == run.started_at
     assert answer(m4, FINANCE).done["outcome"] == "published"
+
+
+# -- two Google groups linked to one internal group ----------------------------------------
+
+SECOND_GROUP_EMAIL = "finance-leads@drive.example"
+
+
+def set_links(m4: M4, emails: list[str]) -> None:
+    response = m4.client.put(
+        "/api/v1/admin/groups/finance-team/links",
+        json={"google_groups": emails},
+        headers=auth(m4.token(ADMIN)),
+    )
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.parametrize("first", [FINANCE_GROUP_EMAIL, SECOND_GROUP_EMAIL])
+def test_two_google_groups_for_one_internal_group_are_independent(
+    m4: M4, first: str, restore_group: None
+) -> None:
+    set_links(m4, [FINANCE_GROUP_EMAIL, SECOND_GROUP_EMAIL])
+    drive = m4.new_drive()
+    reader = m4.user_email(FINANCE)
+    drive.group_members[FINANCE_GROUP_EMAIL] = {reader}
+    drive.group_members[SECOND_GROUP_EMAIL] = {reader}
+    file_id = drive.file(
+        "two-groups.md", GROUP_TEXT, groups=(FINANCE_GROUP_EMAIL, SECOND_GROUP_EMAIL)
+    )
+    admin = m4.token(ADMIN)
+    source_id = m4.create_source(admin, drive.root_id)["source_id"]
+    outcome = m4.sync(admin, source_id)
+    assert outcome["status"] == "succeeded", outcome
+    doc = m4.document_for(source_id, file_id)
+    assert doc
+    m4.wait_ready(doc)
+    rows = (
+        owner_exec(
+            m4.db,
+            "SELECT external_email FROM drive_group_grants WHERE resource_id = :r ORDER BY 1",
+            {"r": doc},
+        )
+        .scalars()
+        .all()
+    )
+    assert rows == sorted([FINANCE_GROUP_EMAIL, SECOND_GROUP_EMAIL])
+    token = m4.token(FINANCE)
+    assert ask(m4.client, token, GROUP_Q, mode="documents").done["outcome"] == "published"
+    runs = owner_exec(
+        m4.db, "SELECT count(*) FROM connector_sync_runs WHERE source_id = :s", {"s": source_id}
+    ).scalar_one()
+    other = SECOND_GROUP_EMAIL if first == FINANCE_GROUP_EMAIL else FINANCE_GROUP_EMAIL
+    set_links(m4, [other])  # unlink one address: the other still grants access
+    assert ask(m4.client, token, GROUP_Q, mode="documents").done["outcome"] == "published"
+    set_links(m4, [])  # unlink the last address: denied at once
+    denied = ask(m4.client, token, GROUP_Q, mode="documents")
+    assert denied.done["abstention"]["code"] == "no_sources"
+    assert "cobalt wren" not in denied.raw
+    assert (
+        owner_exec(
+            m4.db,
+            "SELECT count(*) FROM connector_sync_runs WHERE source_id = :s",
+            {"s": source_id},
+        ).scalar_one()
+        == runs
+    )  # no Drive sync in between
+
+
+# -- a different run takes over an abandoned run's expired lease ---------------------------
+
+
+def test_abandoned_run_is_superseded_when_another_run_takes_over(m4: M4) -> None:
+    drive, source_id, file_id, doc = setup_source(m4)
+    run_a = uuid.uuid4()
+
+    def die() -> None:
+        raise WorkerDied
+
+    drive.hooks[("list_permissions", file_id)] = die
+    with pytest.raises(WorkerDied):
+        m4.sync_direct(source_id, run_a)  # manual run A; its worker dies
+    assert m4.run_row(run_a).status == "running"
+    expire_lease(m4, source_id)
+    service = m4.client.app.state.drive_sync  # type: ignore[attr-defined]
+    tenant = m4.db.foundation.tenants["niletech"].id
+    b = service.sync(tenant, uuid.UUID(source_id), trigger="scheduled")  # scheduled run B
+    assert b.status == "succeeded" and b.run_id != run_a
+    a_row = m4.run_row(run_a)
+    assert (a_row.status, a_row.error_code) == ("superseded", "claim_taken_over")
+    finished = owner_exec(
+        m4.db, "SELECT finished_at FROM connector_sync_runs WHERE id = :r", {"r": run_a}
+    ).scalar_one()
+    assert finished is not None  # terminal although A was never redelivered
+    b_row = m4.run_row(b.run_id)
+    source_before = m4.source_row(source_id)
+    calls = len(drive.calls)
+    late = m4.sync_direct(source_id, run_a)  # a late delivery of A
+    assert late.duplicate and late.status == "superseded"
+    assert len(drive.calls) == calls  # no Drive work
+    assert m4.run_row(run_a).status == "superseded"
+    assert m4.run_row(b.run_id) == b_row  # B's result is preserved
+    source_after = m4.source_row(source_id)
+    assert source_after.last_verified_sync_at == source_before.last_verified_sync_at
+    assert source_after.permissions_current is True and source_after.last_sync_status == "succeeded"
+    versions = owner_exec(
+        m4.db, "SELECT count(*) FROM document_versions WHERE document_id = :d", {"d": doc}
+    ).scalar_one()
+    assert versions == 1
+    assert answer(m4, FINANCE).done["outcome"] == "published"
