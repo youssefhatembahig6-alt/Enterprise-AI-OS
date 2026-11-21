@@ -57,6 +57,7 @@ REPAIR_HINTS = {
     ),
     "distinct_aggregate": "Do not use DISTINCT inside sums.",
     "currency_mismatch": "Report only the configured currency.",
+    "value_changing_cast": "Do not cast or round amounts; return the sums as numeric.",
 }
 
 
@@ -67,10 +68,15 @@ def _figure(value: Any, column: str, currency: str) -> str:
 
 
 def format_money(value: str) -> str:
-    whole, _, frac = value.partition(".")
+    """Group digits of an exact 2-decimal amount. Never pads or rounds: a value with any
+    other scale is refused, so a rounded amount cannot be displayed as if exact."""
+
+    whole, dot, frac = value.partition(".")
+    if not dot or len(frac) != 2 or not frac.isdigit():
+        raise ValueError("money values must have exactly two decimals")
     sign = "-" if whole.startswith("-") else ""
     whole = whole.lstrip("-")
-    return f"{sign}{int(whole):,}.{(frac + '00')[:2]}"
+    return f"{sign}{int(whole):,}.{frac}"
 
 
 def router_messages(question: str) -> list[dict[str, str]]:

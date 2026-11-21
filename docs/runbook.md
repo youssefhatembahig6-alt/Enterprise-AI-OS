@@ -54,7 +54,7 @@ python3 scripts/dev.py import-business-data   # verify, then load into tenant "n
 
 ```bash
 python3 scripts/dev.py add-report-role   # adds EAIOS_REPORT_DB_PASSWORD to .env if missing; creates/updates eaios_report
-python3 scripts/dev.py up                # migrate applies 0003_verified_reports
+python3 scripts/dev.py up                # migrate applies 0003_verified_reports and 0004_report_session_identity
 python3 scripts/dev.py seed              # inserts only the new M2 fixture rows (role, dataset resource, grants, profile)
 python3 scripts/dev.py import-business-data   # if not already imported
 ```

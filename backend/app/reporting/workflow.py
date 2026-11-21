@@ -507,8 +507,10 @@ class ReportWorkflow:
                     AbstentionCode.VERIFICATION_FAILED, "arithmetic_inconsistent"
                 )
             }
-        if any(_scale(row[c]) > 2 for c in ("net_sales", "tax_amount", "gross_sales")):
-            return self._repair(state, "sql", ["precision_exceeds_cents"])
+        # Sums of numeric(14,2) amounts keep exactly two decimals. Any other scale means
+        # the value was cast or rounded somewhere, so it cannot be presented as exact.
+        if any(_scale(row[c]) != 2 for c in ("net_sales", "tax_amount", "gross_sales")):
+            return self._repair(state, "sql", ["value_changing_cast"])
         self._status(state, Step.QUERY_VERIFICATION, "completed")
         return {"result": result, "row": row, "probe": probe_row, "sql_feedback": []}
 

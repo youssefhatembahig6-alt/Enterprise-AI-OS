@@ -8,8 +8,12 @@ connection-pool reuse across tenants, and evidence immutability.
 
 from __future__ import annotations
 
+import hashlib
+import secrets
+import time
 import uuid
 from collections.abc import Iterator
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -22,7 +26,7 @@ from sqlalchemy.exc import DBAPIError, InternalError, ProgrammingError
 from app.db.engine import create_app_engine, tenant_transaction
 from app.reporting.executor import QueryError, ReportExecutor, create_report_engine
 from app.reporting.sql_guard import validate_sql
-from tests.integration.conftest import DbHarness, owner_exec
+from tests.integration.conftest import ADMIN_URL, DbHarness, owner_exec
 
 Q1_SQL = validate_sql(
     "SELECT count(*) AS order_count, sum(o.subtotal) AS net_sales, sum(o.tax) AS tax_amount,"
@@ -138,8 +142,8 @@ def test_query_role_privileges_are_limited_to_reporting(report_db: DbHarness) ->
         "SELECT has_column_privilege(:r, 'public.sales_orders', 'sales_rep_source_id', 'SELECT')"
     )
     assert not check(
-        "SELECT has_function_privilege(:r, 'public.report_context_open(integer, uuid, integer)',"
-        " 'EXECUTE')"
+        "SELECT has_function_privilege(:r,"
+        " 'public.report_context_open(integer, timestamptz, text, uuid, integer)', 'EXECUTE')"
     )
 
 
@@ -165,7 +169,8 @@ def test_raw_query_role_without_context_sees_no_rows(report_db: DbHarness) -> No
         "SELECT tenant_id FROM sales_orders",
         "SELECT * FROM public.report_query_contexts",
         "SELECT * FROM public.report_evidence",
-        "SELECT public.report_context_open(pg_backend_pid(), gen_random_uuid(), 60)",
+        "SELECT public.report_context_open(pg_backend_pid(), now(), repeat('0', 64),"
+        " gen_random_uuid(), 60)",
         "INSERT INTO reporting.sales_orders (id) VALUES (gen_random_uuid())",
         "UPDATE reporting.sales_orders SET subtotal = 0",
         "DELETE FROM reporting.sales_orders",
@@ -187,41 +192,180 @@ def test_query_role_is_read_only_by_default(report_db: DbHarness) -> None:
             conn.execute("CREATE TEMP TABLE t (x int)")
 
 
-def test_raw_role_cannot_borrow_another_backends_context(
+def session_identity(conn: psycopg.Connection[Any]) -> tuple[int, Any]:
+    row = conn.execute(
+        "SELECT pg_backend_pid(), a.backend_start FROM pg_stat_get_activity(pg_backend_pid()) a"
+    ).fetchone()
+    assert row is not None
+    return int(row[0]), row[1]
+
+
+def open_context(
+    engine: Engine, db: DbHarness, pid: int, start: Any, secret: str, ttl: int = 30
+) -> None:
+    tenant, user = ids(db, "niletech/finance-reader")
+    with tenant_transaction(engine, tenant, user) as conn:
+        conn.execute(
+            text("SELECT report_context_open(:p, :s, :d, :r, :t)"),
+            {
+                "p": pid,
+                "s": start,
+                "d": hashlib.sha256(secret.encode()).hexdigest(),
+                "r": str(uuid.uuid4()),
+                "t": ttl,
+            },
+        )
+
+
+def close_context(engine: Engine, db: DbHarness, pid: int) -> None:
+    tenant, user = ids(db, "niletech/finance-reader")
+    with tenant_transaction(engine, tenant, user) as conn:
+        conn.execute(text("SELECT report_context_close(:p)"), {"p": pid})
+
+
+def count_with_secret(conn: psycopg.Connection[Any], secret: str | None) -> int:
+    """Count visible orders in one transaction, optionally holding the secret."""
+
+    with conn.transaction():
+        if secret is not None:
+            conn.execute("SELECT set_config('eaios.report_ctx', %s, true)", (secret,))
+        row = conn.execute("SELECT count(*) FROM reporting.sales_orders").fetchone()
+    assert row is not None
+    return int(row[0])
+
+
+def test_context_requires_session_identity_and_transaction_secret(
     report_db: DbHarness, app_engine_r: Engine
 ) -> None:
-    """A context row exists only for the bound backend; other sessions get nothing."""
+    secret = secrets.token_hex(32)
+    with raw_report_connection(report_db) as bound, raw_report_connection(report_db) as other:
+        pid, start = session_identity(bound)
+        open_context(app_engine_r, report_db, pid, start, secret)
+        try:
+            assert count_with_secret(bound, secret) == 2400
+            # The secret is transaction-local: the next transaction does not hold it.
+            assert count_with_secret(bound, None) == 0
+            assert count_with_secret(bound, secrets.token_hex(32)) == 0
+            # Another session with the right secret still has the wrong pid and start.
+            assert count_with_secret(other, secret) == 0
+            # Calling the definer lookup directly with a claimed start needs the secret.
+            row = other.execute(
+                "SELECT reporting_ctx.report_context_lookup(%s, NULL)", (start,)
+            ).fetchone()
+            assert row == (None,)
+        finally:
+            close_context(app_engine_r, report_db, pid)
+        assert count_with_secret(bound, secret) == 0
+
+
+def test_stale_context_is_not_inherited_by_a_reused_pid(
+    report_db: DbHarness, app_engine_r: Engine
+) -> None:
+    """Simulate PID reuse: a row left for this PID by an earlier session (different
+    backend_start) is rejected even when the secret is known."""
+
+    secret = secrets.token_hex(32)
+    with raw_report_connection(report_db) as conn:
+        pid, start = session_identity(conn)
+        earlier_session = start - timedelta(minutes=5)
+        open_context(app_engine_r, report_db, pid, earlier_session, secret)
+        try:
+            assert count_with_secret(conn, secret) == 0
+            assert conn.execute("SELECT reporting_ctx.report_context_tenant()").fetchone() == (
+                None,
+            )
+        finally:
+            close_context(app_engine_r, report_db, pid)
+
+
+def test_crashed_backend_context_is_cleaned_up(
+    report_db: DbHarness, app_engine_r: Engine, executor: ReportExecutor
+) -> None:
+    secret = secrets.token_hex(32)
+    crashed = raw_report_connection(report_db)
+    pid, start = session_identity(crashed)
+    open_context(app_engine_r, report_db, pid, start, secret, ttl=120)
+    # Simulate a worker crash: the server kills the backend without a context close.
+    admin = create_engine(ADMIN_URL or "", poolclass=pool.NullPool)
+    try:
+        with admin.connect() as conn:
+            conn.execute(text("SELECT pg_terminate_backend(:p)"), {"p": pid})
+    finally:
+        admin.dispose()
+    crashed.close()
+    for _ in range(50):
+        alive = owner_exec(
+            report_db, "SELECT count(*) FROM pg_stat_activity WHERE pid = :p", {"p": pid}
+        ).scalar_one()
+        if not alive:
+            break
+        time.sleep(0.05)
+    assert (
+        owner_exec(
+            report_db,
+            "SELECT count(*) FROM report_query_contexts WHERE backend_pid = :p",
+            {"p": pid},
+        ).scalar_one()
+        == 1
+    )
+    tenant, user = ids(report_db, "niletech/finance-reader")
+    try:
+        executor.execute(tenant_id=tenant, user_id=user, run_id=uuid.uuid4(), sql=Q1_SQL)
+    finally:
+        leftover = owner_exec(
+            report_db,
+            "SELECT count(*) FROM report_query_contexts WHERE backend_pid = :p",
+            {"p": pid},
+        ).scalar_one()
+        owner_exec(
+            report_db, "DELETE FROM report_query_contexts WHERE backend_pid = :p", {"p": pid}
+        )
+    # Opening any new context removed the dead backend's row.
+    assert leftover == 0
+
+
+def test_pooled_connection_with_lingering_row_sees_nothing(
+    report_db: DbHarness, executor: ReportExecutor, report_engine: Engine, app_engine_r: Engine
+) -> None:
+    """Even if a context row for a pooled connection survived, the next borrower lacks
+    the transaction secret and sees no rows."""
 
     tenant, user = ids(report_db, "niletech/finance-reader")
-    with raw_report_connection(report_db) as bound, raw_report_connection(report_db) as other:
-        pid = bound.execute("SELECT pg_backend_pid()").fetchone()[0]  # type: ignore[index]
-        with tenant_transaction(app_engine_r, tenant, user) as conn:
-            conn.execute(
-                text("SELECT report_context_open(:p, :r, 30)"), {"p": pid, "r": str(uuid.uuid4())}
-            )
+    executor.execute(tenant_id=tenant, user_id=user, run_id=uuid.uuid4(), sql=Q1_SQL)
+    with report_engine.connect() as conn:
+        raw = conn.connection.driver_connection
+        assert isinstance(raw, psycopg.Connection)
+        raw.rollback()
+        pid, start = session_identity(raw)
+        raw.rollback()
+        open_context(app_engine_r, report_db, pid, start, secrets.token_hex(32))
         try:
-            assert bound.execute("SELECT count(*) FROM reporting.sales_orders").fetchone()[0] > 0  # type: ignore[index]
-            assert other.execute("SELECT count(*) FROM reporting.sales_orders").fetchone() == (0,)
+            assert count_with_secret(raw, None) == 0
+            assert raw.execute("SHOW eaios.report_ctx").fetchone() in (("",), None)
         finally:
-            with tenant_transaction(app_engine_r, tenant, user) as conn:
-                conn.execute(text("SELECT report_context_close(:p)"), {"p": pid})
-        assert bound.execute("SELECT count(*) FROM reporting.sales_orders").fetchone() == (0,)
+            raw.rollback()
+            close_context(app_engine_r, report_db, pid)
 
 
 def test_context_cannot_be_opened_for_a_non_query_backend(
     report_db: DbHarness, app_engine_r: Engine
 ) -> None:
     tenant, user = ids(report_db, "niletech/finance-reader")
+    digest = "0" * 64
     with (
         pytest.raises((InternalError, DBAPIError)),
         tenant_transaction(app_engine_r, tenant, user) as conn,
     ):
         conn.execute(
-            text("SELECT report_context_open(pg_backend_pid(), :r, 30)"), {"r": str(uuid.uuid4())}
+            text("SELECT report_context_open(pg_backend_pid(), now(), :d, :r, 30)"),
+            {"d": digest, "r": str(uuid.uuid4())},
         )
     # Without a trusted tenant/user in the application transaction it also refuses.
     with pytest.raises((InternalError, DBAPIError)), app_engine_r.begin() as conn:
-        conn.execute(text("SELECT report_context_open(1, :r, 30)"), {"r": str(uuid.uuid4())})
+        conn.execute(
+            text("SELECT report_context_open(1, now(), :d, :r, 30)"),
+            {"d": digest, "r": str(uuid.uuid4())},
+        )
 
 
 # -- executor ---------------------------------------------------------------------------

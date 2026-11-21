@@ -172,6 +172,27 @@ def _str_literal(node: Any) -> str | None:
     return None
 
 
+def cast_preserves_value(node: ast.TypeCast, kind: str) -> bool:
+    """True only for casts that cannot change a report value.
+
+    Money (sums of ``numeric(14,2)``): ``numeric`` without a type modifier, or
+    ``numeric(p, 2)``; any other precision/scale rounds or truncates. Counts:
+    ``bigint``/``int8``/``numeric`` without modifiers. Every other cast (integer, float,
+    text, ``numeric(p)``, ``numeric(p, 0)``...) is value-changing and rejected.
+    """
+
+    type_name = node.typeName
+    if type_name is None or type_name.arrayBounds:
+        return False
+    name = [n.sval for n in type_name.names][-1].lower()
+    mods = [_int_literal(m) for m in type_name.typmods or ()]
+    if any(m is None for m in mods):
+        return False
+    if kind == "count":
+        return name in ("int8", "bigint", "numeric") and not mods
+    return name == "numeric" and (not mods or (len(mods) == 2 and mods[1] == 2))
+
+
 def _op(node: ast.A_Expr) -> str:
     return ".".join(n.sval for n in node.name)
 
@@ -385,7 +406,10 @@ class SemanticVerifier:
             result.fail("wrong_output_columns")
             return
         for target in targets:
-            expr = self._strip_wrappers(target.val)
+            kind = "count" if target.name == "order_count" else "money"
+            expr = self._strip_wrappers(target.val, kind, result)
+            if expr is None:
+                continue
             if target.name == "order_count":
                 if not self._is_order_count(expr, scope):
                     result.fail("wrong_order_count")
@@ -401,9 +425,16 @@ class SemanticVerifier:
             if meaning != expected:
                 result.fail(MISREAD.get((target.name, meaning), "wrong_tax_basis"))
 
-    def _strip_wrappers(self, node: Any) -> Any:
+    def _strip_wrappers(self, node: Any, kind: str, result: QuerySemantics) -> Any:
+        """Remove value-preserving wrappers: lossless casts, ``coalesce(x, 0)`` and
+        ``round(x, 2)`` (sums of 2-decimal amounts already have scale 2). A
+        value-changing cast fails verification instead of being ignored."""
+
         while True:
             if isinstance(node, ast.TypeCast):
+                if not cast_preserves_value(node, kind):
+                    result.fail("value_changing_cast")
+                    return None
                 node = node.arg
             elif isinstance(node, ast.CoalesceExpr) and len(node.args) == 2:
                 fallback = _unwrap_cast(node.args[1])
@@ -443,7 +474,13 @@ class SemanticVerifier:
             return None
         if node.agg_filter is not None or len(node.args or ()) != 1:
             return None
-        arg = _unwrap_cast(node.args[0])
+        arg = node.args[0]
+        while isinstance(arg, ast.TypeCast):
+            # A cast inside the aggregate argument rounds every row before summing.
+            if not cast_preserves_value(arg, "money"):
+                result.fail("value_changing_cast")
+                return None
+            arg = arg.arg
         key: tuple[str, ...] | None = None
         if isinstance(arg, ast.ColumnRef):
             col = scope.resolve(arg)

@@ -296,12 +296,32 @@ class ReportService:
 
         return self._check_access(token, run_id, content=False)
 
+    @staticmethod
+    def _carries_content(event: store.EventRow) -> bool:
+        return event.event_type in CONTENT_EVENTS or (
+            event.event_type is EventType.DONE and event.payload.get("outcome") == "published"
+        )
+
+    @staticmethod
+    def _revoked_frame() -> str:
+        return sse_frame(
+            None,
+            EventType.ERROR.value,
+            {
+                "code": ErrorCode.ACCESS_REVOKED.value,
+                "message": ERROR_MESSAGES[ErrorCode.ACCESS_REVOKED],
+            },
+        )
+
     def stream(self, token: str, ctx: AccessContext, run_id: UUID, after: int) -> Iterator[str]:
         """Yield SSE frames from ``after`` until the terminal ``done`` event.
 
         Only persisted events are sent, so the stream and a later replay are identical.
-        Content events are re-authorized immediately before they are sent; on failure
-        the stream sends one ``error`` (``access_revoked``) and stops.
+        Every content-bearing event (``token``, ``citation``) and a published ``done`` is
+        re-authorized individually, from current PostgreSQL state, immediately before it
+        is yielded, including events that arrived in the same fetched batch. The check
+        runs when the consumer asks for the next frame, so a revocation between two
+        frames stops the stream with one ``error`` (``access_revoked``) and nothing else.
         """
 
         s = self._settings
@@ -318,33 +338,22 @@ class ReportService:
                     last_auth = now
                 with tenant_transaction(self._engine, ctx.tenant_id, ctx.user_id) as conn:
                     events = store.events_after(conn, run_id, cursor)
-                if any(
-                    e.event_type in CONTENT_EVENTS
-                    or (e.event_type is EventType.DONE and e.payload.get("outcome") == "published")
-                    for e in events
-                ):
-                    self._check_access(token, run_id, content=True)
-                    last_auth = time.monotonic()
             except (AccessLost, RunNotFound):
-                yield sse_frame(
-                    None,
-                    EventType.ERROR.value,
-                    {
-                        "code": ErrorCode.ACCESS_REVOKED.value,
-                        "message": ERROR_MESSAGES[ErrorCode.ACCESS_REVOKED],
-                    },
-                )
+                yield self._revoked_frame()
                 return
             for event in events:
+                if self._carries_content(event):
+                    try:
+                        self._check_access(token, run_id, content=True)
+                    except (AccessLost, RunNotFound):
+                        yield self._revoked_frame()
+                        return
+                    last_auth = time.monotonic()
                 cursor = event.seq
                 yield sse_frame(
                     event.seq,
                     event.event_type.value,
-                    {
-                        "run_id": str(run_id),
-                        "version": event.version,
-                        **event.payload,
-                    },
+                    {"run_id": str(run_id), "version": event.version, **event.payload},
                 )
                 if event.event_type is EventType.DONE:
                     return

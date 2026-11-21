@@ -314,3 +314,82 @@ def test_exact_cited_figures_pass() -> None:
 )
 def test_bad_claims(text: str, cites: list[str], code: str) -> None:
     assert code in claim(text, cites)
+
+
+# -- value-changing casts (review finding 1) ---------------------------------------------
+
+Q1_WHERE = (
+    " FROM reporting.sales_orders o WHERE o.order_date BETWEEN '2026-01-01' AND '2026-03-31'"
+    " AND o.status = 'FULFILLED'"
+)
+
+
+def report_sql(
+    net: str, tax: str = "sum(o.tax)", gross: str = "sum(o.total)", count: str = "count(*)"
+) -> str:
+    return (
+        f"SELECT {count} AS order_count, {net} AS net_sales, {tax} AS tax_amount,"
+        f" {gross} AS gross_sales" + Q1_WHERE
+    )
+
+
+@pytest.mark.parametrize(
+    "net",
+    [
+        "sum(o.subtotal)::numeric(20,0)",
+        "sum(o.subtotal)::numeric(20)",
+        "sum(o.subtotal)::numeric(20,1)",
+        "sum(o.subtotal)::numeric(20,4)",
+        "sum(o.subtotal)::int8",
+        "sum(o.subtotal)::integer",
+        "CAST(sum(o.subtotal) AS bigint)",
+        "coalesce(sum(o.subtotal)::numeric(20,0), 0)",
+        "round(sum(o.subtotal)::int4, 2)",
+        "sum(o.subtotal::integer)",
+        "sum(o.subtotal::numeric(10,0))",
+        "sum(o.subtotal::int8::numeric)",
+        "round(sum(o.subtotal), 0)",
+    ],
+)
+def test_value_changing_casts_are_rejected(net: str) -> None:
+    found = failures(report_sql(net))
+    assert found, net
+    if "::" in net or "CAST" in net:
+        assert "value_changing_cast" in found
+
+
+def test_review_probe_lossy_casts_on_every_amount_are_rejected() -> None:
+    sql = report_sql(
+        "sum(o.subtotal)::numeric(20,0)",
+        "sum(o.tax)::numeric(20,0)",
+        "sum(o.total)::numeric(20,0)",
+    )
+    assert failures(sql).count("value_changing_cast") == 1  # recorded once
+    assert "value_changing_cast" in failures(sql)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        report_sql("sum(o.subtotal)::numeric"),
+        report_sql("CAST(sum(o.subtotal) AS numeric(20, 2))"),
+        report_sql("sum(o.subtotal::numeric)"),
+        report_sql("coalesce(sum(o.subtotal), 0)::numeric(18,2)"),
+        report_sql("sum(o.subtotal)", count="count(*)::bigint"),
+    ],
+)
+def test_value_preserving_casts_are_accepted(sql: str) -> None:
+    assert failures(sql) == []
+
+
+def test_count_cast_to_narrower_type_is_rejected() -> None:
+    assert "value_changing_cast" in failures(report_sql("sum(o.subtotal)", count="count(*)::int4"))
+
+
+def test_money_formatting_never_pads_rounded_values() -> None:
+    from app.reporting.prompts import format_money
+
+    assert format_money("80934385.00") == "80,934,385.00"
+    for bad in ("80934385", "80934385.0", "80934385.0000"):
+        with pytest.raises(ValueError):
+            format_money(bad)

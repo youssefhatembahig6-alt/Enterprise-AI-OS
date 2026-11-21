@@ -708,3 +708,107 @@ def test_audit_records_report_decisions_without_figures(report_db: DbHarness) ->
     for row in rows:
         assert_no_figures(row.details)
         assert "SELECT" not in row.details
+
+
+# -- review regressions -----------------------------------------------------------------
+
+
+def lossy(sql_json: str, pattern: str) -> str:
+    sql_text = json.loads(sql_json)["sql"]
+    for col in ("subtotal", "tax", "total"):
+        sql_text = sql_text.replace(f"sum(o.{col})", pattern.format(col=col))
+    return json.dumps({"sql": sql_text})
+
+
+ROUNDED_FIGURES = ("80934385,", '"80934385"', "11330814", "11,330,814", "92265199", "92,265,199")
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    ["sum(o.{col})::numeric(20,0)", "sum(o.{col}::integer)", "round(sum(o.{col}), 0)"],
+    ids=["cast_around_aggregate", "cast_inside_aggregate", "round_to_units"],
+)
+def test_rounded_amounts_never_receive_a_verified_label(
+    make_client: Callable[..., TestClient], report_db: DbHarness, pattern: str
+) -> None:
+    bad = lossy(GOOD_SQL, pattern)
+    client = make_client(FakeModelClient({"sql": [bad, bad, bad], "report": [GOOD_REPORT]}))
+    stream = ask(client, token_for(client, report_db, FINANCE), Q1_QUESTION)
+    assert stream.done["outcome"] == "abstained"
+    assert stream.done["verification"] is None
+    assert not stream.of("token") and not stream.of("citation")
+    for figure in ROUNDED_FIGURES:
+        assert figure not in stream.raw
+    assert (
+        owner_exec(
+            report_db,
+            "SELECT count(*) FROM report_evidence WHERE run_id = :id",
+            {"id": stream.run_id},
+        ).scalar_one()
+        == 0
+    )
+
+
+def test_runtime_scale_check_blocks_rounding_the_ast_missed(
+    make_client: Callable[..., TestClient], report_db: DbHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defence in depth: even if the AST cast rule were bypassed, a sum without exactly
+    two decimals is never published as exact."""
+
+    from app.reporting import semantics
+
+    monkeypatch.setattr(semantics, "cast_preserves_value", lambda node, kind: True)
+    bad = lossy(GOOD_SQL, "sum(o.{col})::numeric(20,0)")
+    client = make_client(FakeModelClient({"sql": [bad, GOOD_SQL], "report": [GOOD_REPORT]}))
+    stream = ask(client, token_for(client, report_db, FINANCE), Q1_QUESTION)
+    assert_published_q1(stream)  # repaired: the exact query is what got published
+    for figure in ROUNDED_FIGURES:
+        assert figure not in stream.raw
+    stats = owner_exec(
+        report_db, "SELECT stats FROM report_runs WHERE id = :id", {"id": stream.run_id}
+    ).scalar_one()
+    assert "sql:value_changing_cast" in stats["rejections"]
+
+
+def _replay_until(
+    client: TestClient, token: str, run_id: str, stop: Callable[[str], bool]
+) -> tuple[Iterator[str], list[str]]:
+    service = client.app.state.reports  # type: ignore[attr-defined]
+    rid = uuid.UUID(run_id)
+    frames = service.stream(token, service.open_stream(token, rid), rid, 0)
+    seen: list[str] = []
+    for frame in frames:
+        seen.append(frame)
+        if stop(frame):
+            break
+    return frames, seen
+
+
+@pytest.mark.parametrize(
+    "stop_after",
+    ["event: status\n", "event: token\n", "event: citation\n"],
+    ids=["after_status", "after_first_token", "after_first_citation"],
+)
+def test_revocation_between_frames_of_one_batch_stops_content(
+    make_client: Callable[..., TestClient],
+    report_db: DbHarness,
+    revoke_finance_team: Callable[[], None],
+    stop_after: str,
+) -> None:
+    """All events of a finished run arrive in one fetched batch; revoking access
+    between two yields must stop every later content frame and the published done."""
+
+    client = make_client(FakeModelClient({"sql": [GOOD_SQL], "report": [GOOD_REPORT]}))
+    token = token_for(client, report_db, FINANCE)
+    finished = ask(client, token, Q1_QUESTION)
+    assert finished.done["outcome"] == "published" and finished.run_id
+    frames, before = _replay_until(client, token, finished.run_id, lambda f: stop_after in f)
+    revoke_finance_team()
+    after = list(frames)
+    assert not [f for f in after if "event: token\n" in f or "event: citation\n" in f]
+    assert not [f for f in after if "event: done\n" in f]
+    # Non-content status frames may still flow; the stream then ends with the refusal,
+    # which is not a persisted event.
+    assert '"access_revoked"' in after[-1] and "id:" not in after[-1]
+    assert all("event: status\n" in f for f in after[:-1])
+    assert before  # some frames were legitimately sent before the revocation

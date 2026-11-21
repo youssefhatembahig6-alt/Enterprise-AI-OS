@@ -35,7 +35,9 @@ Routing outcomes: `sales_report`; `clarify` (no period, a year only, or more tha
 
 Parsed with PostgreSQL 17's parser (pglast 7.22). Accepted: one `SELECT` built from allowlisted nodes, reading only `reporting.sales_orders`, `sales_order_lines`, `sales_invoices`, `sales_products`, `sales_customers` (security-invoker views without `tenant_id`), functions `sum count avg min max round abs date_trunc extract date_part make_date lower upper`, and casts to scalar types. Rejected by construction: DML and utility statements, multiple statements, writable or recursive CTEs, `SELECT INTO`, locking clauses, window functions, function scans, `TABLESAMPLE`, parameters, SQL value functions (`current_user`), system columns, schema-qualified functions, `regclass`-style casts, catalogs and `information_schema`. The executor runs the **deparsed** validated tree inside `SELECT * FROM (...) AS report_query LIMIT %(row_limit)s`.
 
-For the report itself, the semantic verifier accepts only the shape documented in `backend/app/reporting/semantics.py`; see "Verification".
+For the report itself, the semantic verifier accepts only the shape documented in `backend/app/reporting/semantics.py`; see "Verification". Casts in report outputs or aggregate arguments must be value-preserving (amounts: `numeric` or `numeric(p, 2)`; counts: `bigint`/`int8`/`numeric`); anything else is rejected with `value_changing_cast`, and published amounts always have exactly two decimals.
+
+**Query context.** Each query runs on a query-role connection bound to the trusted tenant by a context row keyed to that session's `(backend_pid, backend_start)` and the SHA-256 of a per-binding secret that only the bound transaction holds (`SET LOCAL eaios.report_ctx`). RLS validates all three; a reused PID, another session or a later transaction on the same pooled connection sees no rows ([ADR 0201](../adr/0201-restricted-report-sql.md), migration `0004_report_session_identity`).
 
 ## Roles and capabilities
 
@@ -65,7 +67,7 @@ Six SSE events from the primary specification, section "Streaming", persisted pe
 
 Heartbeats are SSE comments (`: heartbeat`) every 15 s and are not persisted. Before verification only `status` (and heartbeats) are sent. A refused stream ends with an unpersisted `error` (`access_revoked`, no `id`). Denied users and users whose tenant has no data receive the same `no_accessible_data` abstention.
 
-**Replay.** `GET /runs/{id}/events` re-authenticates the session, checks ownership (else 404), and immediately before sending any `token`, `citation` or published `done` re-evaluates `dataset.query` from current PostgreSQL state. If access was revoked it sends only `error: access_revoked`. Live streams re-check the session every 5 s.
+**Replay and live streams.** `GET /runs/{id}/events` re-authenticates the session and checks ownership (else 404). Each `token`, `citation` and published `done` is re-authorized individually against current PostgreSQL state immediately before it is yielded, including events from the same fetched batch. After a revocation, no further content is sent; the stream ends with one unpersisted `error: access_revoked`. Live streams also re-check the session every 5 s.
 
 ## Evidence
 

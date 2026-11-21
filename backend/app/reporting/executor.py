@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -109,7 +110,15 @@ class ReportExecutor:
     @contextmanager
     def _bound_connection(
         self, tenant_id: UUID, user_id: UUID, run_id: UUID
-    ) -> Iterator[psycopg.Connection[Any]]:
+    ) -> Iterator[tuple[psycopg.Connection[Any], str]]:
+        """Bind a query-role connection to the trusted tenant for one query.
+
+        The connection reports its own session identity ``(pid, backend_start)``; the
+        application role stores it with the SHA-256 of a fresh secret. The caller
+        must set the secret with ``SET LOCAL eaios.report_ctx`` inside the query
+        transaction; RLS matches all three (migration 0004).
+        """
+
         conn = self._report.connect()
         pid: int | None = None
         try:
@@ -118,18 +127,28 @@ class ReportExecutor:
                 raise QueryError("unexpected_driver")
             raw.rollback()
             with raw.cursor() as cur:
-                cur.execute("SELECT pg_backend_pid()")
+                cur.execute(
+                    "SELECT pg_backend_pid(), a.backend_start"
+                    " FROM pg_stat_get_activity(pg_backend_pid()) a"
+                )
                 row = cur.fetchone()
-                if row is None:
-                    raise QueryError("no_backend_pid")
-                pid = int(row[0])
+                if row is None or row[1] is None:
+                    raise QueryError("no_session_identity")
+                pid, backend_start = int(row[0]), row[1]
             raw.rollback()
+            secret = secrets.token_hex(32)
             with tenant_transaction(self._app, tenant_id, user_id) as app_conn:
                 app_conn.execute(
-                    text("SELECT report_context_open(:pid, :run, :ttl)"),
-                    {"pid": pid, "run": str(run_id), "ttl": self._ttl},
+                    text("SELECT report_context_open(:pid, :start, :digest, :run, :ttl)"),
+                    {
+                        "pid": pid,
+                        "start": backend_start,
+                        "digest": hashlib.sha256(secret.encode()).hexdigest(),
+                        "run": str(run_id),
+                        "ttl": self._ttl,
+                    },
                 )
-            yield raw
+            yield raw, secret
         finally:
             try:
                 if pid is not None:
@@ -146,7 +165,7 @@ class ReportExecutor:
         # ``sql`` is the deparsed tree that passed validate_sql(); only the limit is bound.
         wrapped = f"SELECT * FROM ({sql.replace('%', '%%')}) AS report_query LIMIT %(row_limit)s"  # noqa: S608
         parameters = {"row_limit": limit}
-        with self._bound_connection(tenant_id, user_id, run_id) as raw:
+        with self._bound_connection(tenant_id, user_id, run_id) as (raw, secret):
             try:
                 with raw.cursor() as cur:
                     # psycopg opens the transaction implicitly; these run first in it.
@@ -156,6 +175,8 @@ class ReportExecutor:
                     cur.execute("SET LOCAL idle_in_transaction_session_timeout = 15000")
                     cur.execute("SET LOCAL search_path = reporting")
                     cur.execute("SET LOCAL work_mem = '16MB'")
+                    # Transaction-local: gone at rollback, never on another session.
+                    cur.execute("SELECT set_config('eaios.report_ctx', %s, true)", (secret,))
                     cur.execute("SELECT reporting_ctx.report_context_tenant()")
                     bound = cur.fetchone()
                     if bound is None or bound[0] is None or UUID(str(bound[0])) != tenant_id:
