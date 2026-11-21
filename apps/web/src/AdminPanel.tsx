@@ -2,6 +2,14 @@ import { Alert, Button, Card, Field, StatusPill, type StatusTone } from "@eaios/
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { ApiError, type Identity } from "./api";
 import {
+  canAssign,
+  formatAssignment,
+  parseAssignments,
+  sameAssignment,
+  type Assignment,
+  type CapabilityGrant,
+} from "./roleAuthority";
+import {
   admin,
   type AdminDocument,
   type AdminRole,
@@ -245,11 +253,32 @@ function DocumentsTab({ token }: { token: string }) {
 
 // -- users and roles ---------------------------------------------------------------------
 
-function UserRow({ token, user, onChange, canGroups }: { token: string; user: AdminUser; onChange: () => Promise<void>; canGroups: boolean }) {
-  const [groups, setGroups] = useState(user.groups.join(", "));
-  const [roles, setRoles] = useState(
-    user.roles.map((r) => (r.scope_department ? `${r.role}@${r.scope_department}` : r.role)).join(", "),
+interface RowAuthority {
+  isSelf: boolean;
+  grants: CapabilityGrant[];
+  roleCapabilities: Map<string, string[]> | null; // null while roles are loading or unavailable
+}
+
+function Chips({ items, label }: { items: string[]; label: string }) {
+  if (items.length === 0) return null;
+  return (
+    <ul aria-label={label} className="flex flex-wrap gap-1">
+      {items.map((item) => (
+        <li key={item} className="rounded border border-border bg-muted px-1.5 py-0.5 text-xs">
+          {item}
+        </li>
+      ))}
+    </ul>
   );
+}
+
+function UserRow({ token, user, onChange, canGroups, authority }: { token: string; user: AdminUser; onChange: () => Promise<void>; canGroups: boolean; authority: RowAuthority }) {
+  const { isSelf, grants, roleCapabilities } = authority;
+  const editable = (a: Assignment) =>
+    !isSelf && roleCapabilities !== null && canAssign(grants, roleCapabilities, a);
+  const locked = user.roles.filter((a) => !editable(a));
+  const [groups, setGroups] = useState(user.groups.join(", "));
+  const [roles, setRoles] = useState(user.roles.filter(editable).map(formatAssignment).join(", "));
   const [error, setError] = useState<string | null>(null);
   const act = async (fn: () => Promise<unknown>) => {
     try {
@@ -260,19 +289,25 @@ function UserRow({ token, user, onChange, canGroups }: { token: string; user: Ad
       setError(message(err));
     }
   };
-  const parsedRoles = () =>
-    roles
-      .split(",")
-      .map((r) => r.trim())
-      .filter(Boolean)
-      .map((r) => {
-        const [role, scope] = r.split("@");
-        return { role: role ?? "", scope_department: scope ?? null };
-      });
+  const saveRoles = () => {
+    const wanted = parseAssignments(roles);
+    const refused = wanted.filter((a) => !editable(a));
+    if (refused.length > 0) {
+      setError(`Outside your authority: ${refused.map(formatAssignment).join(", ")}`);
+      return;
+    }
+    // Assignments outside the admin's authority are sent back unchanged.
+    const keep = locked.filter((a) => !wanted.some((w) => sameAssignment(w, a)));
+    void act(() => admin.setRoles(token, user.user_id, [...keep, ...wanted]));
+  };
+  const canEditRoles = !isSelf && roleCapabilities !== null;
   return (
     <tr>
       <td className="py-2 pr-3">
-        <div className="font-medium">{user.display_name}</div>
+        <div className="font-medium">
+          {user.display_name}
+          {isSelf ? <span className="ml-1 text-xs text-muted-fg">(you)</span> : null}
+        </div>
         <div className="text-xs text-muted-fg break-all">{user.email}</div>
         <div className="text-xs text-muted-fg">
           {user.department ?? "—"} · {user.country ?? "—"} · {user.clearance ?? "—"}
@@ -280,10 +315,21 @@ function UserRow({ token, user, onChange, canGroups }: { token: string; user: Ad
         {error ? <div className="text-xs text-error-fg">{error}</div> : null}
       </td>
       <td className="py-2 pr-3">
-        <div className="flex gap-2">
-          <input aria-label={`Roles of ${user.email}`} className="h-9 w-full min-w-40 rounded-md border border-border bg-bg px-2 text-xs"
-                 value={roles} onChange={(e) => setRoles(e.target.value)} />
-          <Button variant="secondary" onClick={() => void act(() => admin.setRoles(token, user.user_id, parsedRoles()))}>Save</Button>
+        <div className="flex flex-col gap-1.5">
+          <Chips
+            items={locked.map(formatAssignment)}
+            label={isSelf ? `Your roles (read-only)` : `Roles of ${user.email} outside your authority (read-only)`}
+          />
+          {isSelf ? (
+            <span className="text-xs text-muted-fg">You cannot change your own roles.</span>
+          ) : canEditRoles ? (
+            <div className="flex gap-2">
+              <input aria-label={`Editable roles of ${user.email}`} placeholder="role@department"
+                     className="h-9 w-full min-w-40 rounded-md border border-border bg-bg px-2 text-xs"
+                     value={roles} onChange={(e) => setRoles(e.target.value)} />
+              <Button variant="secondary" aria-label={`Save roles of ${user.email}`} onClick={saveRoles}>Save</Button>
+            </div>
+          ) : null}
         </div>
       </td>
       <td className="py-2 pr-3">
@@ -299,30 +345,47 @@ function UserRow({ token, user, onChange, canGroups }: { token: string; user: Ad
         </div>
       </td>
       <td className="py-2 pr-3">
-        <Button
-          variant="secondary"
-          onClick={() => void act(() => admin.updateUser(token, user.user_id, { status: user.status === "active" ? "inactive" : "active" }))}
-        >
-          {user.status === "active" ? "Deactivate" : "Activate"}
-        </Button>
+        {isSelf ? (
+          <span className="text-xs text-muted-fg">{user.status}</span>
+        ) : (
+          <Button
+            variant="secondary"
+            aria-label={`${user.status === "active" ? "Deactivate" : "Activate"} ${user.email}`}
+            onClick={() => void act(() => admin.updateUser(token, user.user_id, { status: user.status === "active" ? "inactive" : "active" }))}
+          >
+            {user.status === "active" ? "Deactivate" : "Activate"}
+          </Button>
+        )}
       </td>
     </tr>
   );
 }
 
-function UsersTab({ token, canGroups }: { token: string; canGroups: boolean }) {
+function UsersTab({ token, canGroups, identity }: { token: string; canGroups: boolean; identity: Identity }) {
   const load = useCallback(() => admin.users(token), [token]);
+  const loadRoles = useCallback(() => admin.roles(token), [token]);
   const [users, error, refresh] = useLoad(load);
+  const [roles, rolesError] = useLoad<AdminRole[]>(loadRoles);
+  const roleCapabilities = roles ? new Map(roles.map((r) => [r.key, r.capabilities])) : null;
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-fg">
         Changes apply to the next request and to answers still being prepared. Roles are written
-        as <code>role</code> or <code>role@department</code>.
+        as <code>role</code> or <code>role@department</code>. Roles shown as tags are outside your
+        authority and are kept as they are when you save.
       </p>
       {error ? <Alert>{error}</Alert> : null}
+      {rolesError ? <Alert>Role definitions could not be loaded, so roles are read-only.</Alert> : null}
       <Table head={["User", "Roles", "Groups", "Status"]}>
         {(users ?? []).map((u) => (
-          <UserRow key={`${u.user_id}:${u.roles.length}:${u.groups.length}:${u.status}`} token={token} user={u} onChange={refresh} canGroups={canGroups} />
+          <UserRow
+            key={`${u.user_id}:${u.roles.map(formatAssignment).join(",")}:${u.groups.length}:${u.status}:${roles ? 1 : 0}`}
+            token={token}
+            user={u}
+            onChange={refresh}
+            canGroups={canGroups}
+            authority={{ isSelf: u.user_id === identity.user_id, grants: identity.capabilities, roleCapabilities }}
+          />
         ))}
       </Table>
     </div>
@@ -481,7 +544,7 @@ export function AdminPanel({ token, identity, settings, onSettings }: { token: s
       </div>
       {tab === "sources" ? <SourcesTab token={token} /> : null}
       {tab === "documents" ? <DocumentsTab token={token} /> : null}
-      {tab === "users" ? <UsersTab token={token} canGroups={holds(identity, "identity.admin", true)} /> : null}
+      {tab === "users" ? <UsersTab token={token} canGroups={holds(identity, "identity.admin", true)} identity={identity} /> : null}
       {tab === "roles" ? <RolesTab token={token} /> : null}
       {tab === "audit" ? <AuditTab token={token} /> : null}
       {tab === "organization" ? <OrganizationTab token={token} canEdit={holds(identity, "tenant.config", true)} onSaved={onSettings} /> : null}

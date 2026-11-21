@@ -33,7 +33,7 @@ Third review round (after `16811379`):
 | Two tenants with different packs and connectors, no code change; direct request for a disabled capability | Implemented and tested | `test_m4_tenant_config.py` (8 tests); [Compose smoke](2026-11-21-compose-smoke.json) |
 | Live runner reliability (exact run correlation, document-specific citation, nonzero exit) | Implemented and tested without credentials | `test_m4_acceptance_runner.py` (5 tests: delayed worker, earlier success and scheduled run ignored, timeout exits 2 with evidence, wrong document exits 1); `test_sync_request_returns_its_own_run` |
 | **Live Drive folder, direct user share: authorized answer → revoke sharing → sync → denied** | **OPEN — not performed (no app credentials, no second reader account)** | Runner ready: `scripts/m4_drive_acceptance.py`. Rehearsal with the Drive double: [revocation run](2026-11-21-drive-double-revocation.json) |
-| Admin console browser walkthrough (read-only) | **Done for tenant admin and finance department admin**, with one recorded UI mismatch; Sources refusal **verified by API only** | See "Browser walkthrough" below |
+| Admin console browser walkthrough | **Done for the tenant admin and the finance department admin.** The Users-tab mismatch found in the read-only pass is fixed and re-verified in the browser, including one permitted role add/remove. The Sources refusal is **verified by API only** | See "Browser walkthrough" below |
 | **Real Workspace group verification** (`group_membership: "directory"` against a real directory) | **OPEN, separate from the direct-share demo** | Needs a Google Workspace or Cloud Identity organization and the Directory read-only member scope. Only the mocked API is tested (`test_drive_client.py`) |
 
 A fake Drive does not complete FR-10 (roadmap). The live item stays open until the runner passes against real Drive.
@@ -141,7 +141,24 @@ Identity card: department `finance`, capabilities `audit.read (finance), identit
 | Roles & groups | Read-only lists of the four roles and two groups; no edit controls | Matches |
 | Sources | Empty state and add form | Matches (refusal verified by API only, as above) |
 
-**Mismatch (presentation only).** In Users, the department admin still sees an editable roles field with **Save** for every user, including tenant-wide assignments such as `reader`, and a **Deactivate** button on their own row. The backend refuses these: changing a tenant-wide assignment returns `403`, and deactivating yourself returns `422` (`test_role_assignment_cannot_escalate`, `test_scoped_admin_cannot_remove_tenant_wide_assignments`, `test_admins_cannot_lock_themselves_out`). I did not press them in the UI. The UI does not hide every control the backend refuses; hiding them is a follow-up.
+**Mismatch found in the read-only pass, now fixed.** The department admin used to see an editable roles field with **Save** for every user, including organization-wide assignments such as `reader`, and a **Deactivate** button on their own row. The backend already refused both (`403` / `422`). The Users tab now applies the same rule as the backend (`apps/web/src/roleAuthority.ts` mirrors `_may_assign` and `covers`):
+- own row: roles are read-only tags, with no Save and no Deactivate;
+- other users: assignments outside the admin's authority are read-only tags and are sent back unchanged on save;
+- the editable field holds only assignments the admin may change, and anything typed outside that authority is refused before sending.
+
+Backend authorization is unchanged. A compiled check of the rule module against the eight backend escalation cases passed (the frontend has no test runner).
+
+**Re-verified in the browser after the fix** (finance admin, 21 November 2026, frontend rebuilt at the commit that adds `roleAuthority.ts`):
+
+| Check | Observed |
+| --- | --- |
+| Own row | `department_admin@finance` shown as a read-only tag labelled "Your roles (read-only)" with "You cannot change your own roles". No roles field, no Save, no Deactivate (status shows `active`) |
+| Other finance users | Organization-wide `reader` / `report_reader` shown as read-only tags ("outside your authority"); an empty editable field with Save; Deactivate/Activate still offered (they are in scope) |
+| Test user, original | **Inactive Reader** (`inactive.reader@niletech.example`), chosen because the account is inactive and cannot sign in, so a temporary role grants no access: `reader`, `report_reader` (both organization-wide), groups `all-staff, finance-team` |
+| Add a permitted finance-scoped role | Typed `reader@finance` and saved: no error; after reload from the server the editable field holds `reader@finance` and both organization-wide tags are unchanged |
+| Remove it | Cleared the field and saved: no error; the row shows `reader`, `report_reader` and an empty editable field again; groups and status unchanged |
+| Final state (database) | `user_roles` for the test user: exactly `reader` and `report_reader`, both organization-wide, the same as the original |
+| Audit | Two `admin.user_roles` events by `finance.admin@niletech.example`: 18:51:56 UTC `added ["reader@finance"]`, 18:52:29 UTC `removed ["reader@finance"]`. No organization-wide assignment was added or removed |
 
 ### Reader (`finance.reader@niletech.example`)
 
@@ -165,6 +182,6 @@ The CI results for the final commit are in the PR.
 ## Not done in M4
 
 - Live Drive run (above).
-- Write actions through the admin console UI (the walkthrough was read-only), and hiding controls the backend refuses for department admins (see the walkthrough mismatch).
+- Write actions through the admin console UI beyond the one role add/remove recorded above.
 - Verified Google Groups membership on a real Workspace directory. The code path exists (`group_membership: "directory"`) and is unit-tested against a mocked API only. Without it, Drive group shares deny.
 - The Changes API for cheaper incremental listing. Each sync re-reads the tree and every ACL, which is what makes a run "verified" for the small corpus.
