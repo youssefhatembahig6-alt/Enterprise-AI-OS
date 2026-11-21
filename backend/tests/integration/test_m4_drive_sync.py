@@ -4,7 +4,10 @@ evidence for the sync logic and the fail-closed rules, not live Drive evidence."
 
 from __future__ import annotations
 
+import json
+import os
 import uuid
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
@@ -148,6 +151,7 @@ def test_content_change_creates_a_new_version(m4: M4) -> None:
 def test_revoked_sharing_applies_after_the_next_sync(m4: M4) -> None:
     drive, source_id, file_id, doc = setup_source(m4)
     token = m4.token(FINANCE)
+    first_sync = m4.source(m4.token(ADMIN), source_id)
     published = ask(m4.client, token, TRAVEL_Q, mode="documents")
     cid = published.of("citation")[0].data["citation_id"]
     drive.unshare(file_id, m4.user_email(FINANCE))
@@ -165,6 +169,33 @@ def test_revoked_sharing_applies_after_the_next_sync(m4: M4) -> None:
     assert again.of("error")[-1].data["code"] == "access_revoked"
     assert "60 USD" not in again.raw
     # Sharing again restores access at the next sync.
+    second_sync = m4.source(m4.token(ADMIN), source_id)
+    if target := os.environ.get("EAIOS_M4_EVIDENCE"):
+        Path(target).write_text(
+            json.dumps(
+                {
+                    "drive": "in-memory test double (tests/integration/drive_support.py)",
+                    "inference": published.done["inference"],
+                    "sync_1": {k: first_sync[k] for k in ("last_verified_sync_at", "access")}
+                    | {"run": first_sync["recent_runs"][0]},
+                    "answer_before": {
+                        "outcome": published.done["outcome"],
+                        "citation": published.of("citation")[0].data,
+                    },
+                    "citation_before_status": 200,
+                    "sync_2": {k: second_sync[k] for k in ("last_verified_sync_at", "access")}
+                    | {"run": second_sync["recent_runs"][0]},
+                    "answer_after": {
+                        "outcome": after.done["outcome"],
+                        "abstention": after.done["abstention"],
+                    },
+                    "citation_after_status": reopen.status_code,
+                    "replay_after_errors": [f.data for f in again.of("error")],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
     drive.share(file_id, m4.user_email(FINANCE))
     m4.sync(m4.token(ADMIN), source_id)
     assert answer(m4, FINANCE).done["outcome"] == "published"
