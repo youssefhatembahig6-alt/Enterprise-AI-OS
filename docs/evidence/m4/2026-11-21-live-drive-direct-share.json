@@ -1,0 +1,348 @@
+{
+  "checks": {
+    "authorized_answer_cites_test_document": true,
+    "citation_opens_before_revocation": true,
+    "citation_reopen_denied": true,
+    "denied_on_new_questions": true,
+    "original_run_replay_revoked": true,
+    "sync_1_succeeded_and_current": true,
+    "sync_2_detected_sharing_change": true,
+    "test_document_ready": true,
+    "test_file_imported": true
+  },
+  "description": "M4 live Google Drive direct-share acceptance run (scripts/m4_drive_acceptance.py) against the laptop Compose stack, using the application's own service-account credentials and the real Drive folder eaios-m4-drive-test. Inference was MODEL_MODE=fake (labelled on every event): this is evidence for Drive sync, permissions, revocation and citations, not model quality.",
+  "exit_code": 0,
+  "label": "live Drive, fake model",
+  "redactions": [
+    "<redacted: Drive folder owner>",
+    "<redacted: app service account>"
+  ],
+  "result": "PASS",
+  "revoked_in_drive_at": "2026-11-21T19:05:24.456568+00:00",
+  "run": {
+    "answer_after": {
+      "abstention": {
+        "code": "no_sources",
+        "message": "I couldn't find information in documents you can access that answers this."
+      },
+      "at": "2026-11-21T19:05:31.068911+00:00",
+      "citations": [],
+      "errors": [],
+      "events": [
+        "status",
+        "status",
+        "status",
+        "done"
+      ],
+      "http_status": 200,
+      "inference": "fake",
+      "outcome": "abstained",
+      "question": "What is the daily meal allowance for international travel?",
+      "run_id": "418e5bd7-93ae-4370-81a1-3a567b95f938",
+      "seconds": 0.53
+    },
+    "answer_before": {
+      "abstention": null,
+      "at": "2026-11-21T19:03:55.075353+00:00",
+      "citations": [
+        {
+          "char_end": 250,
+          "char_start": 190,
+          "citation_id": "c1",
+          "document_id": "410258dd-012d-4155-bd09-62789633d911",
+          "heading_path": [
+            "NileTech Travel Policy (Drive test document)",
+            "Daily allowance"
+          ],
+          "page": null,
+          "quote": "The daily meal allowance for international travel is 60 USD.",
+          "run_id": "9b13aec4-60de-449f-ae89-a75c47e86e09",
+          "text_sha256": "987fe47193adde0e6e7bcc5f2a0eb00061faca10ae98891b410e54caed448da0",
+          "title": "niletech-travel-policy",
+          "version": 1
+        }
+      ],
+      "errors": [],
+      "events": [
+        "status",
+        "status",
+        "status",
+        "status",
+        "status",
+        "status",
+        "token",
+        "citation",
+        "done"
+      ],
+      "http_status": 200,
+      "inference": "fake",
+      "outcome": "published",
+      "question": "What is the daily meal allowance for international travel?",
+      "run_id": "9b13aec4-60de-449f-ae89-a75c47e86e09",
+      "seconds": 0.58
+    },
+    "answer_reworded": {
+      "abstention": {
+        "code": "no_sources",
+        "message": "I couldn't find information in documents you can access that answers this."
+      },
+      "at": "2026-11-21T19:05:31.611095+00:00",
+      "citations": [],
+      "errors": [],
+      "events": [
+        "status",
+        "status",
+        "status",
+        "done"
+      ],
+      "http_status": 200,
+      "inference": "fake",
+      "outcome": "abstained",
+      "question": "How much is the per-day meal allowance when travelling abroad?",
+      "run_id": "40ae2b52-5844-49f9-b449-4461732f1858",
+      "seconds": 0.54
+    },
+    "checks": {
+      "authorized_answer_cites_test_document": true,
+      "citation_opens_before_revocation": true,
+      "citation_reopen_denied": true,
+      "denied_on_new_questions": true,
+      "original_run_replay_revoked": true,
+      "sync_1_succeeded_and_current": true,
+      "sync_2_detected_sharing_change": true,
+      "test_document_ready": true,
+      "test_file_imported": true
+    },
+    "citation_after": {
+      "at": "2026-11-21T19:05:31.641392+00:00",
+      "http_status": 404
+    },
+    "citation_before": {
+      "at": "2026-11-21T19:03:55.089503+00:00",
+      "body": {
+        "after": " Hotel bookings above 150 USD per night need finance approval.",
+        "before": "NileTech Travel Policy (Drive test document)\n\nApproval\n\nBusiness travel outside Egypt requires approval from the department head at least 10 working days before departure.\n\nDaily allowance\n\n",
+        "char_end": 250,
+        "char_start": 190,
+        "citation_id": "c1",
+        "context_start": 0,
+        "current_version": 1,
+        "document_id": "410258dd-012d-4155-bd09-62789633d911",
+        "filename": "niletech-travel-policy.md",
+        "integrity": "verified",
+        "is_current_version": true,
+        "offset_unit": "unicode_code_point",
+        "quote": "The daily meal allowance for international travel is 60 USD.",
+        "run_id": "9b13aec4-60de-449f-ae89-a75c47e86e09",
+        "text_sha256": "987fe47193adde0e6e7bcc5f2a0eb00061faca10ae98891b410e54caed448da0",
+        "title": "niletech-travel-policy",
+        "version": 1
+      },
+      "http_status": 200
+    },
+    "document_id": "410258dd-012d-4155-bd09-62789633d911",
+    "exit_code": 0,
+    "file_id": "119GR0k59wCVdBRhQqzhWOpGIuAu9qC_e",
+    "finished_at": "2026-11-21T19:05:31.684081+00:00",
+    "folder": "1aXhdmdxjQTiNXBoZE4Edi1yR_ToUb28L",
+    "question": "What is the daily meal allowance for international travel?",
+    "replay_after": {
+      "at": "2026-11-21T19:05:31.683897+00:00",
+      "errors": [
+        {
+          "code": "access_revoked",
+          "message": "Your access changed during this request, so nothing is shown."
+        }
+      ],
+      "events": [
+        "status",
+        "status",
+        "status",
+        "status",
+        "status",
+        "status",
+        "error"
+      ],
+      "http_status": 200
+    },
+    "result": "PASS",
+    "revoked_in_drive_at": "2026-11-21T19:05:24.456568+00:00",
+    "source_id": "612669ae-8ee7-4867-b97a-7f5edc4c4e8a",
+    "started_at": "2026-11-21T19:03:50.218321+00:00",
+    "steps": [
+      {
+        "at": "2026-11-21T19:03:54.470127+00:00",
+        "run_id": "52879169-8424-4be4-a3d9-f5491282dc86",
+        "status": "succeeded",
+        "step": "sync_1"
+      },
+      {
+        "at": "2026-11-21T19:03:54.493236+00:00",
+        "document_id": "410258dd-012d-4155-bd09-62789633d911",
+        "status": "ready",
+        "step": "ingested"
+      },
+      {
+        "at": "2026-11-21T19:03:55.075398+00:00",
+        "outcome": "published",
+        "run_id": "9b13aec4-60de-449f-ae89-a75c47e86e09",
+        "step": "answer_before"
+      },
+      {
+        "at": "2026-11-21T19:05:24.456611+00:00",
+        "step": "revoked_in_drive"
+      },
+      {
+        "at": "2026-11-21T19:05:30.542002+00:00",
+        "run_id": "37bce1cf-3f9f-4c89-b2d3-7d7e731d29d2",
+        "status": "succeeded",
+        "step": "sync_2"
+      },
+      {
+        "at": "2026-11-21T19:05:31.611163+00:00",
+        "outcomes": [
+          "abstained",
+          "abstained"
+        ],
+        "step": "answers_after"
+      }
+    ],
+    "sync_1": {
+      "access": "current",
+      "items": [
+        {
+          "document_id": "410258dd-012d-4155-bd09-62789633d911",
+          "external_id": "119GR0k59wCVdBRhQqzhWOpGIuAu9qC_e",
+          "name": "niletech-travel-policy.md",
+          "path": "/niletech-travel-policy.md",
+          "state": "active",
+          "unresolved_principals": [
+            {
+              "email": "<redacted: app service account>",
+              "reason": "no_tenant_user",
+              "type": "user"
+            },
+            {
+              "email": "<redacted: Drive folder owner>",
+              "reason": "no_tenant_user",
+              "type": "user"
+            }
+          ],
+          "updated_at": "2026-11-21T19:03:54.055208+00:00"
+        }
+      ],
+      "last_verified_sync_at": "2026-11-21T19:03:50.406943+00:00",
+      "observed_at": "2026-11-21T19:03:54.470084+00:00",
+      "requested_at": "2026-11-21T19:03:50.381826+00:00",
+      "run": {
+        "error_code": null,
+        "finished_at": "2026-11-21T19:03:54.062608+00:00",
+        "policy_version": 1,
+        "requested_at": "2026-11-21T19:03:50.391704+00:00",
+        "run_id": "52879169-8424-4be4-a3d9-f5491282dc86",
+        "started_at": "2026-11-21T19:03:50.406943+00:00",
+        "stats": {
+          "seen": 1
+        },
+        "status": "succeeded",
+        "terminal": true,
+        "trigger": "manual"
+      },
+      "run_id": "52879169-8424-4be4-a3d9-f5491282dc86"
+    },
+    "sync_2": {
+      "access": "current",
+      "items": [
+        {
+          "document_id": "410258dd-012d-4155-bd09-62789633d911",
+          "external_id": "119GR0k59wCVdBRhQqzhWOpGIuAu9qC_e",
+          "name": "niletech-travel-policy.md",
+          "path": "/niletech-travel-policy.md",
+          "state": "active",
+          "unresolved_principals": [
+            {
+              "email": "<redacted: app service account>",
+              "reason": "no_tenant_user",
+              "type": "user"
+            },
+            {
+              "email": "<redacted: Drive folder owner>",
+              "reason": "no_tenant_user",
+              "type": "user"
+            }
+          ],
+          "updated_at": "2026-11-21T19:05:29.324472+00:00"
+        }
+      ],
+      "last_verified_sync_at": "2026-11-21T19:05:24.485715+00:00",
+      "observed_at": "2026-11-21T19:05:30.541971+00:00",
+      "requested_at": "2026-11-21T19:05:24.456627+00:00",
+      "run": {
+        "error_code": null,
+        "finished_at": "2026-11-21T19:05:29.331434+00:00",
+        "policy_version": 1,
+        "requested_at": "2026-11-21T19:05:24.471469+00:00",
+        "run_id": "37bce1cf-3f9f-4c89-b2d3-7d7e731d29d2",
+        "started_at": "2026-11-21T19:05:24.485715+00:00",
+        "stats": {
+          "permissions_changed": 1,
+          "seen": 1
+        },
+        "status": "succeeded",
+        "terminal": true,
+        "trigger": "manual"
+      },
+      "run_id": "37bce1cf-3f9f-4c89-b2d3-7d7e731d29d2"
+    },
+    "tenant_settings": {
+      "available_connectors": {
+        "google_drive": "Google Drive folder sync",
+        "upload": "Manual upload with explicit sharing"
+      },
+      "available_packs": {
+        "documents": "Document answers with citations (M3)",
+        "sales_reports": "Verified sales reports over SQL (M2)"
+      },
+      "enabled_connectors": [
+        "google_drive",
+        "upload"
+      ],
+      "enabled_packs": [
+        "documents",
+        "sales_reports"
+      ],
+      "max_staleness_seconds": 1800,
+      "sync_interval_seconds": 900,
+      "sync_mode": "demo",
+      "updated_at": "2026-11-21T14:03:19.242245+00:00",
+      "version": 1
+    }
+  },
+  "source_file": "m4-drive-acceptance-20261121T190531684241Z.json",
+  "source_sha256": "63a756050285be0aad2896e5d7da1149db675e621ac8023ec960cf3fae39f77b",
+  "sync_times": {
+    "sync_1": {
+      "finished_at": "2026-11-21T19:03:54.062608+00:00",
+      "last_verified_sync_at": "2026-11-21T19:03:50.406943+00:00",
+      "requested_at": "2026-11-21T19:03:50.381826+00:00",
+      "run_id": "52879169-8424-4be4-a3d9-f5491282dc86",
+      "started_at": "2026-11-21T19:03:50.406943+00:00",
+      "stats": {
+        "seen": 1
+      },
+      "status": "succeeded"
+    },
+    "sync_2": {
+      "finished_at": "2026-11-21T19:05:29.331434+00:00",
+      "last_verified_sync_at": "2026-11-21T19:05:24.485715+00:00",
+      "requested_at": "2026-11-21T19:05:24.456627+00:00",
+      "run_id": "37bce1cf-3f9f-4c89-b2d3-7d7e731d29d2",
+      "started_at": "2026-11-21T19:05:24.485715+00:00",
+      "stats": {
+        "permissions_changed": 1,
+        "seen": 1
+      },
+      "status": "succeeded"
+    }
+  }
+}

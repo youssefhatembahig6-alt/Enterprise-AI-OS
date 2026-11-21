@@ -11,7 +11,7 @@ Third review round (after `16811379`):
 - two Google groups linked to one internal group now grant independently (migration 0010);
 - an abandoned run is closed as superseded when a different run takes over its expired lease.
 
-**Labels.** "Drive double" means the in-memory test double in `tests/integration/drive_support.py`. It is not Google Drive. "Fake inference" means `MODEL_MODE=fake`. No result in this folder comes from live Google Drive.
+**Labels.** "Drive double" means the in-memory test double in `tests/integration/drive_support.py`. It is not Google Drive. "Fake inference" means `MODEL_MODE=fake`. "Live Drive, fake model" means the application's own service account talked to real Google Drive while inference was the labelled fake model. Only [`2026-11-21-live-drive-direct-share.json`](2026-11-21-live-drive-direct-share.json) is live Drive; every other result here uses the Drive double.
 
 ## Status
 
@@ -32,9 +32,9 @@ Third review round (after `16811379`):
 | Removing access: next request / before an active answer is published / on reopen | Implemented and tested for deactivation, group removal, role removal and clearance downgrade | `test_removal_applies_to_the_next_request`, `test_removal_during_an_active_run_blocks_publication` (draft, verify, publish), `test_deactivation_during_an_active_run_blocks_publication`, `test_removal_hides_published_answers_on_reopen_and_replay` |
 | Two tenants with different packs and connectors, no code change; direct request for a disabled capability | Implemented and tested | `test_m4_tenant_config.py` (8 tests); [Compose smoke](2026-11-21-compose-smoke.json) |
 | Live runner reliability (exact run correlation, document-specific citation, nonzero exit) | Implemented and tested without credentials | `test_m4_acceptance_runner.py` (5 tests: delayed worker, earlier success and scheduled run ignored, timeout exits 2 with evidence, wrong document exits 1); `test_sync_request_returns_its_own_run` |
-| **Live Drive folder, direct user share: authorized answer → revoke sharing → sync → denied** | **OPEN — not performed (no app credentials, no second reader account)** | Runner ready: `scripts/m4_drive_acceptance.py`. Rehearsal with the Drive double: [revocation run](2026-11-21-drive-double-revocation.json) |
+| **Live Drive folder, direct user share: authorized answer → revoke sharing → sync → denied** | **PASSED — live Drive, fake model** (21 November 2026) | [`2026-11-21-live-drive-direct-share.json`](2026-11-21-live-drive-direct-share.json) (redacted copy); see "Live Drive run" below |
 | Admin console browser walkthrough | **Done for the tenant admin and the finance department admin.** The Users-tab mismatch found in the read-only pass is fixed and re-verified in the browser, including one permitted role add/remove. The Sources refusal is **verified by API only** | See "Browser walkthrough" below |
-| **Real Workspace group verification** (`group_membership: "directory"` against a real directory) | **OPEN, separate from the direct-share demo** | Needs a Google Workspace or Cloud Identity organization and the Directory read-only member scope. Only the mocked API is tested (`test_drive_client.py`) |
+| **Real Workspace group verification** (`group_membership: "directory"` against a real directory) | **OPEN, tracked separately from the passed direct-share test** | Needs a Google Workspace or Cloud Identity organization and the Directory read-only member scope. Only the mocked API is tested (`test_drive_client.py`) |
 
 A fake Drive does not complete FR-10 (roadmap). The live item stays open until the runner passes against real Drive.
 
@@ -85,6 +85,34 @@ The runner works like this:
 7. The original citation must return 404, and replaying the original run must end with `access_revoked`.
 
 It always writes `var/m4-drive-acceptance-<UTC>.json`, with a timestamp per step, both run ids and a PASS/FAIL per check. Exit codes: 0 PASS, 1 a check failed, 2 timeout, 3 setup error. Copy the file here. Without a Colab gateway, start the stack with `MODEL_MODE=fake` and say so in the evidence (inference is labelled on every event).
+
+## Live Drive run (direct user share) — PASSED
+
+**Label: live Drive, fake model.** Run on 21 November 2026 against the laptop Compose stack with Celery dispatch, migration 0010 and `MODEL_MODE=fake`. The application used its own service account (Editor on the folder; key in git-ignored `var/connectors/`, readable only by the owner and the container user). The test folder was `eaios-m4-drive-test` (`1aXhdmdxjQTiNXBoZE4Edi1yR_ToUb28L`), the test file `niletech-travel-policy.md` (`119GR0k59wCVdBRhQqzhWOpGIuAu9qC_e`), and the reader a second personal Google account shared as **Viewer** (a direct user share), registered in NileTech with `add-drive-reader`. The owner removed the share in Drive when the runner paused.
+
+Before the run, the app (with its own credentials) listed the folder and read the file's three permissions: service account (writer), demo reader (reader), owner. Google group membership reported "unverified", as designed for a personal account.
+
+| Step | Time (UTC) | Result |
+| --- | --- | --- |
+| Sync 1, run `52879169…` | started and verified 19:03:50.407; finished 19:03:54.063 | `succeeded`, source `current`, `seen: 1` (see "Earlier attempts") |
+| Answer as the demo reader | 19:03:55 | `published` in 0.58 s (fake inference); cites **the test document** v1, code points 190–250 ("The daily meal allowance for international travel is 60 USD."); citation opens with `integrity: verified` |
+| Share removed in Drive | 19:05:24.457 (Enter pressed) | — |
+| Sync 2, run `37bce1cf…` | started and verified 19:05:24.486; finished 19:05:29.331 | `succeeded`, `permissions_changed: 1` |
+| New run, same question; reworded question | 19:05:31 | both `abstained`, `no_sources`, no citations |
+| Reopen the original citation | 19:05:31 | `404` |
+| Replay the original run | 19:05:31 | status events, then `error: access_revoked`; no tokens or citations |
+
+All 9 runner checks passed (exit code 0): `sync_1_succeeded_and_current`, `test_file_imported`, `test_document_ready`, `authorized_answer_cites_test_document`, `citation_opens_before_revocation`, `sync_2_detected_sharing_change`, `denied_on_new_questions`, `citation_reopen_denied`, `original_run_replay_revoked`.
+
+**Redaction.** The committed copy replaces the service account's and the folder owner's email addresses (they appear only as unmapped principals in the item listing). The demo reader's address does not appear in the runner output. Nothing else is changed. `source_sha256` is the SHA-256 of the unredacted local file `var/m4-drive-acceptance-20261121T190531684241Z.json`. No key, token or password appears in either file.
+
+**Earlier attempts (same session, not committed).** Two earlier runs, at 19:01 and 19:03, ended `FAIL` (exit code 1). In both, Enter was pressed and sync 2 started within a second (19:01:36, 19:03:04) but still found the reader's share in Drive (no `permissions_changed`). So the app kept serving the answer and the citation, which is correct while Drive still lists the share. The source and the document were first imported by the 19:01:14 sync of the first attempt (`created: 1`), which is why the passing run's sync 1 reports only `seen: 1`. The source's run history shows six manual syncs, all `succeeded`, attempt 1.
+
+Reproduce (needs the operator config and a reader share, as described in "Drive access check"):
+
+```bash
+python3 scripts/m4_drive_acceptance.py --folder 1aXhdmdxjQTiNXBoZE4Edi1yR_ToUb28L --file-id 119GR0k59wCVdBRhQqzhWOpGIuAu9qC_e --reader <reader Google account>
+```
 
 ## Recorded runs
 
@@ -181,7 +209,7 @@ The CI results for the final commit are in the PR.
 
 ## Not done in M4
 
-- Live Drive run (above).
+- Real Workspace group verification (above); the live direct-share run passed.
 - Write actions through the admin console UI beyond the one role add/remove recorded above.
 - Verified Google Groups membership on a real Workspace directory. The code path exists (`group_membership: "directory"`) and is unit-tested against a mocked API only. Without it, Drive group shares deny.
 - The Changes API for cheaper incremental listing. Each sync re-reads the tree and every ACL, which is what makes a run "verified" for the small corpus.
