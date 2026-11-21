@@ -1,0 +1,736 @@
+{
+  "captured_at": "20261121T030059Z",
+  "api": "http://127.0.0.1:18000",
+  "question": "What were NileTech's net (tax-exclusive) fulfilled sales for Q1 2026, in USD?",
+  "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+  "frames": [
+    {
+      "t": 0.042,
+      "id": "1",
+      "event": "status",
+      "data": {
+        "inference": "gateway",
+        "label": "Request accepted",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "state": "completed",
+        "step": "accepted",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.547,
+      "id": "2",
+      "event": "status",
+      "data": {
+        "inference": "gateway",
+        "label": "Checked your access",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "state": "completed",
+        "step": "authorization",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.548,
+      "id": "3",
+      "event": "status",
+      "data": {
+        "inference": "gateway",
+        "label": "Understood the request",
+        "period": "Q1 2026",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "state": "completed",
+        "step": "routing",
+        "version": 1
+      }
+    },
+    {
+      "t": 53.485,
+      "id": "4",
+      "event": "status",
+      "data": {
+        "attempt": 1,
+        "inference": "gateway",
+        "label": "Drafted a read-only query",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "state": "completed",
+        "step": "sql_generation",
+        "version": 1
+      }
+    },
+    {
+      "t": 53.486,
+      "id": "5",
+      "event": "status",
+      "data": {
+        "inference": "gateway",
+        "label": "Validated the query",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "state": "completed",
+        "step": "sql_validation",
+        "version": 1
+      }
+    },
+    {
+      "t": 53.994,
+      "id": "6",
+      "event": "status",
+      "data": {
+        "inference": "gateway",
+        "label": "Ran a read-only query",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "state": "completed",
+        "step": "query_execution",
+        "version": 1
+      }
+    },
+    {
+      "t": 53.995,
+      "id": "7",
+      "event": "status",
+      "data": {
+        "inference": "gateway",
+        "label": "Checked the query's meaning",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "state": "completed",
+        "step": "query_verification",
+        "version": 1
+      }
+    },
+    {
+      "t": 98.318,
+      "id": "8",
+      "event": "status",
+      "data": {
+        "attempt": 1,
+        "inference": "gateway",
+        "label": "Drafted the report",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "state": "completed",
+        "step": "report_drafting",
+        "version": 1
+      }
+    },
+    {
+      "t": 99.325,
+      "id": "9",
+      "event": "status",
+      "data": {
+        "inference": "gateway",
+        "label": "Verified figures and claims",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "state": "completed",
+        "step": "report_verification",
+        "version": 1
+      }
+    },
+    {
+      "t": 99.326,
+      "id": "10",
+      "event": "status",
+      "data": {
+        "inference": "gateway",
+        "label": "Published the verified result",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "state": "completed",
+        "step": "publication",
+        "version": 1
+      }
+    },
+    {
+      "t": 99.336,
+      "id": "11",
+      "event": "token",
+      "data": {
+        "definition": {
+          "currency": "USD",
+          "date_basis": "order_date",
+          "excluded_statuses": [
+            "PENDING",
+            "CANCELLED"
+          ],
+          "grain": "period_total",
+          "included_statuses": [
+            "FULFILLED"
+          ],
+          "tax_treatment": "net sales are tax-exclusive; gross = net + tax"
+        },
+        "message_id": "ee44b719-743a-4250-82ed-bb0b0906d17f",
+        "part": "table",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "table": {
+          "columns": [
+            {
+              "key": "order_count",
+              "label": "Fulfilled orders",
+              "type": "integer"
+            },
+            {
+              "key": "net_sales",
+              "label": "Net sales (tax-exclusive)",
+              "type": "money"
+            },
+            {
+              "key": "tax_amount",
+              "label": "Tax",
+              "type": "money"
+            },
+            {
+              "key": "gross_sales",
+              "label": "Gross sales (tax-inclusive)",
+              "type": "money"
+            }
+          ],
+          "rows": [
+            [
+              {
+                "citation_id": "c1",
+                "column": "order_count",
+                "display": "291",
+                "ref": {
+                  "column": "order_count",
+                  "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248",
+                  "row": 0
+                },
+                "value": 291
+              },
+              {
+                "citation_id": "c2",
+                "column": "net_sales",
+                "display": "USD 80,934,385.00",
+                "ref": {
+                  "column": "net_sales",
+                  "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248",
+                  "row": 0
+                },
+                "value": "80934385.00"
+              },
+              {
+                "citation_id": "c3",
+                "column": "tax_amount",
+                "display": "USD 11,330,813.90",
+                "ref": {
+                  "column": "tax_amount",
+                  "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248",
+                  "row": 0
+                },
+                "value": "11330813.90"
+              },
+              {
+                "citation_id": "c4",
+                "column": "gross_sales",
+                "display": "USD 92,265,198.90",
+                "ref": {
+                  "column": "gross_sales",
+                  "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248",
+                  "row": 0
+                },
+                "value": "92265198.90"
+              }
+            ]
+          ]
+        },
+        "title": "Fulfilled sales, Q1 2026",
+        "version": 1
+      }
+    },
+    {
+      "t": 99.346,
+      "id": "12",
+      "event": "token",
+      "data": {
+        "citations": [
+          "c2"
+        ],
+        "index": 0,
+        "message_id": "ee44b719-743a-4250-82ed-bb0b0906d17f",
+        "part": "text",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "text": "Net sales for Q1 2026 were USD 80,934,385.00.",
+        "version": 1
+      }
+    },
+    {
+      "t": 99.355,
+      "id": "13",
+      "event": "token",
+      "data": {
+        "citations": [
+          "c3"
+        ],
+        "index": 1,
+        "message_id": "ee44b719-743a-4250-82ed-bb0b0906d17f",
+        "part": "text",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "text": "Tax amount for Q1 2026 was USD 11,330,813.90.",
+        "version": 1
+      }
+    },
+    {
+      "t": 99.365,
+      "id": "14",
+      "event": "token",
+      "data": {
+        "citations": [
+          "c4"
+        ],
+        "index": 2,
+        "message_id": "ee44b719-743a-4250-82ed-bb0b0906d17f",
+        "part": "text",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "text": "Gross sales for Q1 2026 were USD 92,265,198.90.",
+        "version": 1
+      }
+    },
+    {
+      "t": 99.375,
+      "id": "15",
+      "event": "citation",
+      "data": {
+        "citation_id": "c1",
+        "column": "order_count",
+        "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248",
+        "label": "Fulfilled orders",
+        "row": 0,
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "version": 1
+      }
+    },
+    {
+      "t": 99.385,
+      "id": "16",
+      "event": "citation",
+      "data": {
+        "citation_id": "c2",
+        "column": "net_sales",
+        "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248",
+        "label": "Net sales (tax-exclusive)",
+        "row": 0,
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "version": 1
+      }
+    },
+    {
+      "t": 99.394,
+      "id": "17",
+      "event": "citation",
+      "data": {
+        "citation_id": "c3",
+        "column": "tax_amount",
+        "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248",
+        "label": "Tax",
+        "row": 0,
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "version": 1
+      }
+    },
+    {
+      "t": 99.404,
+      "id": "18",
+      "event": "citation",
+      "data": {
+        "citation_id": "c4",
+        "column": "gross_sales",
+        "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248",
+        "label": "Gross sales (tax-inclusive)",
+        "row": 0,
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "version": 1
+      }
+    },
+    {
+      "t": 99.414,
+      "id": "19",
+      "event": "done",
+      "data": {
+        "abstention": null,
+        "inference": "gateway",
+        "message_id": "ee44b719-743a-4250-82ed-bb0b0906d17f",
+        "outcome": "published",
+        "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+        "verification": {
+          "checker": {
+            "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+            "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb",
+            "scores": [
+              0.9929,
+              0.9972,
+              0.9899
+            ],
+            "status": "development_baseline_not_final_trained_checker",
+            "threshold": 0.5,
+            "threshold_status": "uncalibrated"
+          },
+          "figures": "exact_decimal_match_to_evidence",
+          "inference_mode": "gateway",
+          "join_multiplicity": "verified_no_fan_out",
+          "label": "figures_verified_narrative_dev_checked",
+          "narrative": "verified",
+          "query_semantics": "verified_against_report_definition"
+        },
+        "version": 1
+      }
+    }
+  ],
+  "run": {
+    "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+    "status": "published",
+    "inference_mode": "gateway",
+    "outcome_code": "figures_verified_narrative_dev_checked",
+    "created_at": "2026-11-21T02:59:19.702105Z",
+    "finished_at": "2026-11-21T03:00:59.009421Z",
+    "last_event_id": 19,
+    "diagnostics": {
+      "timings": {
+        "route": 0.006,
+        "execute": 0.058,
+        "prepare": 0.019,
+        "check_sql": 0.013,
+        "draft_report": 44.667,
+        "generate_sql": 53.403,
+        "verify_report": 1.076,
+        "persist_evidence": 0.012
+      },
+      "sql_attempts": 1,
+      "report_attempts": 1,
+      "max_repairs": 2,
+      "model_calls": [
+        {
+          "ttft": 28.200888137999982,
+          "tokens": 88,
+          "purpose": "sql",
+          "seconds": 53.389
+        },
+        {
+          "ttft": 0.46779680600002393,
+          "tokens": 147,
+          "purpose": "report",
+          "seconds": 44.659
+        }
+      ],
+      "model": {
+        "chat": {
+          "model": "Qwen/Qwen3-8B-AWQ",
+          "revision": "4da05a8edb55c6046cce958586c33b61da07bb79"
+        },
+        "mode": "gateway",
+        "embed": {
+          "model": "BAAI/bge-m3",
+          "revision": "5617a9f61b028005a4858fdac845db406aefb181"
+        },
+        "checker": {
+          "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+          "status": "development_baseline",
+          "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb"
+        },
+        "expected": {
+          "max_model_len": 4096,
+          "gpu_memory_utilization": 0.75
+        }
+      },
+      "served_models": {
+        "engine": {
+          "seed": 0,
+          "dtype": "half",
+          "max_num_seqs": 8,
+          "quantization": "awq",
+          "vllm_version": "0.11.0",
+          "max_model_len": 4096,
+          "gpu_memory_utilization": 0.75
+        },
+        "models": {
+          "chat": {
+            "model": "Qwen/Qwen3-8B-AWQ",
+            "revision": "4da05a8edb55c6046cce958586c33b61da07bb79"
+          },
+          "embed": {
+            "model": "BAAI/bge-m3",
+            "revision": "5617a9f61b028005a4858fdac845db406aefb181"
+          },
+          "checker": {
+            "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+            "status": "development_baseline_not_final_trained_checker",
+            "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb"
+          }
+        },
+        "status": "ok"
+      },
+      "prompt_version": "m2-prompts-v1",
+      "profile_version": 1,
+      "checker_scores": [
+        0.9929,
+        0.9972,
+        0.9899
+      ],
+      "rejections": []
+    },
+    "result": {
+      "table": {
+        "rows": [
+          [
+            {
+              "ref": {
+                "row": 0,
+                "column": "order_count",
+                "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248"
+              },
+              "value": 291,
+              "column": "order_count",
+              "display": "291",
+              "citation_id": "c1"
+            },
+            {
+              "ref": {
+                "row": 0,
+                "column": "net_sales",
+                "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248"
+              },
+              "value": "80934385.00",
+              "column": "net_sales",
+              "display": "USD 80,934,385.00",
+              "citation_id": "c2"
+            },
+            {
+              "ref": {
+                "row": 0,
+                "column": "tax_amount",
+                "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248"
+              },
+              "value": "11330813.90",
+              "column": "tax_amount",
+              "display": "USD 11,330,813.90",
+              "citation_id": "c3"
+            },
+            {
+              "ref": {
+                "row": 0,
+                "column": "gross_sales",
+                "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248"
+              },
+              "value": "92265198.90",
+              "column": "gross_sales",
+              "display": "USD 92,265,198.90",
+              "citation_id": "c4"
+            }
+          ]
+        ],
+        "columns": [
+          {
+            "key": "order_count",
+            "type": "integer",
+            "label": "Fulfilled orders"
+          },
+          {
+            "key": "net_sales",
+            "type": "money",
+            "label": "Net sales (tax-exclusive)"
+          },
+          {
+            "key": "tax_amount",
+            "type": "money",
+            "label": "Tax"
+          },
+          {
+            "key": "gross_sales",
+            "type": "money",
+            "label": "Gross sales (tax-inclusive)"
+          }
+        ]
+      },
+      "title": "Fulfilled sales, Q1 2026",
+      "period": {
+        "end": "2026-03-31",
+        "kind": "quarter",
+        "label": "Q1 2026",
+        "start": "2026-01-01"
+      },
+      "evidence": {
+        "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248",
+        "result_sha256": "1807dc30f86d854387969f48cd26798de7fa1fa2f186ef6e7ef54b60c02529ab",
+        "dataset_fingerprint": "niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127"
+      },
+      "citations": [
+        {
+          "row": 0,
+          "label": "Fulfilled orders",
+          "column": "order_count",
+          "citation_id": "c1",
+          "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248"
+        },
+        {
+          "row": 0,
+          "label": "Net sales (tax-exclusive)",
+          "column": "net_sales",
+          "citation_id": "c2",
+          "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248"
+        },
+        {
+          "row": 0,
+          "label": "Tax",
+          "column": "tax_amount",
+          "citation_id": "c3",
+          "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248"
+        },
+        {
+          "row": 0,
+          "label": "Gross sales (tax-inclusive)",
+          "column": "gross_sales",
+          "citation_id": "c4",
+          "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248"
+        }
+      ],
+      "narrative": [
+        {
+          "text": "Net sales for Q1 2026 were USD 80,934,385.00.",
+          "citations": [
+            "c2"
+          ]
+        },
+        {
+          "text": "Tax amount for Q1 2026 was USD 11,330,813.90.",
+          "citations": [
+            "c3"
+          ]
+        },
+        {
+          "text": "Gross sales for Q1 2026 were USD 92,265,198.90.",
+          "citations": [
+            "c4"
+          ]
+        }
+      ],
+      "definition": {
+        "grain": "period_total",
+        "currency": "USD",
+        "date_basis": "order_date",
+        "tax_treatment": "net sales are tax-exclusive; gross = net + tax",
+        "excluded_statuses": [
+          "PENDING",
+          "CANCELLED"
+        ],
+        "included_statuses": [
+          "FULFILLED"
+        ]
+      },
+      "message_id": "ee44b719-743a-4250-82ed-bb0b0906d17f",
+      "report_key": "sales.fulfilled",
+      "verification": {
+        "label": "figures_verified_narrative_dev_checked",
+        "checker": {
+          "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+          "scores": [
+            0.9929,
+            0.9972,
+            0.9899
+          ],
+          "status": "development_baseline_not_final_trained_checker",
+          "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb",
+          "threshold": 0.5,
+          "threshold_status": "uncalibrated"
+        },
+        "figures": "exact_decimal_match_to_evidence",
+        "narrative": "verified",
+        "inference_mode": "gateway",
+        "query_semantics": "verified_against_report_definition",
+        "join_multiplicity": "verified_no_fan_out"
+      }
+    }
+  },
+  "evidence": {
+    "evidence_id": "64cdb081-19e8-4485-9062-5ff91ef5a248",
+    "run_id": "727486d0-c979-4b2a-87c3-2a63718b1369",
+    "report_key": "sales.fulfilled",
+    "executed_sql": "SELECT count(*) AS order_count, sum(subtotal) AS net_sales, sum(tax) AS tax_amount, sum(total) AS gross_sales FROM reporting.sales_orders AS o WHERE o.order_date BETWEEN CAST('2026-01-01' AS date) AND CAST('2026-03-31' AS date) AND o.status = 'FULFILLED' AND o.currency = 'USD'",
+    "parameters": {
+      "row_limit": 201
+    },
+    "columns": [
+      {
+        "name": "order_count",
+        "type": "integer"
+      },
+      {
+        "name": "net_sales",
+        "type": "decimal"
+      },
+      {
+        "name": "tax_amount",
+        "type": "decimal"
+      },
+      {
+        "name": "gross_sales",
+        "type": "decimal"
+      }
+    ],
+    "rows": [
+      [
+        291,
+        "80934385.00",
+        "11330813.90",
+        "92265198.90"
+      ]
+    ],
+    "row_count": 1,
+    "semantics": {
+      "report": {
+        "grain": "period_total",
+        "period": {
+          "end": "2026-03-31",
+          "kind": "quarter",
+          "label": "Q1 2026",
+          "start": "2026-01-01"
+        },
+        "columns": [
+          "order_count",
+          "net_sales",
+          "tax_amount",
+          "gross_sales"
+        ],
+        "currency": "USD",
+        "tax_basis": "net_is_tax_exclusive",
+        "date_basis": "order_date",
+        "report_key": "sales.fulfilled",
+        "included_statuses": [
+          "FULFILLED"
+        ]
+      },
+      "verified": {
+        "joins": [],
+        "window": [
+          "2026-01-01",
+          "2026-03-31"
+        ],
+        "failures": [],
+        "measures": {
+          "net_sales": "net",
+          "tax_amount": "tax",
+          "gross_sales": "gross",
+          "order_count": "count_orders"
+        },
+        "statuses": [
+          "FULFILLED"
+        ],
+        "currency_filter": "USD"
+      },
+      "join_probe": {
+        "currency": "USD",
+        "currencies": 1,
+        "joined_rows": 291,
+        "distinct_orders": 291
+      },
+      "profile_version": 1
+    },
+    "dataset_fingerprint": "niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127",
+    "policy_epoch": 42,
+    "executed_at": "2026-11-21T03:00:13.219488Z",
+    "result_sha256": "1807dc30f86d854387969f48cd26798de7fa1fa2f186ef6e7ef54b60c02529ab",
+    "integrity": "verified"
+  },
+  "environment": {
+    "commit": "1f1c127bf66bda476a92091e2f693d1cc181a6ff",
+    "postgresql": "postgres (PostgreSQL) 17.12 (Ubuntu 17.12-1.pgdg24.04+1)",
+    "runtime": "Colab Tesla T4",
+    "dispatch": "inline",
+    "network": "loopback only"
+  }
+}
