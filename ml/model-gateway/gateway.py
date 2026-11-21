@@ -58,6 +58,10 @@ MAX_EMBED_INPUTS = 64
 class Embedder(Protocol):
     def encode(self, texts: list[str]) -> list[list[float]]: ...
 
+    def encode_with_sparse(
+        self, texts: list[str]
+    ) -> list[tuple[list[float], dict[int, float]]]: ...
+
 
 class Checker(Protocol):
     def score(self, premise: str, hypothesis: str) -> dict[str, Any]: ...
@@ -182,12 +186,25 @@ def create_app(
             inputs = [inputs]
         if not isinstance(inputs, list) or not inputs or len(inputs) > MAX_EMBED_INPUTS:
             return _error(400, "invalid_input")
-        vectors = await asyncio.to_thread(embedder.encode, [str(i) for i in inputs])
-        return {
-            "object": "list",
-            "model": config.served["embed"]["model"],
-            "data": [{"object": "embedding", "index": i, "embedding": v} for i, v in enumerate(vectors)],
-        }
+        texts = [str(i) for i in inputs]
+        if body.get("return_sparse"):
+            # BGE-M3 dense CLS vector plus its sparse lexical head (M3 hybrid retrieval).
+            pairs = await asyncio.to_thread(embedder.encode_with_sparse, texts)
+            data = [
+                {
+                    "object": "embedding",
+                    "index": i,
+                    "embedding": dense,
+                    "sparse": {"indices": list(sparse), "values": list(sparse.values())},
+                }
+                for i, (dense, sparse) in enumerate(pairs)
+            ]
+        else:
+            vectors = await asyncio.to_thread(embedder.encode, texts)
+            data = [
+                {"object": "embedding", "index": i, "embedding": v} for i, v in enumerate(vectors)
+            ]
+        return {"object": "list", "model": config.served["embed"]["model"], "data": data}
 
     @app.post("/check")
     async def check(request: Request) -> Any:
@@ -224,25 +241,58 @@ def create_app(
 
 
 class BgeM3Dense:
-    """BGE-M3 dense CLS embedding, normalized (as in the M1 benchmark)."""
+    """BGE-M3 dense CLS embedding (normalized) and its sparse head, as in the M1
+    benchmark (FlagEmbedding's BGEM3FlagModel layout: ``sparse_linear.pt``)."""
 
     def __init__(self, path: str) -> None:
+        import pathlib
+
         import torch
         from transformers import AutoModel, AutoTokenizer
 
         self.torch = torch
         self.tok = AutoTokenizer.from_pretrained(path)
         self.model = AutoModel.from_pretrained(path, torch_dtype=torch.float16).to("cuda").eval()
+        hidden = self.model.config.hidden_size
+        self.sparse = torch.nn.Linear(hidden, 1).to("cuda", torch.float16)
+        self.sparse.load_state_dict(
+            torch.load(pathlib.Path(path) / "sparse_linear.pt", map_location="cuda", weights_only=True)
+        )
+        self.skip_ids = {
+            i for i in (self.tok.cls_token_id, self.tok.eos_token_id, self.tok.pad_token_id,
+                        self.tok.unk_token_id) if i is not None
+        }
 
-    def encode(self, texts: list[str]) -> list[list[float]]:
+    def _forward(self, texts: list[str]) -> tuple[Any, Any, Any]:
         torch = self.torch
         with torch.inference_mode():
             batch = self.tok(texts, padding=True, truncation=False, return_tensors="pt")
             if int(batch["attention_mask"].sum(1).max()) > 8192:
                 raise ValueError("input exceeds 8192 tokens; refusing to truncate")
-            hidden = self.model(**{k: v.to("cuda") for k, v in batch.items()}).last_hidden_state
+            batch = {k: v.to("cuda") for k, v in batch.items()}
+            hidden = self.model(**batch).last_hidden_state
             dense = torch.nn.functional.normalize(hidden[:, 0].float(), dim=-1)
+            weights = torch.relu(self.sparse(hidden)).squeeze(-1).float()
+        return batch, dense, weights
+
+    def encode(self, texts: list[str]) -> list[list[float]]:
+        _, dense, _ = self._forward(texts)
         return dense.cpu().tolist()
+
+    def encode_with_sparse(self, texts: list[str]) -> list[tuple[list[float], dict[int, float]]]:
+        batch, dense, weights = self._forward(texts)
+        ids = batch["input_ids"].cpu().tolist()
+        mask = batch["attention_mask"].cpu().tolist()
+        out = []
+        for row_dense, row_ids, row_w, row_m in zip(
+            dense.cpu().tolist(), ids, weights.cpu().tolist(), mask, strict=True
+        ):
+            sparse: dict[int, float] = {}
+            for token, weight, m in zip(row_ids, row_w, row_m, strict=True):
+                if m and token not in self.skip_ids and weight > 0:
+                    sparse[int(token)] = max(sparse.get(int(token), 0.0), float(weight))
+            out.append((row_dense, sparse))
+        return out
 
 
 class NliChecker:

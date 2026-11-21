@@ -135,6 +135,9 @@ class Step(StrEnum):
     QUERY_VERIFICATION = "query_verification"
     REPORT_DRAFTING = "report_drafting"
     REPORT_VERIFICATION = "report_verification"
+    RETRIEVAL = "retrieval"
+    ANSWER_DRAFTING = "answer_drafting"
+    ANSWER_VERIFICATION = "answer_verification"
     PUBLICATION = "publication"
 
 
@@ -148,6 +151,9 @@ STEP_LABELS: dict[Step, str] = {
     Step.QUERY_VERIFICATION: "Checked the query's meaning",
     Step.REPORT_DRAFTING: "Drafted the report",
     Step.REPORT_VERIFICATION: "Verified figures and claims",
+    Step.RETRIEVAL: "Searched documents you can access",
+    Step.ANSWER_DRAFTING: "Drafted the answer",
+    Step.ANSWER_VERIFICATION: "Checked the answer against its sources",
     Step.PUBLICATION: "Published the verified result",
 }
 
@@ -167,6 +173,9 @@ class AbstentionCode(StrEnum):
     CLARIFICATION_NEEDED = "clarification_needed"
     PERIOD_UNAVAILABLE = "period_unavailable"
     VERIFICATION_FAILED = "verification_failed"
+    # M3: the single no-sources response. Identical whether nothing relevant exists or
+    # the user may not see it (FR-04, T10); the private reason is audited.
+    NO_SOURCES = "no_sources"
 
 
 ABSTENTION_MESSAGES: dict[AbstentionCode, str] = {
@@ -182,6 +191,9 @@ ABSTENTION_MESSAGES: dict[AbstentionCode, str] = {
     ),
     AbstentionCode.PERIOD_UNAVAILABLE: (
         "The requested period is not fully covered by the available data."
+    ),
+    AbstentionCode.NO_SOURCES: (
+        "I couldn't find information in documents you can access that answers this."
     ),
     AbstentionCode.VERIFICATION_FAILED: (
         "I could not produce a result that passed verification, so no answer is shown."
@@ -212,6 +224,9 @@ class VerificationLabel(StrEnum):
     VERIFIED_DEV_CHECKER = "figures_verified_narrative_dev_checked"
     # Figures verified deterministically; no model narrative is shown.
     STRUCTURED_ONLY = "figures_verified_structured_only"
+    # M3 document answers: every sentence quotes an exact span of a cited, currently
+    # authorized document version, and passed the development NLI checker.
+    ANSWER_VERIFIED_DEV_CHECKER = "answer_quotes_verified_dev_checked"
 
 
 class EvidenceRef(BaseModel):

@@ -133,6 +133,34 @@ def cmd_vendor_business_data(args: argparse.Namespace) -> None:
     print(f"vendored {len(manifest['vendored_tables'])} tables to {out}")
 
 
+def cmd_retrieval_eval(args: argparse.Namespace) -> None:
+    """Dense vs dense+sparse retrieval on the frozen M3 dev cases (real Qdrant)."""
+
+    from app.config import Settings
+    from app.documents.evaluate import markdown_summary, run_retrieval_eval
+    from app.documents.qdrant import QdrantClient
+    from app.reporting.model_client import build_model_client
+
+    settings = Settings(
+        DATABASE_URL=os.environ.get("DATABASE_URL", "postgresql+psycopg://unused@localhost/none"),
+        REDIS_URL=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+        QDRANT_URL=args.qdrant,
+        S3_ENDPOINT_URL=os.environ.get("S3_ENDPOINT_URL", "http://localhost:8333"),
+        JWT_SECRET=os.environ.get("JWT_SECRET", "retrieval-eval-only-not-a-real-secret-0"),
+    )
+    model = build_model_client(settings)
+    qdrant = QdrantClient(args.qdrant, timeout=60.0)
+    try:
+        record = run_retrieval_eval(model, qdrant, top_k=args.top_k)
+    finally:
+        qdrant.close()
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+    print(markdown_summary(record))
+    print(f"retrieval-eval: wrote {out} (inference_mode={record['inference_mode']})")
+
+
 def cmd_export_openapi(args: argparse.Namespace) -> None:
     from app.config import Settings
     from app.main import create_app
@@ -174,6 +202,12 @@ def main(argv: list[str] | None = None) -> None:
     vendor.add_argument("--zip", required=True)
     vendor.add_argument("--output", help="default: fixtures/business/niletech-0.1.6")
     vendor.set_defaults(func=cmd_vendor_business_data)
+    evaluate = sub.add_parser("retrieval-eval", help="measure dense vs hybrid retrieval")
+    evaluate.add_argument("--qdrant", default=os.environ.get("QDRANT_URL", "http://localhost:6333"))
+    evaluate.add_argument("--top-k", type=int, default=5)
+    evaluate.add_argument("--out", default=str(BACKEND_ROOT.parent / "var" / "retrieval-eval.json"))
+    evaluate.set_defaults(func=cmd_retrieval_eval)
+
     export = sub.add_parser("export-openapi", help="write the OpenAPI schema")
     export.add_argument("--output", default=str(BACKEND_ROOT.parent / "docs/openapi.json"))
     export.set_defaults(func=cmd_export_openapi)

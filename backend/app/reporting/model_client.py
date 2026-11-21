@@ -18,7 +18,9 @@ the workflow stores that on the run and every event, and the UI labels it.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import re
 import threading
 import time
@@ -31,7 +33,7 @@ import httpx
 
 from app.config import ModelMode, Settings
 
-Purpose = Literal["router", "sql", "report"]
+Purpose = Literal["router", "sql", "report", "answer"]
 
 
 class ModelError(Exception):
@@ -112,6 +114,29 @@ class ServedModels:
         return self.raw
 
 
+@dataclass(frozen=True, slots=True)
+class TextEmbedding:
+    """Dense vector plus BGE-M3 style sparse lexical weights (token id -> weight)."""
+
+    dense: list[float]
+    sparse: dict[int, float]
+
+
+@dataclass(frozen=True, slots=True)
+class EmbeddingSpace:
+    """Identity of the vectors a client produces; chunks are only comparable within one."""
+
+    model: str
+    revision: str
+    dense_size: int
+    fake: bool
+
+    @property
+    def slug(self) -> str:
+        base = re.sub(r"[^a-z0-9]+", "_", f"{self.model}_{self.revision[:12]}".lower())
+        return f"{base.strip('_')}_{self.dense_size}"
+
+
 class ModelClient(Protocol):
     mode: ModelMode
 
@@ -131,6 +156,12 @@ class ModelClient(Protocol):
     def embed(
         self, texts: list[str], *, cancel: CancelToken | None = None
     ) -> list[list[float]]: ...
+
+    def embedding_space(self) -> EmbeddingSpace: ...
+
+    def embed_text(
+        self, texts: list[str], *, cancel: CancelToken | None = None
+    ) -> list[TextEmbedding]: ...
 
     def check(
         self, pairs: list[tuple[str, str]], *, cancel: CancelToken | None = None
@@ -328,6 +359,42 @@ class GatewayModelClient:
         except (KeyError, TypeError, ValueError) as exc:
             raise GatewayProtocolError("malformed embeddings") from exc
 
+    def embedding_space(self) -> EmbeddingSpace:
+        return EmbeddingSpace(
+            self._s.model_embed_name, self._s.model_embed_revision, BGE_M3_DENSE_SIZE, False
+        )
+
+    def embed_text(
+        self, texts: list[str], *, cancel: CancelToken | None = None
+    ) -> list[TextEmbedding]:
+        """BGE-M3 dense and sparse vectors in one call (``return_sparse``)."""
+
+        out: list[TextEmbedding] = []
+        for start in range(0, len(texts), EMBED_BATCH):
+            batch = texts[start : start + EMBED_BATCH]
+            body = self._post(
+                self._s.model_embed_path,
+                {"model": self._s.model_embed_name, "input": batch, "return_sparse": True},
+                cancel,
+            )
+            try:
+                items = body["data"]
+                for item in items:
+                    dense = [float(v) for v in item["embedding"]]
+                    sparse_raw = item["sparse"]
+                    sparse = {
+                        int(i): float(w)
+                        for i, w in zip(sparse_raw["indices"], sparse_raw["values"], strict=True)
+                    }
+                    if len(dense) != BGE_M3_DENSE_SIZE:
+                        raise GatewayProtocolError("unexpected embedding size")
+                    out.append(TextEmbedding(dense, sparse))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise GatewayProtocolError("malformed embeddings") from exc
+            if len(items) != len(batch):
+                raise GatewayProtocolError("embedding count mismatch")
+        return out
+
     def check(
         self, pairs: list[tuple[str, str]], *, cancel: CancelToken | None = None
     ) -> list[CheckResult]:
@@ -357,6 +424,41 @@ class GatewayModelClient:
 
 # --- explicit fake ---------------------------------------------------------------
 
+BGE_M3_DENSE_SIZE = 1024
+EMBED_BATCH = 32
+FAKE_DENSE_SIZE = 256
+_WORD = re.compile(r"\w+", re.UNICODE)
+
+
+def _feature_index(feature: str, modulo: int) -> tuple[int, float]:
+    digest = hashlib.blake2b(feature.encode("utf-8"), digest_size=8).digest()
+    value = int.from_bytes(digest, "big")
+    return value % modulo, 1.0 if (value >> 63) & 1 else -1.0
+
+
+def fake_embedding(text: str) -> TextEmbedding:
+    """Deterministic feature-hashing vectors (words and character trigrams). Lexical
+    similarity only: a development/test double for BGE-M3, never model evidence."""
+
+    words = [w.lower() for w in _WORD.findall(text)]
+    dense = [0.0] * FAKE_DENSE_SIZE
+    for word in words:
+        index, sign = _feature_index("w:" + word, FAKE_DENSE_SIZE)
+        dense[index] += sign
+        padded = f"#{word}#"
+        for i in range(len(padded) - 2):
+            index, sign = _feature_index("t:" + padded[i : i + 3], FAKE_DENSE_SIZE)
+            dense[index] += 0.5 * sign
+    norm = math.sqrt(sum(v * v for v in dense)) or 1.0
+    sparse: dict[int, float] = {}
+    for word in words:
+        index, _ = _feature_index("s:" + word, 2**31 - 1)
+        sparse[index] = sparse.get(index, 0.0) + 1.0
+    return TextEmbedding(
+        [v / norm for v in dense], {k: 1.0 + math.log(v) for k, v in sparse.items()}
+    )
+
+
 FAKE_LABEL = "FAKE INFERENCE (deterministic development double, not model output)"
 
 ScriptStep = str | Exception | Callable[[list[dict[str, str]]], str]
@@ -375,7 +477,9 @@ class FakeModelClient:
         *,
         checker: Callable[[str, str], CheckResult] | Exception | None = None,
         checker_available: bool = True,
+        embed_error: Exception | None = None,
     ) -> None:
+        self._embed_error = embed_error
         self._script = {k: list(v) for k, v in (script or {}).items()}
         self._checker = checker
         self._checker_available = checker_available
@@ -421,7 +525,19 @@ class FakeModelClient:
         )
 
     def embed(self, texts: list[str], *, cancel: CancelToken | None = None) -> list[list[float]]:
-        return [[0.0] * 4 for _ in texts]
+        return [e.dense for e in self.embed_text(texts, cancel=cancel)]
+
+    def embedding_space(self) -> EmbeddingSpace:
+        return EmbeddingSpace("fake-feature-hash", "v1", FAKE_DENSE_SIZE, True)
+
+    def embed_text(
+        self, texts: list[str], *, cancel: CancelToken | None = None
+    ) -> list[TextEmbedding]:
+        if cancel:
+            cancel.raise_if_cancelled()
+        if self._embed_error is not None:
+            raise self._embed_error
+        return [fake_embedding(t) for t in texts]
 
     def check(
         self, pairs: list[tuple[str, str]], *, cancel: CancelToken | None = None
@@ -435,8 +551,35 @@ class FakeModelClient:
         return [CheckResult(entailment=0.99, neutral=0.005, contradiction=0.005) for _ in pairs]
 
 
+def _fake_answer(prompt: str) -> str:
+    """Quote the sentence of the first source that best overlaps the question."""
+
+    question = re.search(r"^Question: (.+)$", prompt, flags=re.MULTILINE)
+    terms = {
+        t.lower()[:6] for t in _WORD.findall(question.group(1) if question else "") if len(t) > 3
+    }
+    for match in re.finditer(r'<source id="(s\d+)"[^\n]*>\n(.*?)\n</source>', prompt, flags=re.S):
+        source_id, body = match.group(1), match.group(2)
+        best, best_score = "", 0
+        for raw_sentence in re.split(r"(?<=[.!?])\s+|\n", body):
+            sentence = raw_sentence.strip()
+            score = len(terms & {t.lower()[:6] for t in _WORD.findall(sentence) if len(t) > 3})
+            if score > best_score and len(sentence) >= 8:
+                best, best_score = sentence[:400], score
+        if best:
+            return json.dumps(
+                {
+                    "answerable": True,
+                    "sentences": [{"text": best, "cites": [source_id], "quote": best}],
+                }
+            )
+    return json.dumps({"answerable": False})
+
+
 def _default_fake(purpose: Purpose, messages: list[dict[str, str]]) -> str:
-    prompt = messages[-1]["content"]
+    prompt = messages[-1]["content"] if purpose != "answer" else messages[1]["content"]
+    if purpose == "answer":
+        return _fake_answer(prompt)
     if purpose == "router":
         return json.dumps({"route": "sales_report"})
     if purpose == "sql":
@@ -508,6 +651,14 @@ class UnconfiguredModelClient:
         raise GatewayNotConfigured(self._reason)
 
     def embed(self, texts: list[str], *, cancel: CancelToken | None = None) -> list[list[float]]:
+        raise GatewayNotConfigured(self._reason)
+
+    def embedding_space(self) -> EmbeddingSpace:
+        return EmbeddingSpace("unconfigured", "none", BGE_M3_DENSE_SIZE, False)
+
+    def embed_text(
+        self, texts: list[str], *, cancel: CancelToken | None = None
+    ) -> list[TextEmbedding]:
         raise GatewayNotConfigured(self._reason)
 
     def check(

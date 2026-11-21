@@ -12,3 +12,5 @@ ml/parser-benchmark/fixtures/files/** -text
 ml/parser-benchmark/results/colab-zips/** -text
 # Evidence captures are verified by SHA-256; never normalize them.
 docs/evidence/** -text
+# M3 document fixtures are verified by SHA-256; never normalize them.
+backend/fixtures/documents/** -text

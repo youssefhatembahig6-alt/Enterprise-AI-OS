@@ -305,3 +305,44 @@ def report_settings(db: DbHarness, stub_http_url: str, **overrides: Any) -> Sett
     }
     values.update(overrides)
     return make_settings(db, stub_http_url, **values)
+
+
+# --- M3 document fixtures -------------------------------------------------------------
+
+QDRANT_URL = os.environ.get("TEST_QDRANT_URL")
+
+
+@pytest.fixture(scope="session")
+def qdrant_url() -> str:
+    if not QDRANT_URL:
+        message = "TEST_QDRANT_URL is required for document integration tests"
+        if os.environ.get("EAIOS_REQUIRE_INTEGRATION") == "1":
+            pytest.fail(message)
+        pytest.skip(message)
+    return QDRANT_URL
+
+
+@pytest.fixture(scope="session")
+def documents_db() -> Iterator[DbHarness]:
+    """Separate disposable database for document tests (they mutate permissions)."""
+
+    with disposable_database(seed=True) as db:
+        yield db
+
+
+def document_settings(
+    db: DbHarness, stub_http_url: str, qdrant: str, fs_root: str, prefix: str, **overrides: Any
+) -> Settings:
+    values: dict[str, Any] = {
+        "QDRANT_URL": qdrant,
+        "DOCUMENT_STORE": "filesystem",
+        "DOCUMENT_FS_ROOT": fs_root,
+        "QDRANT_COLLECTION_PREFIX": prefix,
+        "REPORT_DISPATCH": "inline",
+        "MODEL_MODE": "fake",
+        "SSE_POLL_INTERVAL_SECONDS": 0.02,
+        "SSE_HEARTBEAT_SECONDS": 0.5,
+        "SSE_MAX_STREAM_SECONDS": 60,
+    }
+    values.update(overrides)
+    return make_settings(db, stub_http_url, **values)

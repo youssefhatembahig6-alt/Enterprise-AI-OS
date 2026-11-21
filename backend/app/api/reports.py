@@ -16,6 +16,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.api.deps import CurrentContext
 from app.api.errors import ApiError, unauthenticated
+from app.reporting.router import _TOPIC, _YEAR_ONLY, extract_periods
 from app.reporting.service import ReportService, RunNotFound
 from app.schemas.auth import ErrorResponse
 from app.schemas.reports import ChatRequest, EvidenceOut, RunOut
@@ -38,6 +39,19 @@ _SSE_DOC: dict[int | str, dict[str, Any]] = {
     404: {"model": ErrorResponse},
     503: {"model": ErrorResponse},
 }
+
+
+def choose_kind(question: str, mode: str) -> str:
+    """``auto`` keeps M2 behaviour for anything that looks like a sales/period request
+    (topic word, quarter, month or year) and sends the rest to document answers."""
+
+    if mode == "report":
+        return "report"
+    if mode == "documents":
+        return "documents"
+    if _TOPIC.search(question) or extract_periods(question) or _YEAR_ONLY.search(question):
+        return "report"
+    return "documents"
 
 
 def get_report_service(request: Request) -> ReportService:
@@ -76,7 +90,10 @@ def chat(
     _require_available(service)
     token = _token(credentials)
     run = service.create_run(
-        ctx, body.question.strip(), body.client_request_id or secrets.token_urlsafe(16)
+        ctx,
+        body.question.strip(),
+        body.client_request_id or secrets.token_urlsafe(16),
+        choose_kind(body.question, body.mode),
     )
     return StreamingResponse(
         service.stream(token, ctx, run.id, 0),

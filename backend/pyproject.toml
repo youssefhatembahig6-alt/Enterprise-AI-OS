@@ -35,7 +35,8 @@ plugins = ["pydantic.mypy"]
 exclude = ["app/db/migrations/versions/"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "kombu.*", "argon2.*"]
+module = ["celery.*", "kombu.*", "argon2.*", "openpyxl.*", "pdfplumber.*", "pdfminer.*",
+          "boto3.*", "botocore.*"]
 ignore_missing_imports = true
 
 # pglast's generated AST node classes are untyped; these two modules walk them.

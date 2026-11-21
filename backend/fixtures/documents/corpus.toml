@@ -1,0 +1,156 @@
+# M3 document corpus fixture. Synthetic files only; every file is verified by
+# SHA256SUMS. Five files are copied byte-for-byte from the M1 parser benchmark
+# (ml/parser-benchmark/fixtures/files; checked against its manifest in tests).
+#
+# Permissions use the M0 vocabulary (classification, department, department
+# restriction, countries, grants by group or user key). A document without a
+# [documents.permissions] table is stored with permission_state = "unknown" and must
+# never be retrievable (T7).
+
+version = 1
+
+[[documents]]
+key = "finance-q1-commentary"
+tenant = "niletech"
+file = "finance-q1-commentary.md"
+title = "Q1 2026 finance commentary"
+marker = "NILETECH-FINANCE-SECRET-7421"
+  [documents.permissions]
+  classification = "confidential"
+  department = "finance"
+  department_restricted = true
+  allowed_countries = ["EG"]
+  grants = [{ group = "finance-team", effect = "allow" }, { user = "denied-reader", effect = "deny" }]
+
+[[documents]]
+key = "hr-leave-policy"
+tenant = "niletech"
+file = "hr-leave-policy.md"
+title = "Annual leave policy 2026"
+marker = "NILETECH-INTERNAL-MARKER-2002"
+  [documents.permissions]
+  classification = "internal"
+  department = "hr"
+  department_restricted = false
+  allowed_countries = ["*"]
+  grants = [{ group = "all-staff", effect = "allow" }]
+
+[[documents]]
+key = "it-security-handbook"
+tenant = "niletech"
+file = "it-security-handbook.md"
+title = "IT security handbook"
+  [documents.permissions]
+  classification = "internal"
+  department = "it"
+  department_restricted = false
+  allowed_countries = ["*"]
+  grants = [{ group = "all-staff", effect = "allow" }]
+
+[[documents]]
+key = "product-catalogue"
+tenant = "niletech"
+file = "product-catalogue.md"
+title = "Product catalogue"
+marker = "NILETECH-PUBLIC-MARKER-1001"
+  [documents.permissions]
+  classification = "public"
+  department = "marketing"
+  department_restricted = false
+  allowed_countries = ["*"]
+  grants = [{ group = "all-staff", effect = "allow" }]
+
+[[documents]]
+key = "board-minutes"
+tenant = "niletech"
+file = "board-minutes.md"
+title = "Board minutes, March 2026"
+marker = "NILETECH-RESTRICTED-MARKER-9090"
+  [documents.permissions]
+  classification = "restricted"
+  department = "finance"
+  department_restricted = true
+  allowed_countries = ["EG"]
+  grants = [{ user = "board-member", effect = "allow" }]
+
+[[documents]]
+key = "draft-strategy"
+tenant = "niletech"
+file = "draft-strategy.md"
+title = "Draft strategy memo"
+marker = "NILETECH-UNKNOWN-PERMISSION-4040"
+# no permissions: unknown -> never eligible
+
+[[documents]]
+key = "company-overview-pdf"
+tenant = "niletech"
+file = "digital-company-overview.pdf"
+title = "NileTech company overview"
+  [documents.permissions]
+  classification = "public"
+  department = "marketing"
+  department_restricted = false
+  allowed_countries = ["*"]
+  grants = [{ group = "all-staff", effect = "allow" }]
+
+[[documents]]
+key = "sales-tables-pdf"
+tenant = "niletech"
+file = "table-heavy-sales-q1-2026.pdf"
+title = "Q1 2026 sales tables"
+  [documents.permissions]
+  classification = "confidential"
+  department = "finance"
+  department_restricted = true
+  allowed_countries = ["EG"]
+  grants = [{ group = "finance-team", effect = "allow" }]
+
+[[documents]]
+key = "customers-csv"
+tenant = "niletech"
+file = "tricky-customers.csv"
+title = "Customer list extract"
+  [documents.permissions]
+  classification = "internal"
+  department = "sales"
+  department_restricted = false
+  allowed_countries = ["*"]
+  grants = [{ group = "all-staff", effect = "allow" }]
+
+[[documents]]
+key = "q1-workbook"
+tenant = "niletech"
+file = "multi-sheet-q1.xlsx"
+title = "Q1 2026 workbook"
+  [documents.permissions]
+  classification = "confidential"
+  department = "finance"
+  department_restricted = true
+  allowed_countries = ["EG"]
+  grants = [{ group = "finance-team", effect = "allow" }]
+
+[[documents]]
+key = "delivery-note-scan"
+tenant = "niletech"
+file = "scanned-delivery-note.pdf"
+title = "Delivery note (scan)"
+expect_status = "needs_ocr"
+  [documents.permissions]
+  classification = "internal"
+  department = "sales"
+  department_restricted = false
+  allowed_countries = ["*"]
+  grants = [{ group = "all-staff", effect = "allow" }]
+
+[[documents]]
+key = "isolation-handbook"
+tenant = "isolation-test"
+file = "isolation-handbook.md"
+title = "Isolation tenant finance handbook"
+marker = "ISOLATION-FINANCE-SECRET-5005"
+  [documents.permissions]
+  classification = "confidential"
+  department = "finance"
+  department_restricted = true
+  allowed_countries = ["EG", "AE"]
+  grants = [{ group = "finance-team", effect = "allow" }]

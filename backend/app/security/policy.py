@@ -124,6 +124,9 @@ class ResourceMeta:
     allowed_countries: tuple[str, ...] | None
     active: bool = True
     grants: tuple[Grant, ...] = field(default_factory=tuple)
+    # M3: permissions saved but not yet confirmed (for example an upload whose sharing
+    # was not specified). Unknown permissions deny every content action (T7).
+    permissions_verified: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,6 +227,9 @@ def evaluate(subject: Subject, action: str, resource: ResourceMeta) -> Decision:
     if act is Action.RESOURCE_ADMIN:
         failure = _capability_check(subject, Capability.RESOURCE_ADMIN, resource.department)
         return Decision.deny(failure) if failure else Decision.allow()
+
+    if not resource.permissions_verified:
+        return Decision.deny(Reason.UNKNOWN_INPUT)
 
     # Content actions — explicit deny is evaluated before any allow can apply.
     explicit_deny, has_allow, malformed = _grant_checks(subject, resource.grants, act)

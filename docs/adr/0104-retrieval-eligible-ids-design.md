@@ -1,6 +1,6 @@
 # ADR 0104 — Eligible-ID retrieval (design only; nothing implemented in M0)
 
-Status: **proposed**. Proposes how to complete ADR 0004 (Decided) and ADR 0012 (**Proposed** in the source). Source: [specification](https://app.notion.com/p/Enterprise-AI-OS-Project-Documentation-41e095eca45681919bddcf0227a8699f) §8 "Permission filtering in Qdrant" and "Consistency boundary"; roadmap "Stale index permissions".
+Status: **proposed; implemented in M3 as [ADR 0303](0303-eligible-id-retrieval.md)** (eligibility evaluated by the reference policy in Python over PostgreSQL state instead of SQL). Proposes how to complete ADR 0004 (Decided) and ADR 0012 (**Proposed** in the source). Source: [specification](https://app.notion.com/p/Enterprise-AI-OS-Project-Documentation-41e095eca45681919bddcf0227a8699f) §8 "Permission filtering in Qdrant" and "Consistency boundary"; roadmap "Stale index permissions".
 
 ## Problem
 

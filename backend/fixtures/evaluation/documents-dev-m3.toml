@@ -1,0 +1,139 @@
+# M3 retrieval development cases (dev split; not a held-out evaluation). Frozen 2026-11-21.
+# Each case names the document and an exact substring of its canonical text that a
+# correct top-k result must contain. Asked as niletech/finance-reader unless stated.
+# Used by `python -m app.cli retrieval-eval` to compare dense with dense + sparse
+# (RRF) retrieval on the same cases.
+
+version = 1
+
+[[cases]]
+id = "fin-net-q1"
+question = "What were net fulfilled sales in Q1 2026 according to the finance commentary?"
+document = "finance-q1-commentary"
+expect = "USD 80,934,385.00 across 291 orders"
+
+[[cases]]
+id = "fin-overdue"
+question = "How many open invoices were past their due date?"
+document = "finance-q1-commentary"
+expect = "370 open invoices"
+
+[[cases]]
+id = "fin-cloud-variance"
+question = "Why did cloud hosting exceed its budget?"
+document = "finance-q1-commentary"
+expect = "data-platform migration ran six weeks longer"
+
+[[cases]]
+id = "fin-travel"
+question = "What was the actual travel spend versus budget?"
+document = "finance-q1-commentary"
+expect = "Travel | 95,000 | 61,250"
+
+[[cases]]
+id = "hr-egypt-days"
+question = "How many annual leave days do employees in Egypt get?"
+document = "hr-leave-policy"
+expect = "21 working days of annual leave"
+
+[[cases]]
+id = "hr-carry-over"
+question = "How many unused leave days can be carried over and when do they expire?"
+document = "hr-leave-policy"
+expect = "Up to five unused days"
+
+[[cases]]
+id = "hr-family"
+question = "How much family leave can parents take?"
+document = "hr-leave-policy"
+expect = "ten days of family leave"
+
+[[cases]]
+id = "hr-arabic-holiday"
+question = "Is Eid al-Fitr (عيد الفطر) a public holiday?"
+document = "hr-leave-policy"
+expect = "Eid al-Fitr (عيد الفطر)"
+
+[[cases]]
+id = "hr-uae"
+question = "What is the leave entitlement in the UAE (الإمارات)?"
+document = "hr-leave-policy"
+expect = "UAE receive 30 calendar days"
+
+[[cases]]
+id = "it-mfa"
+question = "Is multi-factor authentication required for accounts?"
+document = "it-security-handbook"
+expect = "require multi-factor authentication"
+
+[[cases]]
+id = "it-password-length"
+question = "What is the minimum password length?"
+document = "it-security-handbook"
+expect = "at least 14 characters"
+
+[[cases]]
+id = "it-lost-laptop"
+question = "What should I do if my laptop is stolen?"
+document = "it-security-handbook"
+expect = "within one hour"
+
+[[cases]]
+id = "it-phishing"
+question = "How often does the security team run phishing simulations?"
+document = "it-security-handbook"
+expect = "phishing simulation every quarter"
+
+[[cases]]
+id = "cat-integration"
+question = "Which product connects ERP and CRM systems?"
+document = "product-catalogue"
+expect = "Connects ERP, CRM and payment systems"
+
+[[cases]]
+id = "cat-licensing"
+question = "How is the Workflow Automation Platform licensed?"
+document = "product-catalogue"
+expect = "Licensed per active user per month"
+
+[[cases]]
+id = "pdf-offices"
+question = "Which cities does NileTech operate from?"
+document = "company-overview-pdf"
+expect = "Cairo, Alexandria, Dubai"
+
+[[cases]]
+id = "pdf-increments"
+question = "How long are the delivery increments?"
+document = "company-overview-pdf"
+expect = "two-week increments"
+
+[[cases]]
+id = "pdf-feb-net"
+question = "What were February 2026 net sales in the sales tables?"
+document = "sales-tables-pdf"
+expect = "February 2026 97 27,474,894.00"
+
+[[cases]]
+id = "pdf-pending"
+question = "How many pending orders were there in Q1 2026 and what was their net value?"
+document = "sales-tables-pdf"
+expect = "PENDING 40 12,605,562.00"
+
+[[cases]]
+id = "csv-zurich"
+question = "What is the credit limit of Zürich Analytics GmbH?"
+document = "customers-csv"
+expect = "Zürich Analytics GmbH | CH | Zürich | -1200.00"
+
+[[cases]]
+id = "csv-arabic"
+question = "Which customer is located in القاهرة?"
+document = "customers-csv"
+expect = "شركة النيل للتقنية"
+
+[[cases]]
+id = "csv-emoji"
+question = "Which customer in Dubai has a rocket emoji in its name?"
+document = "customers-csv"
+expect = "Gulf Ventures LLC 🚀"

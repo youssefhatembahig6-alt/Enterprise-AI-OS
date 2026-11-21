@@ -3,6 +3,7 @@ authorized event streaming/replay and authorized evidence access."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -32,6 +33,7 @@ from app.reporting.model_client import FAKE_LABEL
 from app.reporting.workflow import ReportWorkflow
 from app.repositories.audit import record_audit_event
 from app.security.context import AccessContext
+from app.security.policy import Decision, Reason
 
 logger = logging.getLogger("eaios.reports")
 
@@ -56,6 +58,7 @@ class ReportRunner:
     app_engine: Engine
     workflow: ReportWorkflow
     settings: Settings
+    documents_workflow: ReportWorkflow | None = None
 
     def run_job(self, run_id: UUID, tenant_id: UUID) -> str:
         with tenant_transaction(self.app_engine, tenant_id) as conn:
@@ -71,7 +74,13 @@ class ReportRunner:
         if attempt > self.settings.report_job_max_attempts:
             self._fail_exhausted(run_id, tenant_id, run.owner_user_id)
             return "attempts_exhausted"
-        self.workflow.run(run_id, tenant_id, run.owner_user_id, run.question, run.inference_mode)
+        workflow = self.workflow
+        if run.kind == "documents":
+            if self.documents_workflow is None:
+                self._fail_exhausted(run_id, tenant_id, run.owner_user_id)
+                return "documents_unavailable"
+            workflow = self.documents_workflow
+        workflow.run(run_id, tenant_id, run.owner_user_id, run.question, run.inference_mode)
         return "ran"
 
     def _fail_exhausted(self, run_id: UUID, tenant_id: UUID, user_id: UUID) -> None:
@@ -112,11 +121,16 @@ class ReportRunner:
             store.finish_job(conn, run_id)
 
 
+class JobRunner(Protocol):
+    def run_job(self, job_id: UUID, tenant_id: UUID) -> str: ...
+
+
 class InlineDispatcher:
     """Runs jobs on a small thread pool inside the API process (tests, single-process
-    development). The job row is still the source of truth."""
+    development). The job row is still the source of truth. Used for report/answer
+    runs and for ingestion jobs (any runner with ``run_job(id, tenant_id)``)."""
 
-    def __init__(self, runner: ReportRunner, workers: int = 2) -> None:
+    def __init__(self, runner: JobRunner, workers: int = 2) -> None:
         self._runner = runner
         self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="report")
 
@@ -137,18 +151,26 @@ class CeleryDispatcher:
     """Publishes a Celery message after the run/job transaction committed. If the
     publish fails, the beat task re-dispatches pending jobs from PostgreSQL."""
 
-    def __init__(self, app_engine: Engine, send: Callable[[str, list[str]], None]) -> None:
+    def __init__(
+        self,
+        app_engine: Engine,
+        send: Callable[[str, list[str]], None],
+        task: str = "app.tasks.reports.run_report",
+        mark: Callable[[Any, UUID], None] = store.mark_dispatched,
+    ) -> None:
         self._engine = app_engine
         self._send = send
+        self._task = task
+        self._mark = mark
 
     def dispatch(self, run_id: UUID, tenant_id: UUID) -> None:
         try:
-            self._send("app.tasks.reports.run_report", [str(run_id), str(tenant_id)])
+            self._send(self._task, [str(run_id), str(tenant_id)])
         except Exception:
-            logger.warning("report_dispatch_failed", extra={"run_id": str(run_id)})
+            logger.warning("job_dispatch_failed", extra={"job_id": str(run_id), "task": self._task})
             return
         with tenant_transaction(self._engine, tenant_id) as conn:
-            store.mark_dispatched(conn, run_id)
+            self._mark(conn, run_id)
 
 
 def dispatch_due_jobs(app_engine: Engine, dispatcher: Dispatcher, limit: int = 20) -> int:
@@ -191,7 +213,9 @@ class ReportService:
     def inference_mode(self) -> str:
         return self._settings.model_mode.value
 
-    def create_run(self, ctx: AccessContext, question: str, client_request_id: str) -> store.RunRow:
+    def create_run(
+        self, ctx: AccessContext, question: str, client_request_id: str, kind: str = "report"
+    ) -> store.RunRow:
         with tenant_transaction(self._engine, ctx.tenant_id, ctx.user_id) as conn:
             run, created = store.create_run(
                 conn,
@@ -201,6 +225,7 @@ class ReportService:
                 client_request_id=client_request_id,
                 inference_mode=self.inference_mode,
                 policy_epoch=ctx.policy_epoch,
+                kind=kind,
             )
             if created:
                 payload: dict[str, Any] = {
@@ -222,7 +247,7 @@ class ReportService:
                     action="report.create",
                     decision="info",
                     reason="run_created",
-                    details={"run_id": str(run.id), "inference": self.inference_mode},
+                    details={"run_id": str(run.id), "inference": self.inference_mode, "kind": kind},
                 )
         if created and self._dispatcher is not None:
             self._dispatcher.dispatch(run.id, ctx.tenant_id)
@@ -237,7 +262,7 @@ class ReportService:
                 raise RunNotFound
             content_allowed = True
             if run.status is RunStatus.PUBLISHED:
-                content_allowed = authorize_dataset(conn, ctx.user_id, run.resource_id).allowed
+                content_allowed = self._content_allowed(conn, ctx.user_id, run)
         return run, content_allowed
 
     def cancel(self, ctx: AccessContext, run_id: UUID) -> store.RunRow:
@@ -260,6 +285,41 @@ class ReportService:
                 )
         return run
 
+    # -- content authorization -----------------------------------------------------
+
+    @staticmethod
+    def _content_decision(conn: Any, user_id: UUID, run: store.RunRow) -> Decision:
+        """Current authorization for a run's published content.
+
+        Reports: ``dataset.query`` on the report's dataset. Document answers:
+        ``resource.read`` on every cited document, which must not be deleted.
+        """
+
+        if run.kind != "documents":
+            return authorize_dataset(conn, user_id, run.resource_id)
+        from app.documents import access as doc_access  # noqa: PLC0415 - avoid cycle
+        from app.documents import store as doc_store  # noqa: PLC0415
+
+        cited = (
+            conn.execute(
+                text("SELECT DISTINCT document_id FROM answer_sources WHERE run_id = :r"),
+                {"r": run.id},
+            )
+            .scalars()
+            .all()
+        )
+        for document_id in cited:
+            doc = doc_store.load_document(conn, document_id)
+            if doc is None or doc.deleted_at is not None:
+                return Decision.deny(Reason.RESOURCE_INACTIVE)
+            decision = doc_access.can_read(conn, user_id, document_id)
+            if not decision.allowed:
+                return decision
+        return Decision.allow()
+
+    def _content_allowed(self, conn: Any, user_id: UUID, run: store.RunRow) -> bool:
+        return self._content_decision(conn, user_id, run).allowed
+
     # -- streaming -----------------------------------------------------------------
 
     def _check_access(self, token: str, run_id: UUID, content: bool) -> AccessContext:
@@ -274,7 +334,7 @@ class ReportService:
             if run is None:
                 raise RunNotFound
             if content:
-                decision = authorize_dataset(conn, ctx.user_id, run.resource_id)
+                decision = self._content_decision(conn, ctx.user_id, run)
                 if not decision.allowed:
                     record_audit_event(
                         conn,
@@ -363,6 +423,77 @@ class ReportService:
                     yield ": heartbeat\n\n"
                 time.sleep(s.sse_poll_interval_seconds)
 
+    # -- document citations ------------------------------------------------------
+
+    def citation(self, ctx: AccessContext, run_id: UUID, citation_id: str) -> dict[str, Any]:
+        """Open a cited passage in the exact document version the answer used.
+
+        Owner only, published runs only, document not deleted, and ``resource.read``
+        re-evaluated now. The passage is sliced by code points on the server, so the
+        browser never converts offsets (JavaScript strings index UTF-16 units).
+        """
+
+        from app.documents import access as doc_access  # noqa: PLC0415 - avoid cycle
+        from app.documents import store as doc_store  # noqa: PLC0415
+
+        context_chars = 240
+        with tenant_transaction(self._engine, ctx.tenant_id, ctx.user_id) as conn:
+            run = store.load_run(conn, run_id, ctx.user_id)
+            source = doc_store.load_source(conn, run_id, citation_id) if run else None
+            allowed, reason = False, "not_found"
+            doc = version = None
+            if run is not None and run.status is RunStatus.PUBLISHED and source is not None:
+                doc = doc_store.load_document(conn, source.document_id)
+                version = doc_store.load_version(conn, source.document_id, source.version)
+                if doc is None or doc.deleted_at is not None or version is None:
+                    reason = "document_removed"
+                else:
+                    decision = doc_access.can_read(conn, ctx.user_id, source.document_id)
+                    allowed, reason = decision.allowed, decision.reason.value
+            record_audit_event(
+                conn,
+                request_id=ctx.request_id,
+                tenant_id=ctx.tenant_id,
+                user_id=ctx.user_id,
+                event_type="document.citation",
+                action="resource.read",
+                resource_id=source.document_id if source and allowed else None,
+                decision="allow" if allowed else "deny",
+                reason=reason,
+                details={"run_id": str(run_id), "citation_id": citation_id},
+            )
+        if not allowed or source is None or doc is None or version is None:
+            raise RunNotFound
+        canonical = version.canonical_text or ""
+        quote = canonical[source.char_start : source.char_end]
+        integrity = (
+            hashlib.sha256(canonical.encode()).hexdigest()
+            == source.text_sha256
+            == version.text_sha256
+            and hashlib.sha256(quote.encode()).hexdigest() == source.quote_sha256
+        )
+        before_start = max(0, source.char_start - context_chars)
+        after_end = min(len(canonical), source.char_end + context_chars)
+        return {
+            "run_id": str(run_id),
+            "citation_id": citation_id,
+            "document_id": str(source.document_id),
+            "title": doc.title,
+            "version": source.version,
+            "current_version": doc.current_version,
+            "is_current_version": source.version == doc.current_version,
+            "filename": version.filename,
+            "char_start": source.char_start,
+            "char_end": source.char_end,
+            "offset_unit": "unicode_code_point",
+            "text_sha256": source.text_sha256,
+            "before": canonical[before_start : source.char_start],
+            "quote": quote,
+            "after": canonical[source.char_end : after_end],
+            "context_start": before_start,
+            "integrity": "verified" if integrity else "mismatch",
+        }
+
     # -- evidence ------------------------------------------------------------------
 
     def evidence(self, ctx: AccessContext, evidence_id: UUID) -> dict[str, Any]:
@@ -410,14 +541,20 @@ class ReportService:
 
 
 def build_dispatcher(
-    settings: Settings, runner: ReportRunner | None, app_engine: Engine
+    settings: Settings,
+    runner: JobRunner | None,
+    app_engine: Engine,
+    task: str = "app.tasks.reports.run_report",
+    mark: Callable[[Any, UUID], None] = store.mark_dispatched,
 ) -> Dispatcher | None:
     if settings.report_dispatch is ReportDispatch.INLINE:
         return InlineDispatcher(runner) if runner is not None else None
     # Imported lazily: the Celery app reads REDIS_URL at import time.
     from app.tasks.worker import celery_app  # noqa: PLC0415
 
+    celery_app.conf.broker_url = settings.redis_url.get_secret_value()
+
     def send(name: str, args: list[str]) -> None:
         celery_app.send_task(name, args=args, queue="default")
 
-    return CeleryDispatcher(app_engine, send)
+    return CeleryDispatcher(app_engine, send, task, mark)

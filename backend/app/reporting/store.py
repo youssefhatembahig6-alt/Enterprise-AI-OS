@@ -37,11 +37,12 @@ class RunRow:
     last_seq: int
     created_at: datetime
     finished_at: datetime | None
+    kind: str = "report"
 
 
 _RUN_COLUMNS = """id, tenant_id, owner_user_id, resource_id, report_key, question, status,
     cancel_requested, inference_mode, policy_epoch_at_start, outcome_code, result, stats,
-    last_seq, created_at, finished_at"""
+    last_seq, created_at, finished_at, kind"""
 
 
 def _run(row: Any) -> RunRow:
@@ -62,6 +63,7 @@ def _run(row: Any) -> RunRow:
         last_seq=row.last_seq,
         created_at=row.created_at,
         finished_at=row.finished_at,
+        kind=row.kind,
     )
 
 
@@ -112,6 +114,7 @@ def create_run(
     client_request_id: str,
     inference_mode: str,
     policy_epoch: int,
+    kind: str = "report",
 ) -> tuple[RunRow, bool]:
     """Insert the run and its job row in the caller's transaction. Idempotent on
     ``(tenant, owner, client_request_id)``: a retried POST returns the same run."""
@@ -121,8 +124,8 @@ def create_run(
         text(
             """
             INSERT INTO report_runs (id, tenant_id, owner_user_id, question, client_request_id,
-                                     status, inference_mode, policy_epoch_at_start)
-            VALUES (:id, :t, :u, :q, :crid, 'queued', :mode, :epoch)
+                                     status, inference_mode, policy_epoch_at_start, kind)
+            VALUES (:id, :t, :u, :q, :crid, 'queued', :mode, :epoch, :kind)
             ON CONFLICT (tenant_id, owner_user_id, client_request_id) DO NOTHING
             RETURNING id
             """
@@ -135,6 +138,7 @@ def create_run(
             "crid": client_request_id,
             "mode": inference_mode,
             "epoch": policy_epoch,
+            "kind": kind,
         },
     ).one_or_none()
     if inserted is not None:

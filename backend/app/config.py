@@ -28,6 +28,16 @@ class ReportDispatch(StrEnum):
     INLINE = "inline"  # tests and single-process development: API thread pool
 
 
+class DocumentStoreKind(StrEnum):
+    S3 = "s3"
+    FILESYSTEM = "filesystem"
+
+
+class RetrievalMode(StrEnum):
+    DENSE = "dense"
+    HYBRID = "hybrid"  # dense + sparse prefetches fused with RRF
+
+
 class Environment(StrEnum):
     DEVELOPMENT = "development"
     TEST = "test"
@@ -107,6 +117,26 @@ class Settings(BaseSettings):
         default=900, alias="REPORT_JOB_LEASE_SECONDS", ge=30, le=3600
     )
     report_job_max_attempts: int = Field(default=3, alias="REPORT_JOB_MAX_ATTEMPTS", ge=1, le=10)
+    # M3 documents: raw bytes in S3-compatible storage (SeaweedFS) or a local directory.
+    document_store: DocumentStoreKind = Field(default=DocumentStoreKind.S3, alias="DOCUMENT_STORE")
+    document_fs_root: str = Field(default="/app/var/documents", alias="DOCUMENT_FS_ROOT")
+    s3_bucket: str = Field(default="eaios-raw", alias="S3_BUCKET")
+    s3_access_key: SecretStr = Field(default=SecretStr("eaios-dev"), alias="S3_ACCESS_KEY")
+    s3_secret_key: SecretStr = Field(default=SecretStr("eaios-dev-secret"), alias="S3_SECRET_KEY")
+    qdrant_collection_prefix: str = Field(
+        default="eaios_chunks", alias="QDRANT_COLLECTION_PREFIX", pattern=r"^[a-z][a-z0-9_]{0,40}$"
+    )
+    # Start dense (roadmap); switch to hybrid only after the recorded comparison.
+    retrieval_mode: RetrievalMode = Field(default=RetrievalMode.DENSE, alias="RETRIEVAL_MODE")
+    retrieval_top_k: int = Field(default=5, alias="RETRIEVAL_TOP_K", ge=1, le=10)
+    retrieval_prefetch: int = Field(default=20, alias="RETRIEVAL_PREFETCH", ge=5, le=100)
+    ingestion_job_lease_seconds: int = Field(
+        default=600, alias="INGESTION_JOB_LEASE_SECONDS", ge=30, le=3600
+    )
+    ingestion_job_max_attempts: int = Field(
+        default=3, alias="INGESTION_JOB_MAX_ATTEMPTS", ge=1, le=10
+    )
+
     sse_poll_interval_seconds: float = Field(
         default=0.5, alias="SSE_POLL_INTERVAL_SECONDS", gt=0, le=5
     )

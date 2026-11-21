@@ -40,6 +40,23 @@ Pinned in [`gateway.py`](gateway.py) and in the backend settings (`MODEL_*_REVIS
 4. On the laptop, set in `.env`: `MODEL_MODE=gateway`, `LLM_BASE_URL=https://<tunnel-host>` (the root, no `/v1`) and `MODEL_GATEWAY_TOKEN=<token>`. Restart the API and worker.
 5. Capture the demonstration: `python3 scripts/m2_demo_capture.py` (see [docs/runbook.md](../../docs/runbook.md)).
 
+## M3: embeddings and the retrieval measurement
+
+`POST /v1/embeddings` with `"return_sparse": true` returns BGE-M3's dense vector and its sparse lexical weights (`{"indices", "values"}`), using the M1 notebook's sparse head. The backend uses them for ingestion and for dense or hybrid (RRF) retrieval.
+
+To produce the real retrieval comparison without a tunnel, run Qdrant in the same Colab runtime and the harness over loopback, as the M2 demonstration did with the API:
+
+```bash
+# in Colab, after colab_launch.py is serving on 127.0.0.1:8100
+wget -q https://github.com/qdrant/qdrant/releases/download/v1.15.4/qdrant-x86_64-unknown-linux-gnu.tar.gz
+tar xzf qdrant-x86_64-unknown-linux-gnu.tar.gz && (./qdrant >/content/qdrant.log 2>&1 &)
+cd /content/Enterprise-AI-OS/backend && pip install -r requirements.lock --no-deps -q
+MODEL_MODE=gateway LLM_BASE_URL=http://127.0.0.1:8100 MODEL_GATEWAY_TOKEN=$GATEWAY_TOKEN \
+  python -m app.cli retrieval-eval --qdrant http://127.0.0.1:6333 --out /content/retrieval-eval.json
+```
+
+These Colab steps have not been exercised yet; Colab's Python version may need the backend dependencies installed without `--require-hashes`. The JSON records the embedding space and revisions, Qdrant version, corpus and case hashes, per-case ranks, and recall@1/@5, MRR@5 and document recall@5 for dense and hybrid.
+
 ## Tests
 
 `backend/tests/unit/test_model_gateway_contract.py` loads this exact file with stub models on CPU and drives it with the backend's `GatewayModelClient`: route composition, auth, streaming relay, checker refusal of over-long input, and the vLLM command flags.

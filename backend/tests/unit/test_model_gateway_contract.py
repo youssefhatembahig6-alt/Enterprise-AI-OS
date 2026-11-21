@@ -40,6 +40,9 @@ class StubEmbedder:
     def encode(self, texts: list[str]) -> list[list[float]]:
         return [[float(len(t)), 0.0] for t in texts]
 
+    def encode_with_sparse(self, texts: list[str]) -> list[tuple[list[float], dict[int, float]]]:
+        return [([0.5] * 1024, {7: 0.25, len(t): 1.5}) for t in texts]
+
 
 class StubChecker:
     def score(self, premise: str, hypothesis: str) -> dict[str, Any]:
@@ -134,3 +137,11 @@ def test_vllm_command_uses_the_measured_configuration() -> None:
         "--host 127.0.0.1",
     ):
         assert flag in joined
+
+
+def test_hybrid_embeddings_round_trip(gateway_client: Any) -> None:
+    _, client = gateway_client
+    vectors = backend_client(client).embed_text(["abc", "hello"])
+    assert len(vectors) == 2 and len(vectors[0].dense) == 1024
+    assert vectors[0].sparse == {7: 0.25, 3: 1.5}
+    assert vectors[1].sparse == {7: 0.25, 5: 1.5}

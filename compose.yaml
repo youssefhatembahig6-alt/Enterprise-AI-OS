@@ -25,6 +25,10 @@ x-backend-env: &backend-env
   # Separate read-only report query role (M2); see infra/postgres/report-role.sql.
   REPORT_DATABASE_URL: postgresql+psycopg://eaios_report:${EAIOS_REPORT_DB_PASSWORD:?set in .env (scripts/dev.py add-report-role)}@postgres:5432/eaios
   REPORT_DISPATCH: celery
+  # M3 documents: raw uploads in SeaweedFS (S3 API, internal network only).
+  DOCUMENT_STORE: s3
+  S3_BUCKET: eaios-raw
+  RETRIEVAL_MODE: ${RETRIEVAL_MODE:-dense}
   PASSWORD_VERIFY_CONCURRENCY: ${PASSWORD_VERIFY_CONCURRENCY:-2}
   PASSWORD_VERIFY_QUEUE_TIMEOUT_SECONDS: ${PASSWORD_VERIFY_QUEUE_TIMEOUT_SECONDS:-5}
 
@@ -67,6 +71,8 @@ services:
 
   qdrant:
     image: qdrant/qdrant:v1.15.4
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
     volumes:
       - qdrant-data:/qdrant/storage
     healthcheck:
@@ -95,7 +101,7 @@ services:
     build:
       context: ./backend
       target: runtime
-    image: eaios-backend:m2
+    image: eaios-backend:m3
     command: ["python", "-m", "app.cli", "migrate"]
     environment:
       EAIOS_ENV: ${EAIOS_ENV:-development}
@@ -109,7 +115,7 @@ services:
     restart: "no"
 
   api:
-    image: eaios-backend:m2
+    image: eaios-backend:m3
     build:
       context: ./backend
       target: runtime
@@ -134,7 +140,7 @@ services:
     restart: unless-stopped
 
   worker:
-    image: eaios-backend:m2
+    image: eaios-backend:m3
     command: ["celery", "-A", "app.tasks.worker:celery_app", "worker", "--concurrency=2", "--loglevel=INFO", "-Q", "default"]
     environment: *backend-env
     depends_on:
@@ -152,7 +158,7 @@ services:
     restart: unless-stopped
 
   scheduler:
-    image: eaios-backend:m2
+    image: eaios-backend:m3
     command: ["celery", "-A", "app.tasks.worker:celery_app", "beat", "--loglevel=INFO", "--schedule", "/tmp/celerybeat-schedule"]
     environment: *backend-env
     depends_on:
@@ -173,7 +179,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
-    image: eaios-web:m2
+    image: eaios-web:m3
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
@@ -194,15 +200,18 @@ services:
     build:
       context: ./backend
       target: test
-    image: eaios-backend-tests:m2
+    image: eaios-backend-tests:m3
     environment:
       TEST_DATABASE_ADMIN_URL: postgresql+psycopg://postgres:${POSTGRES_SUPERUSER_PASSWORD:?set in .env}@postgres:5432/postgres
       TEST_REDIS_URL: redis://:${REDIS_PASSWORD:?set in .env}@redis:6379/15
+      TEST_QDRANT_URL: http://qdrant:6333
       EAIOS_REQUIRE_INTEGRATION: "1"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
     mem_limit: 512m
     restart: "no"

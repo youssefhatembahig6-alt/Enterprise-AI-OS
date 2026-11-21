@@ -13,6 +13,11 @@ from app.schemas.auth import StrictModel
 
 class ChatRequest(StrictModel):
     question: str = Field(min_length=1, max_length=1000)
+    mode: Literal["auto", "report", "documents"] = Field(
+        default="auto",
+        description="auto: sales/period questions go to the verified SQL report, everything "
+        "else to authorized document answers.",
+    )
     client_request_id: str | None = Field(
         default=None,
         pattern=r"^[A-Za-z0-9_-]{8,64}$",
