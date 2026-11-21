@@ -273,6 +273,22 @@ def owner_exec(test_db: DbHarness, sql: str, params: dict[str, Any] | None = Non
         return result.freeze()() if result.returns_rows else result
 
 
+@contextmanager
+def tenant_packs(test_db: DbHarness, slug: str, packs: list[str]) -> Iterator[None]:
+    """Temporarily switch a fixture tenant's enabled packs (M4 tenant configuration)."""
+
+    tenant_id = test_db.foundation.tenants[slug].id
+    before = owner_exec(
+        test_db, "SELECT enabled_packs FROM tenant_settings WHERE tenant_id = :t", {"t": tenant_id}
+    ).scalar_one()
+    sql = "UPDATE tenant_settings SET enabled_packs = :p WHERE tenant_id = :t"
+    owner_exec(test_db, sql, {"p": packs, "t": tenant_id})
+    try:
+        yield
+    finally:
+        owner_exec(test_db, sql, {"p": list(before), "t": tenant_id})
+
+
 # --- M2 report fixtures ---------------------------------------------------------------
 
 
