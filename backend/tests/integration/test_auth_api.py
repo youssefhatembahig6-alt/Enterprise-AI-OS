@@ -6,6 +6,7 @@ import io
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 import jwt
 import pytest
@@ -216,7 +217,7 @@ def test_invalid_tokens_rejected(client: TestClient, test_db: DbHarness, variant
     past = int((datetime.now(UTC) - timedelta(seconds=10)).timestamp())
     tokens = {
         "bad_signature": lambda: _forge(test_db, ref, secret="x" * 48, jti=jti),
-        "alg_none": lambda: jwt.encode({**real}, None, algorithm="none"),  # type: ignore[arg-type]
+        "alg_none": lambda: jwt.encode({**real}, cast(Any, None), algorithm="none"),
         "alg_hs512": lambda: _forge(test_db, ref, alg="HS512", jti=jti),
         "expired": lambda: _forge(test_db, ref, exp=past, jti=jti),
         "wrong_issuer": lambda: _forge(test_db, ref, iss="evil", jti=jti),
