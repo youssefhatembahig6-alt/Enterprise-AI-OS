@@ -15,7 +15,7 @@ from uuid import UUID
 from sqlalchemy import Engine
 
 from app.config import DocumentStoreKind, Settings
-from app.connectors.drive import DriveClientFactory, http_client_factory, load_connector_config
+from app.connectors.drive import ConnectorConfig, DriveClientFactory, http_client_factory
 from app.connectors.sync import DriveSyncService
 from app.documents.answers import DocumentAnswerWorkflow
 from app.documents.ingest import IngestionRunner, collection_name
@@ -86,9 +86,8 @@ def build_components(
     )
     runner = ReportRunner(app_engine, ReportWorkflow(deps), settings, documents)
     ingestion = IngestionRunner(app_engine, settings, objects, qdrant, model)
-    clients = drive_clients or http_client_factory(
-        load_connector_config(settings.drive_connector_config)
-    )
+    connector_config = ConnectorConfig(settings.drive_connector_config)
+    clients = drive_clients or http_client_factory(connector_config)
     drive_sync = DriveSyncService(
         app_engine,
         settings,
@@ -98,6 +97,7 @@ def build_components(
         clients,
         ingest_dispatch,
         lease_seconds=settings.drive_sync_lease_seconds,
+        roots=connector_config.allowed_roots,
     )
     return Components(model, objects, qdrant, runner, ingestion, report_engine, drive_sync)
 

@@ -18,6 +18,7 @@ const ACCESS: Record<SourceAccess, { tone: StatusTone; label: string }> = {
   current: { tone: "ok", label: "Permissions current" },
   stale: { tone: "warn", label: "Stale — content denied until next sync" },
   last_sync_failed: { tone: "error", label: "Last sync failed — content denied" },
+  resync_required: { tone: "warn", label: "Policy changed — content denied until next sync" },
   never_verified: { tone: "unknown", label: "Not synced yet" },
   paused: { tone: "unknown", label: "Paused — content denied" },
   connector_disabled: { tone: "error", label: "Connector disabled for organization" },

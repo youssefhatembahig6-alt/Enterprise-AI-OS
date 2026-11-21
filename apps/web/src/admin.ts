@@ -60,6 +60,7 @@ export type SourceAccess =
   | "current"
   | "stale"
   | "last_sync_failed"
+  | "resync_required"
   | "never_verified"
   | "paused"
   | "connector_disabled";

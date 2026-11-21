@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-21T14:07:05.464676+00:00",
+  "captured_at": "2026-11-21T14:37:34.555635+00:00",
   "checks": {
     "audit": [
       200,
@@ -52,6 +52,10 @@
       ],
       "demo"
     ],
+    "role_edit_self_lockout": [
+      422,
+      "cannot_remove_own_admin"
+    ],
     "users_finance_admin": [
       200,
       [
@@ -64,7 +68,8 @@
       7
     ]
   },
-  "drive_credentials": "none configured",
+  "drive_credentials": "none configured (no live Drive)",
   "inference": "FAKE (labelled on every event; not model evidence)",
+  "migration": "0008_sync_fencing",
   "stack": "laptop Compose (api, worker, scheduler, PostgreSQL 17.6, Redis, Qdrant, SeaweedFS), Celery dispatch, MODEL_MODE=fake"
 }

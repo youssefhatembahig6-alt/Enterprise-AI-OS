@@ -156,3 +156,52 @@ def test_connector_config_binds_tenants_to_roots(tmp_path: Path) -> None:
     path.write_text(json.dumps({"tenants": {"t1": {"auth": {"type": "api_key"}}}}))
     with pytest.raises(ValueError, match="unknown auth type"):
         load_connector_config(str(path))
+
+
+def directory_client(handler: Any) -> HttpDriveClient:
+    def route(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == TOKEN_URL:
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 3600})
+        result: httpx.Response = handler(request)
+        return result
+
+    return HttpDriveClient(
+        OAUTH, transport=httpx.MockTransport(route), group_membership="directory"
+    )
+
+
+def test_group_membership_is_unverified_unless_the_operator_enables_it() -> None:
+    def fail(_: httpx.Request) -> httpx.Response:
+        raise AssertionError("no directory call without group_membership=directory")
+
+    assert client(fail).list_group_members("team@x.example") is None
+
+
+def test_group_membership_lists_active_user_members() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/groups/team@x.example/members")
+        return httpx.Response(
+            200,
+            json={
+                "members": [
+                    {"type": "USER", "email": "A@x.example", "status": "ACTIVE"},
+                    {"type": "USER", "email": "b@x.example", "status": "SUSPENDED"},
+                ]
+            },
+        )
+
+    assert directory_client(handler).list_group_members("team@x.example") == frozenset(
+        {"a@x.example"}
+    )
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(403, json={}),  # consumer account / no Workspace directory
+        httpx.Response(200, json={"members": [{"type": "GROUP", "email": "nested@x.example"}]}),
+        httpx.Response(200, json={"members": [{"type": "USER"}]}),
+    ],
+)
+def test_group_membership_doubt_is_none(response: httpx.Response) -> None:
+    assert directory_client(lambda r: response).list_group_members("team@x.example") is None

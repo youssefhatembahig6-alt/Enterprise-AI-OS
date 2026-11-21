@@ -43,6 +43,14 @@ class M4:
     drives: FakeDriveFactory
     settings: Settings
     _roots: Iterator[str]
+    config_path: Path
+
+    def set_allowed_roots(self, roots: list[str]) -> None:
+        """Rewrite the operator file (the application re-reads it on every use)."""
+
+        raw = json.loads(self.config_path.read_text())
+        raw["tenants"]["niletech"]["allowed_roots"] = roots
+        self.config_path.write_text(json.dumps(raw))
 
     def token(self, ref: str) -> str:
         return login(self.client, self.db, ref)
@@ -76,6 +84,30 @@ class M4:
         response = self.client.post("/api/v1/admin/sources", json=body, headers=auth(token))
         assert response.status_code == 201, response.text
         return dict(response.json())
+
+    def sync_direct(self, source_id: str) -> Any:
+        """Run one sync in the test thread (no HTTP), for deterministic race tests."""
+
+        tenant = self.db.foundation.tenants["niletech"].id
+        return self.client.app.state.drive_sync.sync(  # type: ignore[attr-defined]
+            tenant, uuid.UUID(source_id), trigger="manual"
+        )
+
+    def source_row(self, source_id: str) -> Any:
+        return owner_exec(
+            self.db,
+            "SELECT permissions_current, last_sync_status, last_error_code, claim_run_id,"
+            " sync_claimed_until, last_verified_sync_at, policy_version"
+            " FROM connector_sources WHERE id = :s",
+            {"s": source_id},
+        ).one()
+
+    def run_row(self, run_id: Any) -> Any:
+        return owner_exec(
+            self.db,
+            "SELECT status, error_code, started_at FROM connector_sync_runs WHERE id = :r",
+            {"r": run_id},
+        ).one()
 
     def sync(self, token: str, source_id: str) -> dict[str, Any]:
         response = self.client.post(f"/api/v1/admin/sources/{source_id}/sync", headers=auth(token))
@@ -161,7 +193,7 @@ def build_m4(stub_http_url: str, qdrant_url: str, tmp: Path, **overrides: Any) -
         )
         drives = FakeDriveFactory()
         with TestClient(create_app(settings, drive_clients=drives)) as client:
-            harness = M4(client, db, drives, settings, iter(ALLOWED_ROOTS))
+            harness = M4(client, db, drives, settings, iter(ALLOWED_ROOTS), config)
             admin = harness.token("niletech/access-admin")
             response = client.put(
                 "/api/v1/admin/groups/finance-team/links",

@@ -14,7 +14,7 @@ from app.admin.service import AdminService
 from app.api import admin, auth, documents, health, reports
 from app.api.errors import install_error_handlers
 from app.config import Settings, get_settings
-from app.connectors.drive import DriveClientFactory, http_client_factory, load_connector_config
+from app.connectors.drive import ConnectorConfig, DriveClientFactory, http_client_factory
 from app.connectors.sync import DriveSyncService, SyncOutcome
 from app.db.engine import create_app_engine
 from app.documents import store as doc_store
@@ -126,7 +126,7 @@ def create_app(  # noqa: PLR0915
     )
     # M4: Drive sync. Inline dispatch runs a manual sync in the request (tests and
     # single-process development); Celery queues it for the worker.
-    drive_config = load_connector_config(settings.drive_connector_config)
+    drive_config = ConnectorConfig(settings.drive_connector_config)
     drive_sync = DriveSyncService(
         engine,
         settings,
@@ -136,20 +136,23 @@ def create_app(  # noqa: PLR0915
         drive_clients or http_client_factory(drive_config),
         ingest_dispatcher.dispatch if ingest_dispatcher else None,
         lease_seconds=settings.drive_sync_lease_seconds,
+        roots=drive_config.allowed_roots,
     )
     app.state.drive_sync = drive_sync
 
     def run_sync(
-        tenant_id: uuid.UUID, source_id: uuid.UUID, user_id: uuid.UUID
+        tenant_id: uuid.UUID, source_id: uuid.UUID, user_id: uuid.UUID, run_id: uuid.UUID
     ) -> SyncOutcome | None:
         if settings.report_dispatch.value == "inline":
-            return drive_sync.sync(tenant_id, source_id, trigger="manual", requested_by=user_id)
+            return drive_sync.sync(
+                tenant_id, source_id, trigger="manual", requested_by=user_id, run_id=run_id
+            )
         from app.tasks.worker import celery_app  # noqa: PLC0415
 
         celery_app.conf.broker_url = settings.redis_url.get_secret_value()
         celery_app.send_task(
             "app.tasks.connectors.sync_source",
-            args=[str(source_id), str(tenant_id), "manual", str(user_id)],
+            args=[str(source_id), str(tenant_id), "manual", str(user_id), str(run_id)],
             queue="default",
         )
         return None

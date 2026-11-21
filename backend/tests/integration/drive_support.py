@@ -42,6 +42,11 @@ class FakeDrive:
         self.fail_listing: set[str] = set()
         self.unreadable_permissions: set[str] = set()
         self.calls: list[tuple[str, str]] = []
+        # Google group email -> verified member emails; absent = membership unknown.
+        self.group_members: dict[str, set[str]] = {}
+        # (method, id) -> callback run once, after the call returns and outside the lock,
+        # so tests can change state deterministically in the middle of a sync.
+        self.hooks: dict[tuple[str, str], Any] = {}
         self._lock = threading.Lock()
         self._counter = 0
 
@@ -102,6 +107,11 @@ class FakeDrive:
 
     # -- DriveClient -----------------------------------------------------------------------
 
+    def _hook(self, method: str, key: str) -> None:
+        hook = self.hooks.pop((method, key), None)
+        if hook is not None:
+            hook()
+
     def _drive_file(self, n: Node) -> DriveFile:
         md5 = (
             None
@@ -134,18 +144,28 @@ class FakeDrive:
             self.calls.append(("list_children", folder_id))
             if folder_id in self.fail_listing:
                 raise DriveUnavailable("500")
-            return [
+            children = [
                 self._drive_file(n)
                 for n in self.nodes.values()
                 if n.parent == folder_id and not n.trashed
             ]
+        self._hook("list_children", folder_id)
+        return children
 
     def list_permissions(self, file_id: str) -> list[DrivePermission]:
         with self._lock:
             self.calls.append(("list_permissions", file_id))
             if file_id in self.unreadable_permissions:
                 raise PermissionsUnavailable("403")
-            return list(self.nodes[file_id].perms)
+            perms = list(self.nodes[file_id].perms)
+        self._hook("list_permissions", file_id)
+        return perms
+
+    def list_group_members(self, group_email: str) -> frozenset[str] | None:
+        with self._lock:
+            self.calls.append(("list_group_members", group_email))
+            members = self.group_members.get(group_email.lower())
+            return frozenset(m.lower() for m in members) if members is not None else None
 
     def download(self, file: DriveFile) -> tuple[bytes, str]:
         with self._lock:
@@ -154,6 +174,9 @@ class FakeDrive:
             if node is None:
                 raise ContentUnavailable("404")
             return node.content, file.name
+
+    def requested(self, file_id: str) -> bool:
+        return any(c[1] == file_id for c in self.calls)
 
     def downloads(self) -> int:
         return sum(1 for c in self.calls if c[0] == "download")

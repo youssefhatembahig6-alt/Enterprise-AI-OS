@@ -20,10 +20,11 @@ Errors use the usual `{"error": {code, message, request_id}}`: missing admin cap
 | `GET /api/v1/admin/sources` · `GET /api/v1/admin/sources/{id}` | `resource.admin` covering the department | Sources with `access`, `last_verified_sync_at`, schedule; detail adds files (state, unmapped principals) and the last 10 runs |
 | `POST /api/v1/admin/sources` `{name, external_root, department, classification, department_restricted?, allowed_countries?}` | `resource.admin` + `google_drive` connector + the folder in the operator's `allowed_roots` | Create a Drive folder source (`201`) |
 | `PATCH /api/v1/admin/sources/{id}` | as above | Rename, change attributes (denied until resynced), `status`: `active`/`paused`/`deleted` |
-| `POST /api/v1/admin/sources/{id}/sync` | as above | Sync now: inline dispatch returns the outcome; Celery returns `{"status": "queued"}` |
+| `POST /api/v1/admin/sources/{id}/sync` | as above | Sync now. Always returns the `run_id` of the run this request created. Inline dispatch also returns its outcome; Celery returns `status: "queued"` |
+| `GET /api/v1/admin/sources/{id}/runs/{run_id}` | as above | That run: `status` (`queued`, `running`, `succeeded`, `failed`, `skipped`, `superseded`), `terminal`, times, `error_code`, `stats` |
 | `GET /api/v1/admin/audit?limit&before&event_type&resource_id` | `audit.read` | Newest first, scoped; `next_before` pages. URL-encode `before` (it contains `+`) |
 
-`access` on a source: `current` (content served), `stale` (last verified sync older than the bound), `last_sync_failed`, `never_verified`, `paused`, `connector_disabled`. Content is served only while `access = current` and the item's own permissions were readable.
+`access` on a source: `current` (content served), `stale` (last verified sync older than the bound), `last_sync_failed` (including `root_not_allowed`), `resync_required` (an admin changed the source's policy; any running sync was fenced out), `never_verified`, `paused`, `connector_disabled`. Content is served only while `access = current` and the item's own permissions were readable.
 
 Existing M3 routes are unchanged, except: `PUT …/permissions`, `POST …/versions` and `DELETE` on a Drive-synced document return `422 managed_by_connector`; upload and new versions need the `upload` connector; `POST /api/v1/chat` returns `403 capability_disabled` for an explicit disabled pack. Runs that hit a disabled pack at start or at publication end with an `error` event `capability_disabled` and no content.
 
@@ -34,11 +35,21 @@ Existing M3 routes are unchanged, except: `PUT …/permissions`, `POST …/versi
 ```json
 {"tenants": {"niletech": {
   "auth": {"type": "service_account", "key_file": "/run/eaios/connectors/drive-sa.json"},
-  "allowed_roots": ["<Drive folder id>"]}}}
+  "allowed_roots": ["<Drive folder id>"],
+  "group_membership": "unavailable"}}}
 ```
 
-or `"auth": {"type": "oauth_refresh_token", "client_id": "…", "client_secret": "…", "refresh_token": "…"}`. The scope is `https://www.googleapis.com/auth/drive.readonly`. A service account must be added to the folder as an **Editor**: Drive returns a file's full permission list only to principals who can share it. A reader-only credential makes every item `permissions_unknown`, which denies it.
+or `"auth": {"type": "oauth_refresh_token", "client_id": "…", "client_secret": "…", "refresh_token": "…"}`. The scope is `https://www.googleapis.com/auth/drive.readonly`. The file is re-read on every use; removing a root makes that source's next sync fail before any Drive request, and its content is then denied. `group_membership` defaults to `unavailable`, which leaves every Drive group share unresolved. `directory` (Workspace only) adds the `admin.directory.group.member.readonly` scope and verifies direct `USER` members; any doubt still leaves the share unresolved. A service account must be added to the folder as an **Editor**: Drive returns a file's full permission list only to principals who can share it. A reader-only credential makes every item `permissions_unknown`, which denies it.
 
 ## Sync semantics
 
-See ADR 0401. Per run: list the tree, read every file's permissions, download only changed content, apply creates, versions, sharing, renames and moves, tombstone what disappeared, then record `last_verified_sync_at` (the run start) and `permissions_current`. Supported content: the M3 formats, plus Google Docs (exported as text) and Google Sheets (exported as CSV). Other Google-native files are listed as `unsupported` and never searchable.
+See ADR 0401. Per run:
+1. Check the root against the current allowlist.
+2. List the tree.
+3. Read every file's permissions and verify Google group membership.
+4. Download only changed content.
+5. Apply creates, versions, sharing, renames and moves.
+6. Tombstone what disappeared.
+7. Record `last_verified_sync_at` (the run start) and `permissions_current`.
+
+Every write runs in a transaction fenced on the run's claim and the source's policy version. Supported content: the M3 formats, plus Google Docs (exported as text) and Google Sheets (exported as CSV). Other Google-native files are listed as `unsupported` and never searchable.

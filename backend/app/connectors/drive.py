@@ -7,10 +7,18 @@ not by tenant administrators: ``DRIVE_CONNECTOR_CONFIG`` names a JSON file
         "auth": {"type": "service_account", "key_file": "/run/secrets/drive-sa.json"}
               | {"type": "oauth_refresh_token", "client_id": "...", "client_secret": "...",
                  "refresh_token": "..."},
-        "allowed_roots": ["<folder id>", ...]}}}
+        "allowed_roots": ["<folder id>", ...],
+        "group_membership": "unavailable" | "directory"}}}
 
 A tenant administrator can only add a source whose root folder the operator listed
 for that tenant, so one tenant can never point a source at another tenant's folder.
+The file is re-read on every use: removing a root takes effect at the next sync,
+which then fails before requesting that folder from Drive.
+
+Google group membership is only trusted when the operator enables
+``group_membership: "directory"`` (Workspace Admin SDK, read-only member scope) and
+the members can be listed. Otherwise ``list_group_members`` returns ``None``
+("cannot verify") and the sync leaves that Drive group permission unresolved.
 
 The client never guesses: any failure to list a folder raises ``DriveUnavailable`` /
 ``DriveAuthError`` (the sync then fails and the source's content is denied), and a
@@ -34,6 +42,8 @@ import jwt
 API = "https://www.googleapis.com/drive/v3"
 TOKEN_URL = "https://oauth2.googleapis.com/token"  # noqa: S105 - endpoint, not a secret
 SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+DIRECTORY_SCOPE = "https://www.googleapis.com/auth/admin.directory.group.member.readonly"
+DIRECTORY_API = "https://admin.googleapis.com/admin/directory/v1"
 FOLDER = "application/vnd.google-apps.folder"
 MAX_BYTES = 10 * 1024 * 1024
 # Google-native types are exported; everything else is downloaded as stored.
@@ -59,6 +69,10 @@ class DriveAuthError(DriveError):
 
 class DriveUnavailable(DriveError):
     code = "drive_unavailable"
+
+
+class RootNotAllowed(DriveError):
+    code = "root_not_allowed"
 
 
 class RootNotAccessible(DriveError):
@@ -113,6 +127,10 @@ class DriveClient(Protocol):
 
     def download(self, file: DriveFile) -> tuple[bytes, str]: ...
 
+    def list_group_members(self, group_email: str) -> frozenset[str] | None:
+        """Current member emails, or ``None`` when membership cannot be verified."""
+        ...
+
 
 def export_name(file: DriveFile) -> str:
     export = EXPORTS.get(file.mime_type)
@@ -134,6 +152,7 @@ def supported_type(file: DriveFile) -> bool:
 class TenantDriveConfig:
     auth: dict[str, Any]
     allowed_roots: frozenset[str] = field(default_factory=frozenset)
+    group_membership: str = "unavailable"  # or "directory" (Workspace only)
 
 
 def load_connector_config(path: str | None) -> dict[str, TenantDriveConfig]:
@@ -145,17 +164,41 @@ def load_connector_config(path: str | None) -> dict[str, TenantDriveConfig]:
         auth = dict(entry.get("auth") or {})
         if auth.get("type") not in ("service_account", "oauth_refresh_token"):
             raise ValueError(f"drive connector config for {slug}: unknown auth type")
+        membership = str(entry.get("group_membership") or "unavailable")
+        if membership not in ("unavailable", "directory"):
+            raise ValueError(f"drive connector config for {slug}: unknown group_membership")
         out[str(slug)] = TenantDriveConfig(
-            auth=auth, allowed_roots=frozenset(str(r) for r in entry.get("allowed_roots") or [])
+            auth=auth,
+            allowed_roots=frozenset(str(r) for r in entry.get("allowed_roots") or []),
+            group_membership=membership,
         )
     return out
+
+
+class ConnectorConfig:
+    """The operator file, re-read on every call (it is small and rarely changes), so a
+    removed root or credential applies to the next sync without a restart."""
+
+    def __init__(self, path: str | None) -> None:
+        self._path = path
+
+    def tenants(self) -> dict[str, TenantDriveConfig]:
+        return load_connector_config(self._path)
+
+    def tenant(self, slug: str) -> TenantDriveConfig | None:
+        return self.tenants().get(slug)
+
+    def allowed_roots(self, slug: str) -> frozenset[str]:
+        entry = self.tenant(slug)
+        return entry.allowed_roots if entry else frozenset()
 
 
 # -- HTTP implementation -------------------------------------------------------------------
 
 
 class _TokenSource:
-    def __init__(self, auth: dict[str, Any], http: httpx.Client) -> None:
+    def __init__(self, auth: dict[str, Any], http: httpx.Client, scope: str = SCOPE) -> None:
+        self._scope = scope
         self._auth = auth
         self._http = http
         self._lock = threading.Lock()
@@ -176,7 +219,7 @@ class _TokenSource:
             assertion = jwt.encode(
                 {
                     "iss": key["client_email"],
-                    "scope": SCOPE,
+                    "scope": self._scope,
                     "aud": TOKEN_URL,
                     "iat": now,
                     "exp": now + 3600,
@@ -228,9 +271,12 @@ class HttpDriveClient:
         auth: dict[str, Any],
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
+        group_membership: str = "unavailable",
     ) -> None:
         self._http = httpx.Client(timeout=timeout, transport=transport)
-        self._tokens = _TokenSource(auth, self._http)
+        self._group_membership = group_membership
+        scope = f"{SCOPE} {DIRECTORY_SCOPE}" if group_membership == "directory" else SCOPE
+        self._tokens = _TokenSource(auth, self._http, scope)
 
     def close(self) -> None:
         self._http.close()
@@ -329,15 +375,49 @@ class HttpDriveClient:
             raise ContentUnavailable("too_large")
         return response.content, export_name(file)
 
+    def list_group_members(self, group_email: str) -> frozenset[str] | None:
+        """Direct members through the Workspace Directory API. Any doubt — not enabled,
+        an error, a nested group or a member without an email — returns ``None``."""
+
+        if self._group_membership != "directory":
+            return None
+        members: set[str] = set()
+        token: str | None = None
+        try:
+            while True:
+                params: dict[str, Any] = {"maxResults": 200}
+                if token:
+                    params["pageToken"] = token
+                response = self._http.get(
+                    f"{DIRECTORY_API}/groups/{group_email}/members",
+                    params=params,
+                    headers={"Authorization": f"Bearer {self._tokens.token()}"},
+                )
+                if response.status_code != 200:
+                    return None
+                body = response.json()
+                for m in body.get("members", []):
+                    if m.get("type") != "USER" or not m.get("email"):
+                        return None  # nested groups or customers cannot be verified here
+                    if m.get("status", "ACTIVE") == "ACTIVE":
+                        members.add(str(m["email"]).lower())
+                token = body.get("nextPageToken")
+                if not token:
+                    return frozenset(members)
+        except (httpx.HTTPError, DriveError, ValueError):
+            return None
+
 
 DriveClientFactory = Callable[[str], DriveClient | None]
 
 
-def http_client_factory(config: dict[str, TenantDriveConfig]) -> DriveClientFactory:
+def http_client_factory(config: ConnectorConfig) -> DriveClientFactory:
     """Per-tenant client from the operator configuration (``None``: not configured)."""
 
     def build(tenant_slug: str) -> DriveClient | None:
-        entry = config.get(tenant_slug)
-        return HttpDriveClient(entry.auth) if entry else None
+        entry = config.tenant(tenant_slug)
+        if entry is None:
+            return None
+        return HttpDriveClient(entry.auth, group_membership=entry.group_membership)
 
     return build

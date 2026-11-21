@@ -181,6 +181,15 @@ def sync_source(source_id: UUID, ctx: CurrentContext, admin: Admin) -> dict[str,
     return _call(lambda: admin.sync_source(ctx, source_id))
 
 
+@router.get("/admin/sources/{source_id}/runs/{run_id}", responses=_ERRORS)
+def get_sync_run(
+    source_id: UUID, run_id: UUID, ctx: CurrentContext, admin: Admin
+) -> dict[str, Any]:
+    """One sync run (for waiting on the run a sync request created)."""
+
+    return _call(lambda: admin.get_run(ctx, source_id, run_id))
+
+
 @router.get("/admin/audit", responses=_ERRORS)
 def audit(
     ctx: CurrentContext,

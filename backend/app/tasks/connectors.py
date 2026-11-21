@@ -50,13 +50,18 @@ def _get_service() -> DriveSyncService:
     name="app.tasks.connectors.sync_source", time_limit=1800, soft_time_limit=1700, acks_late=True
 )
 def sync_source(
-    source_id: str, tenant_id: str, trigger: str = "scheduled", requested_by: str | None = None
+    source_id: str,
+    tenant_id: str,
+    trigger: str = "scheduled",
+    requested_by: str | None = None,
+    run_id: str | None = None,
 ) -> str:
     outcome = _get_service().sync(
         UUID(tenant_id),
         UUID(source_id),
         trigger=trigger,
         requested_by=UUID(requested_by) if requested_by else None,
+        run_id=UUID(run_id) if run_id else None,  # the queued row the API created
     )
     logger.info("connector_sync", extra={"status": outcome.status, "code": outcome.error_code})
     return outcome.status

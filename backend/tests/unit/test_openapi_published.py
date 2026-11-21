@@ -58,6 +58,7 @@ def test_published_openapi_matches_app() -> None:
         "/api/v1/admin/sources",
         "/api/v1/admin/sources/{source_id}",
         "/api/v1/admin/sources/{source_id}/sync",
+        "/api/v1/admin/sources/{source_id}/runs/{run_id}",
         "/api/v1/admin/audit",
     }
     chat = generated["paths"]["/api/v1/chat"]["post"]["responses"]["200"]["content"]

@@ -31,7 +31,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, Engine, text
 
-from app.connectors.drive import TenantDriveConfig
+from app.connectors.drive import ConnectorConfig
 from app.connectors.sync import SyncOutcome
 from app.db.engine import tenant_transaction
 from app.repositories.audit import record_audit_event
@@ -71,7 +71,7 @@ class AdminInvalid(ValueError):
         self.message = message
 
 
-SyncRunner = Callable[[UUID, UUID, UUID], SyncOutcome | None]
+SyncRunner = Callable[[UUID, UUID, UUID, UUID], SyncOutcome | None]
 
 
 def _require(ctx: AccessContext, cap: Capability) -> frozenset[str] | None:
@@ -108,7 +108,7 @@ class AdminService:
     def __init__(
         self,
         engine: Engine,
-        drive_config: dict[str, TenantDriveConfig],
+        drive_config: ConnectorConfig,
         run_sync: SyncRunner | None,
     ) -> None:
         self._engine = engine
@@ -451,6 +451,7 @@ class AdminService:
                 current = self._role_caps(conn)[key][1]
                 if not all(covers(ctx.subject, Capability(c), None) for c in current):
                     raise AdminForbidden
+                self._keeps_own_identity_admin(conn, ctx, key, frozenset(capabilities))
                 conn.execute(
                     text("UPDATE roles SET name = :n WHERE id = :id"),
                     {"n": name[:200], "id": role_id},
@@ -475,6 +476,32 @@ class AdminService:
                 details={"role": key, "capabilities": sorted(set(capabilities))},
             )
         return {"key": key, "name": name[:200], "capabilities": sorted(set(capabilities))}
+
+    def _keeps_own_identity_admin(
+        self, conn: Connection, ctx: AccessContext, key: str, new_caps: frozenset[str]
+    ) -> None:
+        """Reject a role edit that would leave the caller without tenant-wide
+        ``identity.admin``. Evaluated on the caller's *effective* result: all of their
+        assignments, with ``key`` carrying ``new_caps``; a department-scoped assignment
+        does not preserve tenant-wide rights."""
+
+        caps = {k: v[1] for k, v in self._role_caps(conn).items()}
+        caps[key] = new_caps
+        assignments = conn.execute(
+            text(
+                "SELECT r.key, ur.scope_department FROM user_roles ur JOIN roles r"
+                " ON r.tenant_id = ur.tenant_id AND r.id = ur.role_id WHERE ur.user_id = :u"
+            ),
+            {"u": ctx.user_id},
+        ).all()
+        if not any(
+            a.scope_department is None and Capability.IDENTITY_ADMIN.value in caps.get(a.key, ())
+            for a in assignments
+        ):
+            raise AdminInvalid(
+                "cannot_remove_own_admin",
+                "This change would remove your own identity administration rights.",
+            )
 
     def list_groups(self, ctx: AccessContext) -> list[dict[str, Any]]:
         _require(ctx, Capability.IDENTITY_ADMIN)
@@ -614,6 +641,8 @@ class AdminService:
             access = "paused"
         elif r.last_verified_sync_at is None:
             access = "never_verified"
+        elif not r.permissions_current and r.last_error_code == "policy_changed":
+            access = "resync_required"
         elif not r.permissions_current:
             access = "last_sync_failed"
         elif not r.fresh:
@@ -713,7 +742,7 @@ class AdminService:
         root = body["external_root"]
         with self._tx(ctx) as conn:
             require_connector(conn, "google_drive")
-            config = self._drive_config.get(ctx.tenant_slug)
+            config = self._drive_config.tenant(ctx.tenant_slug)  # re-read each time
             if config is None:
                 raise AdminInvalid(
                     "drive_not_configured",
@@ -784,8 +813,16 @@ class AdminService:
             if changes:
                 sets = ", ".join(f"{k} = :{k}" for k in sorted(changes))
                 # Attribute changes apply to items at the next verified sync; until then
-                # the source is not current, so its content is denied (fail closed).
-                stale = ", permissions_current = false" if set(changes) - {"name"} else ""
+                # the source is not current, so its content is denied (fail closed). The
+                # policy version moves on and the claim is released, so a sync already
+                # running under the old policy is fenced out of every later write.
+                stale = (
+                    ", permissions_current = false, policy_version = policy_version + 1,"
+                    " claim_run_id = NULL, sync_claimed_until = NULL,"
+                    " last_sync_status = NULL, last_error_code = 'policy_changed'"
+                    if set(changes) - {"name"}
+                    else ""
+                )
                 conn.execute(
                     text(
                         f"UPDATE connector_sources SET {sets}{stale}, updated_at = now()"  # noqa: S608
@@ -806,20 +843,58 @@ class AdminService:
             return self._source_out(self._load_source(conn, scope, source_id))
 
     def sync_source(self, ctx: AccessContext, source_id: UUID) -> dict[str, Any]:
+        """Create a queued run row first, so the caller can wait for *this* run (a
+        previous success or an unrelated scheduled run never answers for it)."""
+
         scope = _require(ctx, Capability.RESOURCE_ADMIN)
+        if self._run_sync is None:
+            raise AdminInvalid("sync_unavailable", "Sync is not available on this server.")
+        run_id = uuid.uuid4()
         with self._tx(ctx) as conn:
             self._load_source(conn, scope, source_id)
             require_connector(conn, "google_drive")
-        if self._run_sync is None:
-            raise AdminInvalid("sync_unavailable", "Sync is not available on this server.")
-        outcome = self._run_sync(ctx.tenant_id, source_id, ctx.user_id)
+            conn.execute(
+                text(
+                    "INSERT INTO connector_sync_runs (id, tenant_id, source_id, trigger,"
+                    " requested_by, status) VALUES (:id, :t, :s, 'manual', :u, 'queued')"
+                ),
+                {"id": run_id, "t": ctx.tenant_id, "s": source_id, "u": ctx.user_id},
+            )
+        outcome = self._run_sync(ctx.tenant_id, source_id, ctx.user_id, run_id)
         if outcome is None:
-            return {"status": "queued"}
+            return {"status": "queued", "run_id": str(run_id), "error_code": None, "stats": {}}
         return {
             "status": outcome.status,
-            "run_id": str(outcome.run_id) if outcome.run_id else None,
+            "run_id": str(run_id),
             "error_code": outcome.error_code,
             "stats": outcome.stats,
+        }
+
+    def get_run(self, ctx: AccessContext, source_id: UUID, run_id: UUID) -> dict[str, Any]:
+        scope = _require(ctx, Capability.RESOURCE_ADMIN)
+        with self._tx(ctx) as conn:
+            self._load_source(conn, scope, source_id)
+            r = conn.execute(
+                text(
+                    "SELECT id, trigger, status, requested_at, started_at, finished_at,"
+                    " error_code, stats, policy_version FROM connector_sync_runs"
+                    " WHERE id = :r AND source_id = :s"
+                ),
+                {"r": run_id, "s": source_id},
+            ).one_or_none()
+        if r is None:
+            raise AdminNotFound
+        return {
+            "run_id": str(r.id),
+            "trigger": r.trigger,
+            "status": r.status,
+            "terminal": r.status in ("succeeded", "failed", "skipped", "superseded"),
+            "requested_at": _iso(r.requested_at),
+            "started_at": _iso(r.started_at) if r.status != "queued" else None,
+            "finished_at": _iso(r.finished_at),
+            "error_code": r.error_code,
+            "stats": r.stats,
+            "policy_version": r.policy_version,
         }
 
     # -- audit -----------------------------------------------------------------------------

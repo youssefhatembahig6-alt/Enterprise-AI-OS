@@ -111,7 +111,8 @@ After pulling M4: `python scripts/dev.py up` (runs migration 0007), then `python
 - The beat task `dispatch-due-connector-syncs` runs every minute; due sources sync every 15 minutes (demo) or nightly after 02:00 UTC. **Sync now** in the Sources tab runs one at once.
 - A Drive share maps to a tenant user only if the emails match exactly. For the live demo, add a reader whose email is a real Google account. The command copies `finance.reader`'s roles, groups and attributes:
   `docker compose run --rm -v "$PWD/var:/app/var" migrate python -m app.cli add-drive-reader --email <google account>`
-- Live acceptance: `python3 scripts/m4_drive_acceptance.py --folder <folder id> --reader <google account>` (see `docs/evidence/m4/README.md`).
+- Live acceptance: `python3 scripts/m4_drive_acceptance.py --folder <folder id> --file-id <test file id> --reader <google account>`. It waits for the exact run each sync request created, exits nonzero on failure or timeout, and always writes evidence (see `docs/evidence/m4/README.md`).
+- Drive **group** shares grant access only with verified Google membership (`group_membership: "directory"`, Workspace only). Otherwise use direct user shares.
 
 ## Restart
 

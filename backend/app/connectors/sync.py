@@ -19,11 +19,26 @@ Per item:
                    (denied) until a later sync reads them
 
 Mapping Drive permissions to the reference policy (layer 4, resource grant): a
-``user`` permission grants the tenant user with that exact email; a ``group``
-permission grants the internal group explicitly linked to that group email. Domain
-and "anyone with the link" permissions grant nobody, and so do unknown emails; they
-are recorded as unresolved principals for the administrator. Department,
+``user`` permission grants the tenant user with that exact email. A ``group``
+permission grants a user only if the group email is explicitly linked to an internal
+group, the user is in that internal group, **and** the user's current Google
+membership was verified in this run (``list_group_members``). If Google membership
+cannot be verified, the group permission grants nobody: a link alone never establishes
+who belongs to a Google group. Grants are always direct user grants, so a later run
+that cannot verify membership removes them. Domain and "anyone with the link"
+permissions grant nobody, and so do unknown emails; all of these are recorded as
+unresolved principals for the administrator. Department,
 classification and country rules come from the source (Drive has no such fields).
+
+Fencing: a run holds the source through ``claim_run_id`` and remembers the source's
+``policy_version``. Every write transaction first re-locks the source row and checks
+both; an admin policy change (which bumps the version and releases the claim) or a
+newer worker that took over an expired lease makes the older run ``superseded``: it
+can no longer write items or grants, tombstone documents, mark permissions current or
+clear the newer claim.
+
+Allowlist: the operator's ``allowed_roots`` are re-read and checked at the start of
+every run, before any Drive request; a removed root fails the run (content denied).
 
 Failure: if the root cannot be read or any folder cannot be listed, the run fails,
 ``permissions_current`` becomes false and every item of the source is denied until
@@ -54,6 +69,7 @@ from app.connectors.drive import (
     DriveNotConfigured,
     DrivePermission,
     PermissionsUnavailable,
+    RootNotAllowed,
     supported_type,
 )
 from app.db.engine import tenant_transaction
@@ -84,6 +100,11 @@ class SourceRow:
     department_restricted: bool
     allowed_countries: tuple[str, ...]
     status: str
+    policy_version: int = 1
+
+
+class SyncSuperseded(Exception):
+    """This run no longer holds the source (policy changed or lease taken over)."""
 
 
 @dataclass
@@ -122,12 +143,14 @@ def _source(row: Any) -> SourceRow:
         department_restricted=row.department_restricted,
         allowed_countries=tuple(row.allowed_countries),
         status=row.status,
+        policy_version=int(row.policy_version),
     )
 
 
 _SOURCE_SELECT = (
     "SELECT id, tenant_id, kind, name, external_root, department, classification,"
-    " department_restricted, allowed_countries, status FROM connector_sources WHERE id = :id"
+    " department_restricted, allowed_countries, status, policy_version"
+    " FROM connector_sources WHERE id = :id"
 )
 _SOURCE_LOCK = _SOURCE_SELECT + " FOR UPDATE"
 
@@ -140,7 +163,23 @@ def load_source(conn: Connection, source_id: UUID, *, lock: bool = False) -> Sou
     return _source(row) if row else None
 
 
-def resolve_permissions(conn: Connection, perms: list[DrivePermission]) -> Resolved:
+def group_emails(perms: list[DrivePermission]) -> set[str]:
+    return {
+        (p.email or "").strip().lower()
+        for p in perms
+        if p.type == "group" and p.email and not p.deleted and p.role in READ_ROLES
+    }
+
+
+def resolve_permissions(
+    conn: Connection,
+    perms: list[DrivePermission],
+    memberships: dict[str, frozenset[str] | None] | None = None,
+) -> Resolved:
+    """``memberships`` maps a Google group email to its verified member emails, or to
+    ``None`` when membership could not be verified in this run."""
+
+    memberships = memberships or {}
     grants: set[tuple[str, UUID | None, UUID | None]] = set()
     unresolved: list[dict[str, str]] = []
     for p in perms:
@@ -164,10 +203,24 @@ def resolve_permissions(conn: Connection, perms: list[DrivePermission]) -> Resol
                 ),
                 {"e": email},
             ).scalar()
+            members = memberships.get(email)
             if gid is None:
                 unresolved.append({"type": "group", "email": email, "reason": "no_group_link"})
+            elif members is None:
+                unresolved.append(
+                    {"type": "group", "email": email, "reason": "group_membership_unverified"}
+                )
             else:
-                grants.add(("allow", None, gid))
+                for u in conn.execute(
+                    text(
+                        "SELECT u.id, u.email FROM group_memberships gm JOIN users u"
+                        " ON u.tenant_id = gm.tenant_id AND u.id = gm.user_id"
+                        " WHERE gm.group_id = :g"
+                    ),
+                    {"g": gid},
+                ).all():
+                    if u.email in members:
+                        grants.add(("allow", u.id, None))
         else:
             # domain / anyone-with-link: never widened to "every tenant user".
             unresolved.append({"type": p.type or "unknown", "reason": "not_mapped"})
@@ -202,7 +255,9 @@ class DriveSyncService:
         clients: DriveClientFactory,
         dispatch: Callable[[UUID, UUID], None] | None,
         lease_seconds: int = 900,
+        roots: Callable[[str], frozenset[str]] | None = None,
     ) -> None:
+        self._roots = roots or (lambda slug: frozenset())
         self._engine = engine
         self._settings = settings
         self._objects = objects
@@ -212,50 +267,131 @@ class DriveSyncService:
         self._dispatch = dispatch
         self._lease = lease_seconds
 
-    # -- claim / finish ------------------------------------------------------------------
+    # -- claim / fence / finish ------------------------------------------------------------
+
+    @staticmethod
+    def _fence(conn: Connection, source: SourceRow, run_id: UUID | None) -> None:
+        """Lock the source row and prove this run still holds it under the policy it
+        started with. Called first in every transaction that writes on its behalf."""
+
+        held = conn.execute(
+            text(
+                "SELECT 1 FROM connector_sources WHERE id = :s AND claim_run_id = :r"
+                " AND policy_version = :pv AND status = 'active' FOR UPDATE"
+            ),
+            {"s": source.id, "r": run_id, "pv": source.policy_version},
+        ).scalar()
+        if held is None:
+            raise SyncSuperseded
 
     def _claim(
-        self, tenant_id: UUID, source_id: UUID, trigger: str, requested_by: UUID | None
+        self,
+        tenant_id: UUID,
+        source_id: UUID,
+        trigger: str,
+        requested_by: UUID | None,
+        run_id: UUID | None,
     ) -> tuple[SyncOutcome, SourceRow | None, str]:
+        run_id = run_id or uuid.uuid4()
         with tenant_transaction(self._engine, tenant_id, requested_by) as conn:
             source = load_source(conn, source_id, lock=True)
+            skip: str | None = None
             if source is None or source.status != "active":
-                return SyncOutcome("skipped", error_code="source_inactive"), None, ""
-            try:
-                require_connector(conn, source.kind)
-            except CapabilityDisabled:
-                return SyncOutcome("skipped", error_code="capability_disabled"), None, ""
-            busy = conn.execute(
+                skip = "source_inactive"
+            else:
+                try:
+                    require_connector(conn, source.kind)
+                except CapabilityDisabled:
+                    skip = "capability_disabled"
+            if skip is None:
+                busy = conn.execute(
+                    text(
+                        "SELECT sync_claimed_until > clock_timestamp() FROM connector_sources"
+                        " WHERE id = :id"
+                    ),
+                    {"id": source_id},
+                ).scalar()
+                skip = "sync_in_progress" if busy else None
+            status = "skipped" if skip else "running"
+            pv = source.policy_version if source else None
+            # A queued row (created by the API for a caller who waits on it) moves on;
+            # otherwise this run gets its own row. A skip is recorded, never silent.
+            updated = conn.execute(
                 text(
-                    "SELECT sync_claimed_until > clock_timestamp() FROM connector_sources"
-                    " WHERE id = :id"
+                    "UPDATE connector_sync_runs SET status = :st, error_code = :code,"
+                    " started_at = clock_timestamp(), policy_version = :pv,"
+                    " finished_at = CASE WHEN :st = 'skipped' THEN clock_timestamp() END"
+                    " WHERE id = :id AND source_id = :s AND status = 'queued'"
                 ),
-                {"id": source_id},
-            ).scalar()
-            if busy:
-                return SyncOutcome("busy", error_code="sync_in_progress"), None, ""
-            run_id = uuid.uuid4()
-            conn.execute(
-                text(
-                    "INSERT INTO connector_sync_runs (id, tenant_id, source_id, trigger,"
-                    " requested_by, status) VALUES (:id, :t, :s, :tr, :u, 'running')"
-                ),
-                {"id": run_id, "t": tenant_id, "s": source_id, "tr": trigger, "u": requested_by},
-            )
+                {"st": status, "code": skip, "pv": pv, "id": run_id, "s": source_id},
+            ).rowcount
+            if not updated and source is not None:
+                conn.execute(
+                    text(
+                        "INSERT INTO connector_sync_runs (id, tenant_id, source_id, trigger,"
+                        " requested_by, status, error_code, policy_version, finished_at)"
+                        " VALUES (:id, :t, :s, :tr, :u, :st, :code, :pv,"
+                        "         CASE WHEN :st = 'skipped' THEN clock_timestamp() END)"
+                    ),
+                    {
+                        "id": run_id,
+                        "t": tenant_id,
+                        "s": source_id,
+                        "tr": trigger,
+                        "u": requested_by,
+                        "st": status,
+                        "code": skip,
+                        "pv": pv,
+                    },
+                )
+            if skip is not None:
+                outcome = SyncOutcome("busy" if skip == "sync_in_progress" else "skipped")
+                outcome.run_id, outcome.error_code = run_id, skip
+                return outcome, None, ""
             conn.execute(
                 text(
                     """
                     UPDATE connector_sources SET last_sync_started_at = clock_timestamp(),
-                           last_sync_status = 'running',
+                           last_sync_status = 'running', claim_run_id = :run,
                            sync_claimed_until = clock_timestamp() + make_interval(secs => :lease),
                            updated_at = now()
                      WHERE id = :id
                     """
                 ),
-                {"id": source_id, "lease": self._lease},
+                {"id": source_id, "lease": self._lease, "run": run_id},
             )
             slug = str(conn.execute(text("SELECT slug FROM tenants")).scalar_one())
         return SyncOutcome("running", run_id=run_id), source, slug
+
+    def _superseded(self, source: SourceRow, outcome: SyncOutcome) -> None:
+        """Record on the run's own row only; the source and its newer claim stay as
+        they are."""
+
+        outcome.status, outcome.error_code = "superseded", "sync_superseded"
+        with tenant_transaction(self._engine, source.tenant_id) as conn:
+            conn.execute(
+                text(
+                    "UPDATE connector_sync_runs SET status = 'superseded',"
+                    " error_code = 'sync_superseded', finished_at = clock_timestamp(),"
+                    " stats = CAST(:stats AS jsonb) WHERE id = :id"
+                ),
+                {"id": outcome.run_id, "stats": json.dumps(outcome.stats, sort_keys=True)},
+            )
+            record_audit_event(
+                conn,
+                request_id=None,
+                tenant_id=source.tenant_id,
+                event_type="connector.sync",
+                action="connector.sync",
+                decision="deny",
+                reason="sync_superseded",
+                details={
+                    "source_id": str(source.id),
+                    "run_id": str(outcome.run_id),
+                    "department": source.department,
+                },
+            )
+        logger.warning("drive_sync_superseded")
 
     def _finish(
         self,
@@ -264,87 +400,96 @@ class DriveSyncService:
         requested_by: UUID | None,
         seen_ids: set[str] | None,
     ) -> None:
-        """Tombstone unseen items (success only) and record the verified sync time.
+        """Tombstone unseen items (success only) and record the verified sync time, in
+        one fenced transaction.
 
         ``last_verified_sync_at`` becomes the run's *start* time: every permission was
         read after it, so it is a conservative lower bound."""
 
         removed_docs: list[UUID] = []
-        with tenant_transaction(self._engine, source.tenant_id, requested_by) as conn:
-            if outcome.status == "succeeded" and seen_ids is not None:
-                rows = conn.execute(
-                    text(
-                        "SELECT external_id, document_id FROM drive_items"
-                        " WHERE source_id = :s AND state <> 'removed'"
-                    ),
-                    {"s": source.id},
-                ).all()
-                for row in rows:
-                    if row.external_id in seen_ids:
-                        continue
-                    if row.document_id is not None:
-                        self._tombstone(conn, row.document_id)
-                        removed_docs.append(row.document_id)
-                    conn.execute(
+        try:
+            with tenant_transaction(self._engine, source.tenant_id, requested_by) as conn:
+                self._fence(conn, source, outcome.run_id)
+                if outcome.status == "succeeded" and seen_ids is not None:
+                    rows = conn.execute(
                         text(
-                            "UPDATE drive_items SET state = 'removed',"
-                            " removed_at = clock_timestamp(), updated_at = clock_timestamp()"
-                            " WHERE source_id = :s AND external_id = :e"
+                            "SELECT external_id, document_id FROM drive_items"
+                            " WHERE source_id = :s AND state <> 'removed'"
                         ),
-                        {"s": source.id, "e": row.external_id},
-                    )
-                    outcome.bump("removed")
-            ok = outcome.status == "succeeded"
-            conn.execute(
-                text(
-                    "UPDATE connector_sync_runs SET status = :st, finished_at = clock_timestamp(),"
-                    " error_code = :code, stats = CAST(:stats AS jsonb) WHERE id = :id"
-                ),
-                {
-                    "st": outcome.status,
-                    "code": outcome.error_code,
-                    "stats": json.dumps(outcome.stats, sort_keys=True),
-                    "id": outcome.run_id,
-                },
-            )
-            conn.execute(
-                text(
-                    """
-                    UPDATE connector_sources s SET
-                           permissions_current = :ok,
-                           last_verified_sync_at = CASE WHEN :ok THEN r.started_at
-                                                        ELSE s.last_verified_sync_at END,
-                           last_sync_status = :st, last_error_code = :code,
-                           last_sync_finished_at = clock_timestamp(),
-                           sync_claimed_until = NULL, updated_at = now()
-                      FROM connector_sync_runs r
-                     WHERE s.id = :sid AND r.id = :rid
-                    """
-                ),
-                {
-                    "ok": ok,
-                    "st": outcome.status,
-                    "code": outcome.error_code,
-                    "sid": source.id,
-                    "rid": outcome.run_id,
-                },
-            )
-            record_audit_event(
-                conn,
-                request_id=None,
-                tenant_id=source.tenant_id,
-                user_id=requested_by,
-                event_type="connector.sync",
-                action="connector.sync",
-                decision="info" if ok else "deny",
-                reason="sync_succeeded" if ok else f"sync_failed:{outcome.error_code}",
-                details={
-                    "source_id": str(source.id),
-                    "run_id": str(outcome.run_id),
-                    "stats": outcome.stats,
-                    "department": source.department,
-                },
-            )
+                        {"s": source.id},
+                    ).all()
+                    for row in rows:
+                        if row.external_id in seen_ids:
+                            continue
+                        if row.document_id is not None:
+                            self._tombstone(conn, row.document_id)
+                            removed_docs.append(row.document_id)
+                        conn.execute(
+                            text(
+                                "UPDATE drive_items SET state = 'removed',"
+                                " removed_at = clock_timestamp(),"
+                                " updated_at = clock_timestamp()"
+                                " WHERE source_id = :s AND external_id = :e"
+                            ),
+                            {"s": source.id, "e": row.external_id},
+                        )
+                        outcome.bump("removed")
+                ok = outcome.status == "succeeded"
+                conn.execute(
+                    text(
+                        "UPDATE connector_sync_runs SET status = :st,"
+                        " finished_at = clock_timestamp(), error_code = :code,"
+                        " stats = CAST(:stats AS jsonb) WHERE id = :id"
+                    ),
+                    {
+                        "st": outcome.status,
+                        "code": outcome.error_code,
+                        "stats": json.dumps(outcome.stats, sort_keys=True),
+                        "id": outcome.run_id,
+                    },
+                )
+                conn.execute(
+                    text(
+                        """
+                        UPDATE connector_sources s SET
+                               permissions_current = :ok,
+                               last_verified_sync_at = CASE WHEN :ok THEN r.started_at
+                                                            ELSE s.last_verified_sync_at END,
+                               last_sync_status = :st, last_error_code = :code,
+                               last_sync_finished_at = clock_timestamp(),
+                               sync_claimed_until = NULL, claim_run_id = NULL,
+                               updated_at = now()
+                          FROM connector_sync_runs r
+                         WHERE s.id = :sid AND r.id = :rid AND s.claim_run_id = :rid
+                        """
+                    ),
+                    {
+                        "ok": ok,
+                        "st": outcome.status,
+                        "code": outcome.error_code,
+                        "sid": source.id,
+                        "rid": outcome.run_id,
+                    },
+                )
+                record_audit_event(
+                    conn,
+                    request_id=None,
+                    tenant_id=source.tenant_id,
+                    user_id=requested_by,
+                    event_type="connector.sync",
+                    action="connector.sync",
+                    decision="info" if ok else "deny",
+                    reason="sync_succeeded" if ok else f"sync_failed:{outcome.error_code}",
+                    details={
+                        "source_id": str(source.id),
+                        "run_id": str(outcome.run_id),
+                        "stats": outcome.stats,
+                        "department": source.department,
+                    },
+                )
+        except SyncSuperseded:
+            self._superseded(source, outcome)
+            return
         for document_id in removed_docs:
             self._drop_points(document_id)
 
@@ -357,22 +502,30 @@ class DriveSyncService:
         *,
         trigger: str = "scheduled",
         requested_by: UUID | None = None,
+        run_id: UUID | None = None,
     ) -> SyncOutcome:
-        outcome, source, slug = self._claim(tenant_id, source_id, trigger, requested_by)
+        outcome, source, slug = self._claim(tenant_id, source_id, trigger, requested_by, run_id)
         if source is None:
             return outcome
         jobs: list[UUID] = []
         seen: set[str] | None = None
         try:
+            # Re-read the operator allowlist now: a removed root never reaches Drive.
+            if source.external_root not in self._roots(slug):
+                raise RootNotAllowed("root removed from the operator allowlist")
             client = self._clients(slug)
             if client is None:
                 raise DriveNotConfigured("no credentials for tenant")
             listed = self._walk(client, source.external_root)
             seen = set()
+            groups: dict[str, frozenset[str] | None] = {}
             for item in listed:
                 seen.add(item.file.id)
-                jobs.extend(self._apply(client, source, item, outcome, requested_by))
+                jobs.extend(self._apply(client, source, item, outcome, requested_by, groups))
             outcome.status = "succeeded"
+        except SyncSuperseded:
+            self._superseded(source, outcome)
+            return outcome
         except DriveError as exc:
             outcome.status, outcome.error_code = "failed", exc.code
             logger.warning("drive_sync_failed", extra={"code": exc.code})
@@ -380,7 +533,7 @@ class DriveSyncService:
             outcome.status, outcome.error_code = "failed", "sync_internal_error"
             logger.exception("drive_sync_internal_error")
         self._finish(source, outcome, requested_by, seen if outcome.status == "succeeded" else None)
-        if self._dispatch is not None:
+        if self._dispatch is not None and outcome.status != "superseded":
             for job_id in jobs:
                 self._dispatch(job_id, tenant_id)
         return outcome
@@ -429,8 +582,10 @@ class DriveSyncService:
         item: Listed,
         outcome: SyncOutcome,
         requested_by: UUID | None,
+        groups: dict[str, frozenset[str] | None] | None = None,
     ) -> list[UUID]:
         f = item.file
+        groups = groups if groups is not None else {}
         with tenant_transaction(self._engine, source.tenant_id, requested_by) as conn:
             existing = self._existing(conn, source.id, f.id)
         live_doc = (
@@ -442,6 +597,12 @@ class DriveSyncService:
             perms: list[DrivePermission] | None = client.list_permissions(f.id)
         except PermissionsUnavailable:
             perms = None
+        for email in group_emails(perms or []):
+            if email not in groups:  # one lookup per group per run
+                try:
+                    groups[email] = client.list_group_members(email)
+                except DriveError:
+                    groups[email] = None
         need_content = supported_type(f) and (
             not live_doc or existing.content_fingerprint != f.content_fingerprint
         )
@@ -461,7 +622,8 @@ class DriveSyncService:
                 media_type = detected.media_type
         jobs: list[UUID] = []
         with tenant_transaction(self._engine, source.tenant_id, requested_by) as conn:
-            resolved = resolve_permissions(conn, perms) if perms is not None else None
+            self._fence(conn, source, outcome.run_id)  # nothing below runs for a stale run
+            resolved = resolve_permissions(conn, perms, groups) if perms is not None else None
             perm_fp = _fingerprint(source, resolved) if resolved else None
             unresolved = json.dumps(list(resolved.unresolved) if resolved else [])
             document_id = existing.document_id if live_doc else None

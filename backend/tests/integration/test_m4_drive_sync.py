@@ -80,11 +80,13 @@ def test_first_import_answers_with_a_drive_citation(m4: M4) -> None:
     assert view["recent_runs"][0]["stats"]["created"] == 1
 
 
-def test_group_permission_needs_an_explicit_link(m4: M4) -> None:
+def doc_grants(m4: M4, document_id: str | None) -> list[str]:
+    docs = m4.client.get("/api/v1/admin/documents", headers=auth(m4.token(ADMIN))).json()
+    return next(d["grants"] for d in docs if d["document_id"] == document_id)
+
+
+def test_unlinked_groups_and_link_sharing_grant_nobody(m4: M4) -> None:
     drive = m4.new_drive()
-    linked = drive.file(
-        "linked.md", "# Linked\n\nLinked group text.\n", groups=(FINANCE_GROUP_EMAIL,)
-    )
     unlinked = drive.file(
         "unlinked.md",
         "# Unlinked\n\nUnlinked group text.\n",
@@ -94,22 +96,78 @@ def test_group_permission_needs_an_explicit_link(m4: M4) -> None:
             DrivePermission("domain", "reader", None, "x.example"),
         ),
     )
+    drive.group_members["everyone@drive.example"] = {m4.user_email(FINANCE)}
     admin = m4.token(ADMIN)
     source = m4.create_source(admin, drive.root_id)
     m4.sync(admin, source["source_id"])
-    linked_doc = m4.document_for(source["source_id"], linked)
-    unlinked_doc = m4.document_for(source["source_id"], unlinked)
-    grants = {
-        d["document_id"]: d["grants"]
-        for d in m4.client.get("/api/v1/admin/documents", headers=auth(admin)).json()
-    }
-    assert grants[linked_doc] == ["allow:group:finance-team"]
-    # Unknown group, "anyone with the link" and domain sharing grant nobody.
-    assert grants[unlinked_doc] == []
+    assert doc_grants(m4, m4.document_for(source["source_id"], unlinked)) == []
     items = {i["external_id"]: i for i in m4.source(admin, source["source_id"])["items"]}
     reasons = sorted(p["reason"] for p in items[unlinked]["unresolved_principals"])
-    # The Drive owner has no tenant account either.
+    # Verified Google members do not help without a link; the owner has no tenant account.
     assert reasons == ["no_group_link", "no_tenant_user", "not_mapped", "not_mapped"]
+
+
+def test_group_access_needs_verified_current_google_membership(m4: M4) -> None:
+    """A link to an internal group never establishes who is in the Google group. The
+    finance reader stays in the internal finance-team group throughout."""
+
+    drive = m4.new_drive()
+    file_id = drive.file(
+        "group-policy.md",
+        "# Group policy\n\nThe group policy marker phrase is amber falcon.\n",
+        groups=(FINANCE_GROUP_EMAIL,),
+        users=(m4.user_email(SALES),),  # an independent direct share
+    )
+    admin = m4.token(ADMIN)
+    source_id = m4.create_source(admin, drive.root_id)["source_id"]
+    question = "What is the group policy marker phrase?"
+    sales_grant = f"allow:user:{m4.user_email(SALES)}"
+    finance_grant = f"allow:user:{m4.user_email(FINANCE)}"
+
+    def in_internal_group() -> bool:
+        tenant = m4.db.foundation.tenants["niletech"]
+        return bool(
+            owner_exec(
+                m4.db,
+                "SELECT 1 FROM group_memberships WHERE group_id = :g AND user_id = :u",
+                {"g": tenant.groups["finance-team"].id, "u": tenant.users["finance-reader"].id},
+            ).scalar()
+        )
+
+    # 1. Membership unknown (no directory access): the group grants nobody.
+    assert m4.sync(admin, source_id)["status"] == "succeeded"
+    doc = m4.document_for(source_id, file_id)
+    m4.wait_ready(str(doc))
+    assert doc_grants(m4, doc) == [sales_grant]  # the direct share is preserved
+    items = m4.source(admin, source_id)["items"]
+    assert {
+        "type": "group",
+        "email": FINANCE_GROUP_EMAIL,
+        "reason": "group_membership_unverified",
+    } in items[0]["unresolved_principals"]
+    assert in_internal_group()
+    assert answer(m4, FINANCE, question).done["abstention"]["code"] == "no_sources"
+    assert answer(m4, SALES, question).done["outcome"] == "published"
+
+    # 2. Membership verified and the reader is a member: access through the group.
+    drive.group_members[FINANCE_GROUP_EMAIL] = {m4.user_email(FINANCE)}
+    m4.sync(admin, source_id)
+    assert doc_grants(m4, doc) == sorted([finance_grant, sales_grant])
+    assert answer(m4, FINANCE, question).done["outcome"] == "published"
+
+    # 3. Google membership revoked; still in the internal group: denied.
+    drive.group_members[FINANCE_GROUP_EMAIL] = set()
+    assert m4.sync(admin, source_id)["status"] == "succeeded"
+    assert in_internal_group()
+    assert doc_grants(m4, doc) == [sales_grant]
+    assert answer(m4, FINANCE, question).done["abstention"]["code"] == "no_sources"
+
+    # 4. Membership unknown again: another successful sync does not restore access.
+    del drive.group_members[FINANCE_GROUP_EMAIL]
+    assert m4.sync(admin, source_id)["status"] == "succeeded"
+    assert doc_grants(m4, doc) == [sales_grant]
+    assert answer(m4, FINANCE, question).done["abstention"]["code"] == "no_sources"
+    assert answer(m4, SALES, question).done["outcome"] == "published"
 
 
 # -- incremental updates -------------------------------------------------------------------
@@ -525,4 +583,166 @@ def test_schedule_is_fifteen_minutes_in_demo_and_nightly_otherwise(m4: M4) -> No
     finally:
         owner_exec(
             m4.db, "UPDATE tenant_settings SET sync_mode = 'demo' WHERE tenant_id = :t", {"t": nile}
+        )
+
+
+# -- stale syncs are fenced out ---------------------------------------------------------------
+
+
+def test_policy_change_during_a_sync_fences_the_running_sync(m4: M4) -> None:
+    drive, source_id, file_id, doc = setup_source(m4)
+    admin = m4.token(ADMIN)
+    assert answer(m4, FINANCE).done["outcome"] == "published"
+
+    def raise_classification() -> None:  # after the old run read the file's permissions
+        response = m4.client.patch(
+            f"/api/v1/admin/sources/{source_id}",
+            json={"classification": "restricted"},
+            headers=auth(admin),
+        )
+        assert response.status_code == 200, response.text
+
+    drive.hooks[("list_permissions", file_id)] = raise_classification
+    stale = m4.sync_direct(source_id)
+    assert stale.status == "superseded"
+    assert m4.run_row(stale.run_id).status == "superseded"
+    row = m4.source_row(source_id)
+    assert row.permissions_current is False and row.claim_run_id is None
+    assert m4.source(admin, source_id)["access"] == "resync_required"
+    seen_by = owner_exec(
+        m4.db,
+        "SELECT last_seen_run FROM drive_items WHERE source_id = :s AND external_id = :e",
+        {"s": source_id, "e": file_id},
+    ).scalar_one()
+    assert seen_by != stale.run_id  # the stale run wrote nothing
+    assert answer(m4, FINANCE).done["abstention"]["code"] == "no_sources"
+    # The next sync applies the new policy: restricted is above the reader's clearance.
+    fresh = m4.sync(admin, source_id)
+    assert fresh["status"] == "succeeded"
+    cls = owner_exec(
+        m4.db, "SELECT classification FROM resources WHERE id = :d", {"d": doc}
+    ).scalar_one()
+    assert cls == "restricted"
+    assert m4.source(admin, source_id)["access"] == "current"
+    assert answer(m4, FINANCE).done["abstention"]["code"] == "no_sources"
+
+
+def test_newer_worker_after_lease_expiry_fences_the_older_one(m4: M4) -> None:
+    drive, source_id, file_id, _ = setup_source(m4)
+    assert answer(m4, FINANCE).done["outcome"] == "published"
+    newer: list[Any] = []
+
+    def take_over() -> None:
+        # Worker A has read the old (shared) permissions. Sharing is then removed, A's
+        # lease expires and worker B runs a complete sync.
+        drive.unshare(file_id, m4.user_email(FINANCE))
+        owner_exec(
+            m4.db,
+            "UPDATE connector_sources SET sync_claimed_until = now() - interval '1 second'"
+            " WHERE id = :s",
+            {"s": source_id},
+        )
+        newer.append(m4.sync_direct(source_id))
+
+    drive.hooks[("list_permissions", file_id)] = take_over
+    older = m4.sync_direct(source_id)
+    (b,) = newer
+    assert b.status == "succeeded" and b.stats["permissions_changed"] == 1
+    assert older.status == "superseded"  # A could not write its stale "shared" grants
+    row = m4.source_row(source_id)
+    assert row.permissions_current is True and row.last_sync_status == "succeeded"
+    assert row.last_verified_sync_at == m4.run_row(b.run_id).started_at
+    assert answer(m4, FINANCE).done["abstention"]["code"] == "no_sources"
+
+
+def test_older_worker_cannot_tombstone_or_release_the_newer_claim(m4: M4) -> None:
+    drive = m4.new_drive()
+    reader = (m4.user_email(FINANCE),)
+    first = drive.file("first.md", "# First\n\nFirst text.\n", users=reader)
+    second = drive.file("second.md", "# Second\n\nSecond text.\n", users=reader)
+    admin = m4.token(ADMIN)
+    source_id = m4.create_source(admin, drive.root_id)["source_id"]
+    m4.sync(admin, source_id)
+    second_doc = m4.document_for(source_id, second)
+    drive.delete(second)  # the older run's listing will not contain it
+    service = m4.client.app.state.drive_sync  # type: ignore[attr-defined]
+    tenant = m4.db.foundation.tenants["niletech"].id
+    claims: list[Any] = []
+
+    def take_over() -> None:
+        owner_exec(
+            m4.db,
+            "UPDATE connector_sources SET sync_claimed_until = now() - interval '1 second'"
+            " WHERE id = :s",
+            {"s": source_id},
+        )
+        outcome, _, _ = service._claim(tenant, uuid.UUID(source_id), "scheduled", None, None)
+        claims.append(outcome)
+
+    drive.hooks[("list_permissions", first)] = take_over
+    older = m4.sync_direct(source_id)
+    (b,) = claims
+    assert b.status == "running"
+    assert older.status == "superseded"
+    row = m4.source_row(source_id)
+    assert row.claim_run_id == b.run_id and row.sync_claimed_until is not None
+    deleted = owner_exec(
+        m4.db, "SELECT deleted_at FROM documents WHERE id = :d", {"d": second_doc}
+    ).scalar_one()
+    assert deleted is None  # the stale run's tombstone never happened
+    owner_exec(
+        m4.db,
+        "UPDATE connector_sources SET claim_run_id = NULL, sync_claimed_until = NULL WHERE id = :s",
+        {"s": source_id},
+    )
+
+
+# -- operator allowlist on every sync -------------------------------------------------------
+
+
+def test_root_removed_from_allowlist_fails_before_any_drive_request(m4: M4) -> None:
+    drive, source_id, _, doc = setup_source(m4)
+    assert answer(m4, FINANCE).done["outcome"] == "published"
+    from tests.integration.m4_support import ALLOWED_ROOTS
+
+    m4.set_allowed_roots([r for r in ALLOWED_ROOTS if r != drive.root_id])
+    try:
+        calls = len(drive.calls)
+        outcome = m4.sync(m4.token(ADMIN), source_id)
+        assert outcome["status"] == "failed" and outcome["error_code"] == "root_not_allowed"
+        assert drive.calls[calls:] == []  # the folder was never requested
+        assert m4.source(m4.token(ADMIN), source_id)["access"] == "last_sync_failed"
+        assert answer(m4, FINANCE).done["abstention"]["code"] == "no_sources"
+        listed = m4.client.get("/api/v1/documents", headers=auth(m4.token(FINANCE))).json()
+        assert doc not in {d["document_id"] for d in listed}
+    finally:
+        m4.set_allowed_roots(ALLOWED_ROOTS)
+
+
+def test_sync_request_returns_its_own_run(m4: M4) -> None:
+    _, source_id, _, _ = setup_source(m4)
+    admin = m4.token(ADMIN)
+    response = m4.sync(admin, source_id)
+    run = m4.client.get(
+        f"/api/v1/admin/sources/{source_id}/runs/{response['run_id']}", headers=auth(admin)
+    ).json()
+    assert run["status"] == "succeeded" and run["terminal"] is True
+    # A run for which the worker cannot claim the source is recorded, not silent.
+    owner_exec(
+        m4.db,
+        "UPDATE connector_sources SET sync_claimed_until = now() + interval '5 minutes'"
+        " WHERE id = :s",
+        {"s": source_id},
+    )
+    try:
+        busy = m4.sync(admin, source_id)
+        run = m4.client.get(
+            f"/api/v1/admin/sources/{source_id}/runs/{busy['run_id']}", headers=auth(admin)
+        ).json()
+        assert (run["status"], run["error_code"]) == ("skipped", "sync_in_progress")
+    finally:
+        owner_exec(
+            m4.db,
+            "UPDATE connector_sources SET sync_claimed_until = NULL WHERE id = :s",
+            {"s": source_id},
         )

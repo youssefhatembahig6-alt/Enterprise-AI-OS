@@ -356,3 +356,77 @@ def test_admin_changes_are_audited(m4: M4, restore_finance_reader: None) -> None
     latest = events["events"][0]
     assert latest["actor"] == m4.user_email(ADMIN)
     assert latest["details"]["removed"] == ["finance-team"]
+
+
+# -- role definitions cannot lock the editor out -------------------------------------------
+
+
+@pytest.fixture
+def access_admin_role(m4: M4) -> Iterator[None]:
+    yield
+    # Restore the role first, while any preserving assignment still exists.
+    response = m4.client.put(
+        "/api/v1/admin/roles/access_admin",
+        json={
+            "name": "Tenant access administrator",
+            "capabilities": ["resource.admin", "identity.admin", "audit.read", "tenant.config"],
+        },
+        headers=auth(m4.token(ADMIN)),
+    )
+    assert response.status_code == 200, response.text
+    owner_exec(
+        m4.db,
+        "DELETE FROM user_roles WHERE user_id = :u AND role_id IN"
+        " (SELECT id FROM roles WHERE key IN ('identity_keeper', 'department_admin'))",
+        {"u": uid(m4, ADMIN)},
+    )
+
+
+def assign_directly(m4: M4, role: str, scope: str | None) -> None:
+    tenant = m4.db.foundation.tenants["niletech"]
+    owner_exec(
+        m4.db,
+        "INSERT INTO user_roles (tenant_id, user_id, role_id, scope_department)"
+        " SELECT :t, :u, id, :d FROM roles WHERE tenant_id = :t AND key = :k",
+        {"t": tenant.id, "u": uid(m4, ADMIN), "d": scope, "k": role},
+    )
+
+
+def drop_identity_admin(m4: M4) -> Any:
+    return m4.client.put(
+        "/api/v1/admin/roles/access_admin",
+        json={
+            "name": "Tenant access administrator",
+            "capabilities": ["resource.admin", "audit.read", "tenant.config"],
+        },
+        headers=auth(m4.token(ADMIN)),
+    )
+
+
+def test_role_edit_that_removes_own_identity_admin_is_rejected(
+    m4: M4, access_admin_role: None
+) -> None:
+    response = drop_identity_admin(m4)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "cannot_remove_own_admin"
+    # A department-scoped identity.admin does not preserve tenant-wide rights.
+    assign_directly(m4, "department_admin", "finance")
+    assert drop_identity_admin(m4).status_code == 422
+    roles = {r["key"]: r for r in get(m4, m4.token(ADMIN), "/admin/roles").json()}
+    assert "identity.admin" in roles["access_admin"]["capabilities"]
+    assert get(m4, m4.token(ADMIN), "/admin/users").status_code == 200
+
+
+def test_role_edit_is_allowed_when_another_assignment_preserves_rights(
+    m4: M4, access_admin_role: None
+) -> None:
+    keeper = m4.client.put(
+        "/api/v1/admin/roles/identity_keeper",
+        json={"name": "Identity keeper", "capabilities": ["identity.admin"]},
+        headers=auth(m4.token(ADMIN)),
+    )
+    assert keeper.status_code == 200
+    assign_directly(m4, "identity_keeper", None)
+    response = drop_identity_admin(m4)
+    assert response.status_code == 200, response.text
+    assert get(m4, m4.token(ADMIN), "/admin/users").status_code == 200  # still an admin
