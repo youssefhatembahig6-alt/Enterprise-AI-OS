@@ -3,10 +3,13 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { ApiError } from "./api";
 import {
   cancelReport,
+  fetchDocumentCitation,
   fetchEvidence,
   resumeReport,
   startReport,
+  type AskMode,
   type Citation,
+  type DocumentCitation,
   type DonePayload,
   type Evidence,
   type ReportEvent,
@@ -113,6 +116,12 @@ function apply(view: RunView, event: ReportEvent): RunView {
 function verificationText(done: DonePayload): { tone: "ok" | "warn"; text: string } | null {
   const v = done.verification;
   if (!v) return null;
+  if (v.label === "answer_quotes_verified_dev_checked") {
+    return {
+      tone: "ok",
+      text: "Every sentence quotes an exact passage of a document you can access (re-checked at publication); claims checked by the development baseline checker (not the final trained checker).",
+    };
+  }
   if (v.narrative === "verified") {
     return {
       tone: "ok",
@@ -146,7 +155,7 @@ function EvidencePanel({
     let live = true;
     setEvidence(null);
     setError(null);
-    fetchEvidence(token, citation.evidence_id)
+    fetchEvidence(token, citation.evidence_id ?? "")
       .then((e) => live && setEvidence(e))
       .catch((err: unknown) => {
         if (!live) return;
@@ -165,7 +174,7 @@ function EvidencePanel({
     <Card title="Evidence">
       <div className="flex flex-col gap-3 text-sm">
         <p className="text-muted-fg">
-          Exact stored query result for <strong>{citation.label}</strong> (row {citation.row + 1},
+          Exact stored query result for <strong>{citation.label}</strong> (row {(citation.row ?? 0) + 1},
           column <code>{citation.column}</code>). Access is re-checked every time it is opened.
         </p>
         {error ? <Alert>{error}</Alert> : null}
@@ -239,8 +248,76 @@ function EvidencePanel({
   );
 }
 
+function DocumentCitationPanel({
+  token,
+  runId,
+  citation,
+  onClose,
+}: {
+  token: string;
+  runId: string;
+  citation: Citation;
+  onClose: () => void;
+}) {
+  const [passage, setPassage] = useState<DocumentCitation | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setPassage(null);
+    setError(null);
+    fetchDocumentCitation(token, runId, citation.citation_id)
+      .then((p) => live && setPassage(p))
+      .catch((err: unknown) => {
+        if (!live) return;
+        setError(
+          err instanceof ApiError && err.status === 404
+            ? "This source is not available to you (your access may have changed or the document was removed)."
+            : "Could not load the source.",
+        );
+      });
+    return () => {
+      live = false;
+    };
+  }, [token, runId, citation.citation_id]);
+
+  return (
+    <Card title="Source">
+      <div className="flex flex-col gap-3 text-sm">
+        {error ? <Alert>{error}</Alert> : null}
+        {!passage && !error ? <p className="text-muted-fg">Loading…</p> : null}
+        {passage ? (
+          <>
+            <p className="text-muted-fg">
+              <strong>{passage.title}</strong> · {passage.filename} · version {passage.version}
+              {passage.is_current_version ? "" : ` (current is ${passage.current_version}; this is the version the answer used)`}
+            </p>
+            <blockquote className="rounded-md bg-muted p-3 whitespace-pre-wrap break-words">
+              <span className="text-muted-fg">…{passage.before}</span>
+              <mark className="bg-warn-bg text-warn-fg">{passage.quote}</mark>
+              <span className="text-muted-fg">{passage.after}…</span>
+            </blockquote>
+            <p className="text-xs text-muted-fg">
+              Characters {passage.char_start}–{passage.char_end} (Unicode code points) ·{" "}
+              <StatusPill tone={passage.integrity === "verified" ? "ok" : "error"}>
+                {passage.integrity === "verified" ? "text hash verified" : "text hash mismatch"}
+              </StatusPill>
+            </p>
+          </>
+        ) : null}
+        <div className="flex justify-end">
+          <Button variant="secondary" onClick={onClose}>
+            Close source
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function ReportPanel({ token }: { token: string }) {
   const [question, setQuestion] = useState("");
+  const [mode, setMode] = useState<AskMode>("auto");
   const [view, setView] = useState<RunView>(EMPTY);
   const [running, setRunning] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -272,6 +349,7 @@ export function ReportPanel({ token }: { token: string }) {
         newRequestId(),
         onEvent,
         controller.signal,
+        mode,
       );
       if (runId && !viewRef.current.runId) {
         viewRef.current = { ...viewRef.current, runId };
@@ -329,10 +407,25 @@ export function ReportPanel({ token }: { token: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <Card title="Sales report">
+      <Card title="Ask">
         <form className="flex flex-col gap-3" onSubmit={(e) => void run(e)}>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <label htmlFor="ask-mode" className="font-medium">
+              Source
+            </label>
+            <select
+              id="ask-mode"
+              className="h-9 rounded-md border border-border bg-bg px-2"
+              value={mode}
+              onChange={(e) => setMode(e.target.value as AskMode)}
+            >
+              <option value="auto">Automatic</option>
+              <option value="documents">Documents you can access</option>
+              <option value="report">Sales report (SQL)</option>
+            </select>
+          </div>
           <label htmlFor="question" className="text-sm font-medium">
-            Ask a question about fulfilled sales
+            Ask about your documents or fulfilled sales
           </label>
           <textarea
             id="question"
@@ -461,7 +554,55 @@ export function ReportPanel({ token }: { token: string }) {
         </Card>
       ) : null}
 
-      {selected ? (
+      {!view.table && view.done?.outcome === "published" && view.sentences.length > 0 ? (
+        <Card title="Answer">
+          {verification ? (
+            <div className="mb-4 flex flex-col gap-1">
+              <StatusPill tone={verification.tone}>Verified against sources</StatusPill>
+              <p className="text-xs text-muted-fg">{verification.text}</p>
+            </div>
+          ) : null}
+          <div className="flex flex-col gap-2 text-sm">
+            {view.sentences.map((s, i) => (
+              <p key={i}>
+                {s.text}{" "}
+                {s.citations.map((id) => {
+                  const c = cite(id);
+                  return c ? (
+                    <button
+                      key={id}
+                      type="button"
+                      className="rounded px-0.5 text-xs text-primary underline"
+                      onClick={() => setSelected(c)}
+                      aria-label={`Open source: ${c.title ?? "document"}`}
+                    >
+                      [{citationNumber(id)}]
+                    </button>
+                  ) : null;
+                })}
+              </p>
+            ))}
+          </div>
+          <ul className="mt-4 flex flex-col gap-1 text-xs text-muted-fg">
+            {view.citations.map((c) => (
+              <li key={c.citation_id}>
+                [{citationNumber(c.citation_id)}] {c.title} (version {c.version}
+                {c.page ? `, page ${c.page}` : ""}
+                {c.heading_path?.length ? `, ${c.heading_path.join(" › ")}` : ""})
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
+      {selected && selected.document_id && view.runId ? (
+        <DocumentCitationPanel
+          token={token}
+          runId={view.runId}
+          citation={selected}
+          onClose={() => setSelected(null)}
+        />
+      ) : selected ? (
         <EvidencePanel token={token} citation={selected} onClose={() => setSelected(null)} />
       ) : null}
     </div>

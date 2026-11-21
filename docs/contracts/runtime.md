@@ -28,6 +28,9 @@ Recorded 2026-11-20. Image digests are the ones pulled for the local acceptance 
 | TypeScript / ESLint / typescript-eslint | 5.9.2 / 9.35.0 / 8.43.0 | npm reports ESLint 9.35 as out of support; upgrade is a follow-up |
 | LangGraph (M2) | 1.2.19 | released 2026-10-30; pulls langchain-core 1.8.4 and langsmith 0.15.1 (tracing stays off unless LANGSMITH_TRACING is set) |
 | pglast (M2) | 7.22 | PostgreSQL 17 parser (libpg_query), released 2026-10-31 |
+| pdfplumber / pdfminer.six (M3) | 0.11.10 / 20260107 | text-layer PDFs (M1 pins); no model runtime |
+| openpyxl (M3) | 3.1.5 | XLSX cached values (M1 recommendation) |
+| boto3 / botocore (M3) | 1.43.126 / 1.43.127 | SeaweedFS S3 storage; botocore requires `python-dateutil<3`, so that transitive pin moved from 4.0.0 to 2.9.0.post0 |
 
 Lockfiles: `backend/requirements.lock` and `backend/requirements-dev.lock` (pip-compile 7.5.0 with `--generate-hashes`; install with `pip install --require-hashes`), and `package-lock.json` (npm workspaces). Regenerate with `python scripts/dev.py lock` and `npm install`.
 
@@ -37,8 +40,8 @@ Lockfiles: `backend/requirements.lock` and `backend/requirements-dev.lock` (pip-
 | --- | --- | --- | --- |
 | postgres | records, permissions, audit | no | 512m |
 | redis | Celery broker, login rate limits | no | 128m (`maxmemory 96mb`, `noeviction`) |
-| qdrant | vectors (unused until M3) | no | 512m |
-| storage | SeaweedFS, S3 on 8333 (unused until M3) | no | 256m |
+| qdrant | chunk vectors (M3); `nofile` ulimit 65536 | no | 512m |
+| storage | SeaweedFS, S3 on 8333: raw uploads, tenant-prefixed keys (M3) | no | 256m |
 | migrate | one-shot Alembic (owner role) | no | 256m |
 | api | FastAPI (one uvicorn process; at most 2 concurrent Argon2 verifications ≈ 196 MiB peak, measured) | 127.0.0.1:8000 | 384m |
 | worker | Celery, concurrency 2 | no | 384m |

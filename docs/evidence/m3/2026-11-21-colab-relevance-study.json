@@ -1,0 +1,604 @@
+{
+  "by_kind": {
+    "match": {
+      "dense_max": 0.8012,
+      "dense_min": 0.7371,
+      "lexical_keep": 4,
+      "pairs": 4
+    },
+    "paraphrase": {
+      "dense_max": 0.6585,
+      "dense_min": 0.5298,
+      "lexical_keep": 0,
+      "pairs": 8
+    },
+    "trap": {
+      "dense_max": 0.7246,
+      "dense_min": 0.4151,
+      "lexical_keep": 8,
+      "pairs": 8
+    },
+    "unrelated": {
+      "dense_max": 0.3665,
+      "dense_min": 0.2424,
+      "lexical_keep": 1,
+      "pairs": 4
+    }
+  },
+  "dense": {
+    "best": {
+      "errors": 3,
+      "irrelevant_kept": [
+        "trap-alexandria-count",
+        "trap-contractor-names"
+      ],
+      "relevant_dropped": [
+        "para-save-holiday"
+      ],
+      "threshold": 0.5396
+    },
+    "highest_without_relevant_drops": {
+      "errors": 3,
+      "irrelevant_kept": [
+        "trap-leave-holidays",
+        "trap-alexandria-count",
+        "trap-contractor-names"
+      ],
+      "relevant_dropped": [],
+      "threshold": 0.5298
+    },
+    "sweep": [
+      {
+        "errors": 12,
+        "irrelevant_kept": [
+          "trap-leave-holidays",
+          "trap-travel-budget",
+          "trap-family-days",
+          "trap-laptop-purchase",
+          "trap-board-2026",
+          "trap-mailbox-password",
+          "trap-alexandria-count",
+          "trap-contractor-names",
+          "unrelated-mfa-leave",
+          "unrelated-sales-phishing",
+          "unrelated-holidays-cloud",
+          "unrelated-encryption-revenue"
+        ],
+        "relevant_dropped": [],
+        "threshold": 0.2424
+      },
+      {
+        "errors": 11,
+        "irrelevant_kept": [
+          "trap-leave-holidays",
+          "trap-travel-budget",
+          "trap-family-days",
+          "trap-laptop-purchase",
+          "trap-board-2026",
+          "trap-mailbox-password",
+          "trap-alexandria-count",
+          "trap-contractor-names",
+          "unrelated-mfa-leave",
+          "unrelated-sales-phishing",
+          "unrelated-encryption-revenue"
+        ],
+        "relevant_dropped": [],
+        "threshold": 0.2888
+      },
+      {
+        "errors": 10,
+        "irrelevant_kept": [
+          "trap-leave-holidays",
+          "trap-travel-budget",
+          "trap-family-days",
+          "trap-laptop-purchase",
+          "trap-board-2026",
+          "trap-mailbox-password",
+          "trap-alexandria-count",
+          "trap-contractor-names",
+          "unrelated-mfa-leave",
+          "unrelated-sales-phishing"
+        ],
+        "relevant_dropped": [],
+        "threshold": 0.2944
+      },
+      {
+        "errors": 9,
+        "irrelevant_kept": [
+          "trap-leave-holidays",
+          "trap-travel-budget",
+          "trap-family-days",
+          "trap-laptop-purchase",
+          "trap-board-2026",
+          "trap-mailbox-password",
+          "trap-alexandria-count",
+          "trap-contractor-names",
+          "unrelated-mfa-leave"
+        ],
+        "relevant_dropped": [],
+        "threshold": 0.3665
+      },
+      {
+        "errors": 8,
+        "irrelevant_kept": [
+          "trap-leave-holidays",
+          "trap-travel-budget",
+          "trap-family-days",
+          "trap-laptop-purchase",
+          "trap-board-2026",
+          "trap-mailbox-password",
+          "trap-alexandria-count",
+          "trap-contractor-names"
+        ],
+        "relevant_dropped": [],
+        "threshold": 0.4151
+      },
+      {
+        "errors": 7,
+        "irrelevant_kept": [
+          "trap-leave-holidays",
+          "trap-travel-budget",
+          "trap-family-days",
+          "trap-laptop-purchase",
+          "trap-mailbox-password",
+          "trap-alexandria-count",
+          "trap-contractor-names"
+        ],
+        "relevant_dropped": [],
+        "threshold": 0.47
+      },
+      {
+        "errors": 6,
+        "irrelevant_kept": [
+          "trap-leave-holidays",
+          "trap-travel-budget",
+          "trap-laptop-purchase",
+          "trap-mailbox-password",
+          "trap-alexandria-count",
+          "trap-contractor-names"
+        ],
+        "relevant_dropped": [],
+        "threshold": 0.4989
+      },
+      {
+        "errors": 5,
+        "irrelevant_kept": [
+          "trap-leave-holidays",
+          "trap-travel-budget",
+          "trap-mailbox-password",
+          "trap-alexandria-count",
+          "trap-contractor-names"
+        ],
+        "relevant_dropped": [],
+        "threshold": 0.5032
+      },
+      {
+        "errors": 4,
+        "irrelevant_kept": [
+          "trap-leave-holidays",
+          "trap-mailbox-password",
+          "trap-alexandria-count",
+          "trap-contractor-names"
+        ],
+        "relevant_dropped": [],
+        "threshold": 0.5236
+      },
+      {
+        "errors": 3,
+        "irrelevant_kept": [
+          "trap-leave-holidays",
+          "trap-alexandria-count",
+          "trap-contractor-names"
+        ],
+        "relevant_dropped": [],
+        "threshold": 0.5298
+      },
+      {
+        "errors": 4,
+        "irrelevant_kept": [
+          "trap-leave-holidays",
+          "trap-alexandria-count",
+          "trap-contractor-names"
+        ],
+        "relevant_dropped": [
+          "para-save-holiday"
+        ],
+        "threshold": 0.5327
+      },
+      {
+        "errors": 3,
+        "irrelevant_kept": [
+          "trap-alexandria-count",
+          "trap-contractor-names"
+        ],
+        "relevant_dropped": [
+          "para-save-holiday"
+        ],
+        "threshold": 0.5396
+      },
+      {
+        "errors": 4,
+        "irrelevant_kept": [
+          "trap-alexandria-count",
+          "trap-contractor-names"
+        ],
+        "relevant_dropped": [
+          "para-save-holiday",
+          "para-income-quarter"
+        ],
+        "threshold": 0.6087
+      },
+      {
+        "errors": 5,
+        "irrelevant_kept": [
+          "trap-alexandria-count",
+          "trap-contractor-names"
+        ],
+        "relevant_dropped": [
+          "para-login-secret",
+          "para-save-holiday",
+          "para-income-quarter"
+        ],
+        "threshold": 0.6228
+      },
+      {
+        "errors": 6,
+        "irrelevant_kept": [
+          "trap-alexandria-count",
+          "trap-contractor-names"
+        ],
+        "relevant_dropped": [
+          "para-late-bills",
+          "para-login-secret",
+          "para-save-holiday",
+          "para-income-quarter"
+        ],
+        "threshold": 0.6348
+      },
+      {
+        "errors": 5,
+        "irrelevant_kept": [
+          "trap-alexandria-count"
+        ],
+        "relevant_dropped": [
+          "para-late-bills",
+          "para-login-secret",
+          "para-save-holiday",
+          "para-income-quarter"
+        ],
+        "threshold": 0.6365
+      },
+      {
+        "errors": 6,
+        "irrelevant_kept": [
+          "trap-alexandria-count"
+        ],
+        "relevant_dropped": [
+          "para-vacation-cairo",
+          "para-late-bills",
+          "para-login-secret",
+          "para-save-holiday",
+          "para-income-quarter"
+        ],
+        "threshold": 0.6553
+      },
+      {
+        "errors": 7,
+        "irrelevant_kept": [
+          "trap-alexandria-count"
+        ],
+        "relevant_dropped": [
+          "para-vacation-cairo",
+          "para-missing-computer",
+          "para-late-bills",
+          "para-login-secret",
+          "para-save-holiday",
+          "para-income-quarter"
+        ],
+        "threshold": 0.657
+      },
+      {
+        "errors": 8,
+        "irrelevant_kept": [
+          "trap-alexandria-count"
+        ],
+        "relevant_dropped": [
+          "para-vacation-cairo",
+          "para-missing-computer",
+          "para-late-bills",
+          "para-login-secret",
+          "para-save-holiday",
+          "para-scam-drills",
+          "para-income-quarter"
+        ],
+        "threshold": 0.6585
+      },
+      {
+        "errors": 9,
+        "irrelevant_kept": [
+          "trap-alexandria-count"
+        ],
+        "relevant_dropped": [
+          "para-vacation-cairo",
+          "para-missing-computer",
+          "para-server-bill",
+          "para-late-bills",
+          "para-login-secret",
+          "para-save-holiday",
+          "para-scam-drills",
+          "para-income-quarter"
+        ],
+        "threshold": 0.7246
+      },
+      {
+        "errors": 8,
+        "irrelevant_kept": [],
+        "relevant_dropped": [
+          "para-vacation-cairo",
+          "para-missing-computer",
+          "para-server-bill",
+          "para-late-bills",
+          "para-login-secret",
+          "para-save-holiday",
+          "para-scam-drills",
+          "para-income-quarter"
+        ],
+        "threshold": 0.7371
+      },
+      {
+        "errors": 9,
+        "irrelevant_kept": [],
+        "relevant_dropped": [
+          "para-vacation-cairo",
+          "para-missing-computer",
+          "para-server-bill",
+          "para-late-bills",
+          "para-login-secret",
+          "para-save-holiday",
+          "para-scam-drills",
+          "para-income-quarter",
+          "match-overdue"
+        ],
+        "threshold": 0.7505
+      },
+      {
+        "errors": 10,
+        "irrelevant_kept": [],
+        "relevant_dropped": [
+          "para-vacation-cairo",
+          "para-missing-computer",
+          "para-server-bill",
+          "para-late-bills",
+          "para-login-secret",
+          "para-save-holiday",
+          "para-scam-drills",
+          "para-income-quarter",
+          "match-overdue",
+          "match-phishing"
+        ],
+        "threshold": 0.7868
+      },
+      {
+        "errors": 11,
+        "irrelevant_kept": [],
+        "relevant_dropped": [
+          "para-vacation-cairo",
+          "para-missing-computer",
+          "para-server-bill",
+          "para-late-bills",
+          "para-login-secret",
+          "para-save-holiday",
+          "para-scam-drills",
+          "para-income-quarter",
+          "match-egypt-leave",
+          "match-overdue",
+          "match-phishing"
+        ],
+        "threshold": 0.8012
+      }
+    ]
+  },
+  "embedding_space": {
+    "dense_size": 1024,
+    "fake": false,
+    "model": "BAAI/bge-m3",
+    "revision": "5617a9f61b028005a4858fdac845db406aefb181"
+  },
+  "inference_mode": "gateway",
+  "lexical": {
+    "errors": 17,
+    "irrelevant_kept": [
+      "trap-leave-holidays",
+      "trap-travel-budget",
+      "trap-family-days",
+      "trap-laptop-purchase",
+      "trap-board-2026",
+      "trap-mailbox-password",
+      "trap-alexandria-count",
+      "trap-contractor-names",
+      "unrelated-sales-phishing"
+    ],
+    "relevant_dropped": [
+      "para-vacation-cairo",
+      "para-missing-computer",
+      "para-server-bill",
+      "para-late-bills",
+      "para-login-secret",
+      "para-save-holiday",
+      "para-scam-drills",
+      "para-income-quarter"
+    ]
+  },
+  "pair_count": 24,
+  "pairs_sha256": "9b777975e27fcc727f6cc41a5d1e5ca08abf9f1d23f1f815aabcdfb710384466",
+  "rows": [
+    {
+      "dense_cosine": 0.6365,
+      "id": "para-vacation-cairo",
+      "kind": "paraphrase",
+      "lexical_keep": false,
+      "relevant": true
+    },
+    {
+      "dense_cosine": 0.6553,
+      "id": "para-missing-computer",
+      "kind": "paraphrase",
+      "lexical_keep": false,
+      "relevant": true
+    },
+    {
+      "dense_cosine": 0.6585,
+      "id": "para-server-bill",
+      "kind": "paraphrase",
+      "lexical_keep": false,
+      "relevant": true
+    },
+    {
+      "dense_cosine": 0.6228,
+      "id": "para-late-bills",
+      "kind": "paraphrase",
+      "lexical_keep": false,
+      "relevant": true
+    },
+    {
+      "dense_cosine": 0.6087,
+      "id": "para-login-secret",
+      "kind": "paraphrase",
+      "lexical_keep": false,
+      "relevant": true
+    },
+    {
+      "dense_cosine": 0.5298,
+      "id": "para-save-holiday",
+      "kind": "paraphrase",
+      "lexical_keep": false,
+      "relevant": true
+    },
+    {
+      "dense_cosine": 0.657,
+      "id": "para-scam-drills",
+      "kind": "paraphrase",
+      "lexical_keep": false,
+      "relevant": true
+    },
+    {
+      "dense_cosine": 0.5396,
+      "id": "para-income-quarter",
+      "kind": "paraphrase",
+      "lexical_keep": false,
+      "relevant": true
+    },
+    {
+      "dense_cosine": 0.5327,
+      "id": "trap-leave-holidays",
+      "kind": "trap",
+      "lexical_keep": true,
+      "relevant": false
+    },
+    {
+      "dense_cosine": 0.5032,
+      "id": "trap-travel-budget",
+      "kind": "trap",
+      "lexical_keep": true,
+      "relevant": false
+    },
+    {
+      "dense_cosine": 0.47,
+      "id": "trap-family-days",
+      "kind": "trap",
+      "lexical_keep": true,
+      "relevant": false
+    },
+    {
+      "dense_cosine": 0.4989,
+      "id": "trap-laptop-purchase",
+      "kind": "trap",
+      "lexical_keep": true,
+      "relevant": false
+    },
+    {
+      "dense_cosine": 0.4151,
+      "id": "trap-board-2026",
+      "kind": "trap",
+      "lexical_keep": true,
+      "relevant": false
+    },
+    {
+      "dense_cosine": 0.5236,
+      "id": "trap-mailbox-password",
+      "kind": "trap",
+      "lexical_keep": true,
+      "relevant": false
+    },
+    {
+      "dense_cosine": 0.7246,
+      "id": "trap-alexandria-count",
+      "kind": "trap",
+      "lexical_keep": true,
+      "relevant": false
+    },
+    {
+      "dense_cosine": 0.6348,
+      "id": "trap-contractor-names",
+      "kind": "trap",
+      "lexical_keep": true,
+      "relevant": false
+    },
+    {
+      "dense_cosine": 0.7868,
+      "id": "match-egypt-leave",
+      "kind": "match",
+      "lexical_keep": true,
+      "relevant": true
+    },
+    {
+      "dense_cosine": 0.7371,
+      "id": "match-overdue",
+      "kind": "match",
+      "lexical_keep": true,
+      "relevant": true
+    },
+    {
+      "dense_cosine": 0.7505,
+      "id": "match-phishing",
+      "kind": "match",
+      "lexical_keep": true,
+      "relevant": true
+    },
+    {
+      "dense_cosine": 0.8012,
+      "id": "match-cloud",
+      "kind": "match",
+      "lexical_keep": true,
+      "relevant": true
+    },
+    {
+      "dense_cosine": 0.3665,
+      "id": "unrelated-mfa-leave",
+      "kind": "unrelated",
+      "lexical_keep": false,
+      "relevant": false
+    },
+    {
+      "dense_cosine": 0.2944,
+      "id": "unrelated-sales-phishing",
+      "kind": "unrelated",
+      "lexical_keep": true,
+      "relevant": false
+    },
+    {
+      "dense_cosine": 0.2424,
+      "id": "unrelated-holidays-cloud",
+      "kind": "unrelated",
+      "lexical_keep": false,
+      "relevant": false
+    },
+    {
+      "dense_cosine": 0.2888,
+      "id": "unrelated-encryption-revenue",
+      "kind": "unrelated",
+      "lexical_keep": false,
+      "relevant": false
+    }
+  ]
+}

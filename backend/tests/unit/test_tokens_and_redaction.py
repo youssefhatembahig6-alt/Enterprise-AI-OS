@@ -6,6 +6,7 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 import jwt
 import pytest
@@ -91,7 +92,7 @@ def test_other_hmac_algorithms_rejected(alg: str) -> None:
 
 
 def test_alg_none_rejected() -> None:
-    token = jwt.encode(_claims(), None, algorithm="none")
+    token = jwt.encode(_claims(), cast(Any, None), algorithm="none")
     with pytest.raises(InvalidTokenError) as info:
         _decode(token)
     assert info.value.reason == "algorithm_not_allowed"

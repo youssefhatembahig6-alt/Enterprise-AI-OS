@@ -8,6 +8,7 @@ The backend talks to models through one gateway root URL (`LLM_BASE_URL`). This 
 | `POST /v1/chat/completions` | local vLLM, streamed relay | yes: router fallback, SQL drafts, report sentences |
 | `POST /v1/embeddings` | BGE-M3 dense | no (M3); separate route so it is never conflated with chat |
 | `POST /check` | DeBERTa-v3-base-mnli-fever-anli | yes: narrative claim scores (development baseline, not the M7 checker) |
+| `POST /parse` | Docling 2.151.1 (M1 pins) in its own venv, `docling_worker.py` per document | M3: PDF ingestion (layout, tables, OCR); enabled when `DOCLING_PYTHON` is set |
 
 Every route except `/health` requires `Authorization: Bearer $GATEWAY_TOKEN`. Closing a chat stream closes the upstream vLLM stream, which aborts the request (measured in M1). The checker refuses inputs longer than 512 tokens instead of truncating them; the backend then withholds the narrative and publishes only the deterministically verified table.
 
@@ -40,6 +41,27 @@ Pinned in [`gateway.py`](gateway.py) and in the backend settings (`MODEL_*_REVIS
 4. On the laptop, set in `.env`: `MODEL_MODE=gateway`, `LLM_BASE_URL=https://<tunnel-host>` (the root, no `/v1`) and `MODEL_GATEWAY_TOKEN=<token>`. Restart the API and worker.
 5. Capture the demonstration: `python3 scripts/m2_demo_capture.py` (see [docs/runbook.md](../../docs/runbook.md)).
 
+## M3: embeddings and the retrieval measurement
+
+`POST /v1/embeddings` with `"return_sparse": true` returns BGE-M3's dense vector and its sparse lexical weights (`{"indices", "values"}`), using the M1 notebook's sparse head. The backend uses them for ingestion and for dense or hybrid (RRF) retrieval.
+
+To produce the real retrieval comparison without a tunnel, run Qdrant in the same Colab runtime and the harness over loopback, as the M2 demonstration did with the API:
+
+```bash
+# in Colab, after colab_launch.py is serving on 127.0.0.1:8100
+wget -q https://github.com/qdrant/qdrant/releases/download/v1.15.4/qdrant-x86_64-unknown-linux-gnu.tar.gz
+tar xzf qdrant-x86_64-unknown-linux-gnu.tar.gz && (./qdrant >/content/qdrant.log 2>&1 &)
+cd /content/Enterprise-AI-OS/backend && pip install -r requirements.lock --no-deps -q
+MODEL_MODE=gateway LLM_BASE_URL=http://127.0.0.1:8100 MODEL_GATEWAY_TOKEN=$GATEWAY_TOKEN \
+  python -m app.cli retrieval-eval --qdrant http://127.0.0.1:6333 --out /content/retrieval-eval.json
+```
+
+These Colab steps have not been exercised yet; Colab's Python version may need the backend dependencies installed without `--require-hashes`. The JSON records the embedding space and revisions, Qdrant version, corpus and case hashes, per-case ranks, and recall@1/@5, MRR@5 and document recall@5 for dense and hybrid.
+
+## M3: Docling
+
+`POST /parse` takes `{filename, content_base64}` (up to 10 MB; the route alone accepts bodies up to 14 MB) and returns `{parser: "docling-<version>", elements: [...], notes: {...}}`, one conversion at a time. The worker runs on the CPU by default (`DOCLING_DEVICE`), because vLLM holds 0.75 of the T4. `/health` lists the parser and its version. The full acceptance run, with the application next to the gateway over loopback, is [`ml/colab-m3`](../colab-m3/README.md).
+
 ## Tests
 
-`backend/tests/unit/test_model_gateway_contract.py` loads this exact file with stub models on CPU and drives it with the backend's `GatewayModelClient`: route composition, auth, streaming relay, checker refusal of over-long input, and the vLLM command flags.
+`backend/tests/unit/test_model_gateway_contract.py` loads this exact file with stub models on CPU and drives it with the backend's `GatewayModelClient`: route composition, auth, streaming relay, checker refusal of over-long input, the vLLM command flags, the `/parse` contract into the backend parser, the fallback signal when Docling is not loaded, and the Docling subprocess runner.

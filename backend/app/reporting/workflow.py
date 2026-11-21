@@ -219,8 +219,8 @@ class ReportWorkflow:
         return "publish"
 
     def _wrap(
-        self, name: str, fn: Callable[[RunState], dict[str, Any]]
-    ) -> Callable[[RunState], dict[str, Any]]:
+        self, name: str, fn: Callable[[Any], dict[str, Any]]
+    ) -> Callable[[Any], dict[str, Any]]:
         def node(state: RunState) -> dict[str, Any]:
             if self.deps.before_node is not None:
                 self.deps.before_node(name, state)
@@ -249,24 +249,28 @@ class ReportWorkflow:
             self._timing(state, name, time.monotonic() - started)
             return update
 
+        # LangGraph derives a node's input schema from its first parameter's annotation.
+        # Drop it so every node receives the graph's own state schema (RunState here,
+        # the document workflow's DocState in its subclass).
+        node.__annotations__.pop("state", None)
         return node
 
     # -- helpers -------------------------------------------------------------------
 
-    def _tx(self, state: RunState) -> Any:
+    def _tx(self, state: Any) -> Any:
         return tenant_transaction(self.deps.app_engine, state["tenant_id"], state["user_id"])
 
-    def _stats_for(self, state: RunState) -> dict[str, Any]:
+    def _stats_for(self, state: Any) -> dict[str, Any]:
         return self._stats.setdefault(state["run_id"], {"timings": {}, "rejections": []})
 
-    def _stat(self, state: RunState, key: str, value: Any) -> None:
+    def _stat(self, state: Any, key: str, value: Any) -> None:
         self._stats_for(state).setdefault(key, []).append(value)
 
-    def _timing(self, state: RunState, name: str, seconds: float) -> None:
+    def _timing(self, state: Any, name: str, seconds: float) -> None:
         timings = self._stats_for(state)["timings"]
         timings[name] = round(timings.get(name, 0.0) + seconds, 3)
 
-    def _check_cancel(self, state: RunState) -> None:
+    def _check_cancel(self, state: Any) -> None:
         token = self._cancel_tokens.get(state["run_id"])
         if token is not None and token.cancelled:
             raise _Cancelled
@@ -276,7 +280,7 @@ class ReportWorkflow:
                     token.cancel()
                 raise _Cancelled
 
-    def _status(self, state: RunState, step: Step, phase: str, **extra: Any) -> None:
+    def _status(self, state: Any, step: Step, phase: str, **extra: Any) -> None:
         payload: dict[str, Any] = {
             "step": step.value,
             "state": phase,
@@ -289,7 +293,7 @@ class ReportWorkflow:
         with self._tx(state) as conn:
             store.append_event(conn, state["run_id"], state["tenant_id"], EventType.STATUS, payload)
 
-    def _audit(self, conn: Any, state: RunState, **fields: Any) -> None:
+    def _audit(self, conn: Any, state: Any, **fields: Any) -> None:
         record_audit_event(
             conn,
             request_id=None,
@@ -375,7 +379,7 @@ class ReportWorkflow:
         self._status(state, Step.ROUTING, "completed", period=intent.period.label)
         return {"intent": intent}
 
-    def _token(self, state: RunState) -> CancelToken:
+    def _token(self, state: Any) -> CancelToken:
         return self._cancel_tokens.setdefault(state["run_id"], CancelToken())
 
     def _repair(self, state: RunState, stage: str, codes: list[str]) -> dict[str, Any]:
@@ -857,7 +861,7 @@ class ReportWorkflow:
             store.finish_job(conn, rid)
         return {"terminal": {"kind": "published"}}
 
-    def _final_stats(self, state: RunState) -> dict[str, Any]:
+    def _final_stats(self, state: Any) -> dict[str, Any]:
         stats = dict(self._stats_for(state))
         stats["sql_attempts"] = state.get("sql_attempt", 0)
         stats["report_attempts"] = state.get("report_attempt", 0)

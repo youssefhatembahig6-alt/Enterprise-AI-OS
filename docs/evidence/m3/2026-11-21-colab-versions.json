@@ -1,0 +1,57 @@
+{
+  "application_commit": "dd585fbeeb39e2fb6875b7a9d2f0ac72d4ef6d9f",
+  "worktree_clean": true,
+  "gateway_health": {
+    "status": "ok",
+    "models": {
+      "chat": {
+        "model": "Qwen/Qwen3-8B-AWQ",
+        "revision": "4da05a8edb55c6046cce958586c33b61da07bb79"
+      },
+      "embed": {
+        "model": "BAAI/bge-m3",
+        "revision": "5617a9f61b028005a4858fdac845db406aefb181"
+      },
+      "checker": {
+        "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+        "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb",
+        "status": "development_baseline_not_final_trained_checker"
+      },
+      "parser": {
+        "model": "docling",
+        "version": "2.151.1"
+      }
+    },
+    "engine": {
+      "quantization": "awq",
+      "dtype": "half",
+      "max_model_len": 4096,
+      "max_num_seqs": 8,
+      "gpu_memory_utilization": 0.75,
+      "seed": 0,
+      "vllm_version": "0.11.0"
+    }
+  },
+  "postgresql": "postgres (PostgreSQL) 17.12 (Ubuntu 17.12-1.pgdg24.04+1)",
+  "redis": "Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=d064f9f48c901a92",
+  "qdrant": {
+    "title": "qdrant - vector search engine",
+    "version": "1.15.4",
+    "commit": "20db14f87c861f3958ad50382cf0b69396e40c10"
+  },
+  "python_backend": "Python 3.13.16",
+  "python_docling": "Python 3.12.3",
+  "docling_freeze_sha256": "de6aa2156acbc2b6d418a55369e5d9801545e3a93f179b61ac9c35ac4a628cf3",
+  "docling_packages": "docling==2.151.1\ndocling-core==2.108.0\ndocling-ibm-models==4.0.4\ntorch==2.15.0",
+  "backend_lock_sha256": "82b18b60e4b924774509455b2e6863ab48673218a0f3b68900c68ad7aab6169f",
+  "gpu": "Tesla T4, 15360 MiB, 580.82.07",
+  "settings": {
+    "RETRIEVAL_MODE": "dense",
+    "RELEVANCE_FILTER": "lexical",
+    "RELEVANCE_MIN_SCORE": "0.0",
+    "REPORT_DISPATCH": "inline",
+    "DOCUMENT_STORE": "filesystem",
+    "MODEL_MODE": "gateway"
+  },
+  "network": "loopback only (API 127.0.0.1:18000, gateway 127.0.0.1:8100)"
+}

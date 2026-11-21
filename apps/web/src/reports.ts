@@ -37,11 +37,39 @@ export interface ReportTable {
 
 export interface Citation {
   citation_id: string;
-  evidence_id: string;
-  row: number;
-  column: string;
-  label: string;
+  // M2 report citations reference a SQL evidence cell.
+  evidence_id?: string;
+  row?: number;
+  column?: string;
+  label?: string;
+  // M3 document citations reference an exact span of a document version.
+  document_id?: string;
+  title?: string;
+  version?: number;
+  page?: number | null;
+  heading_path?: string[];
+  quote?: string;
 }
+
+export interface DocumentCitation {
+  citation_id: string;
+  document_id: string;
+  title: string;
+  version: number;
+  current_version: number;
+  is_current_version: boolean;
+  filename: string;
+  char_start: number;
+  char_end: number;
+  offset_unit: "unicode_code_point";
+  text_sha256: string;
+  before: string;
+  quote: string;
+  after: string;
+  integrity: "verified" | "mismatch";
+}
+
+export type AskMode = "auto" | "documents" | "report";
 
 export interface Verification {
   label: string;
@@ -156,11 +184,12 @@ export async function startReport(
   clientRequestId: string,
   onEvent: (event: ReportEvent) => void,
   signal: AbortSignal,
+  mode: AskMode = "auto",
 ): Promise<{ runId: string | null; ended: "done" | "dropped" }> {
   const response = await fetch(`${API_BASE_URL}/api/v1/chat`, {
     method: "POST",
     headers: headers(token),
-    body: JSON.stringify({ question, client_request_id: clientRequestId }),
+    body: JSON.stringify({ question, client_request_id: clientRequestId, mode }),
     credentials: "omit",
     cache: "no-store",
     signal,
@@ -201,4 +230,77 @@ export async function fetchEvidence(token: string, evidenceId: string): Promise<
   });
   if (!response.ok) throw await errorFrom(response);
   return (await response.json()) as Evidence;
+}
+
+/** The cited passage, sliced by Unicode code points on the server (no UTF-16 math here). */
+export async function fetchDocumentCitation(
+  token: string,
+  runId: string,
+  citationId: string,
+): Promise<DocumentCitation> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/runs/${encodeURIComponent(runId)}/citations/${encodeURIComponent(citationId)}`,
+    { headers: headers(token), credentials: "omit", cache: "no-store" },
+  );
+  if (!response.ok) throw await errorFrom(response);
+  return (await response.json()) as DocumentCitation;
+}
+
+export interface DocumentSummary {
+  document_id: string;
+  title: string;
+  department: string;
+  classification: string;
+  permission_state: "verified" | "unknown";
+  current_version: number;
+  searchable: boolean;
+  status: "queued" | "parsing" | "indexing" | "ready" | "failed" | "needs_ocr" | "unknown";
+  error: { code: string; message: string } | null;
+  can_administer: boolean;
+  can_read: boolean;
+}
+
+export async function listDocuments(token: string): Promise<DocumentSummary[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/documents`, {
+    headers: headers(token),
+    credentials: "omit",
+    cache: "no-store",
+  });
+  if (!response.ok) throw await errorFrom(response);
+  return (await response.json()) as DocumentSummary[];
+}
+
+export interface UploadRequest {
+  filename: string;
+  contentBase64: string;
+  department: string;
+  classification: string | null; // null: upload with unknown permissions
+  groups: string[];
+  departmentRestricted: boolean;
+  countries: string[];
+}
+
+export async function uploadDocument(token: string, req: UploadRequest): Promise<string> {
+  const body: Record<string, unknown> = {
+    filename: req.filename,
+    content_base64: req.contentBase64,
+    department: req.department,
+  };
+  if (req.classification) {
+    body.permissions = {
+      classification: req.classification,
+      department_restricted: req.departmentRestricted,
+      allowed_countries: req.countries.length ? req.countries : ["*"],
+      grants: req.groups.map((group) => ({ effect: "allow", group })),
+    };
+  }
+  const response = await fetch(`${API_BASE_URL}/api/v1/documents`, {
+    method: "POST",
+    headers: headers(token),
+    body: JSON.stringify(body),
+    credentials: "omit",
+    cache: "no-store",
+  });
+  if (!response.ok) throw await errorFrom(response);
+  return ((await response.json()) as { document_id: string }).document_id;
 }

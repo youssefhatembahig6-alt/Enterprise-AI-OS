@@ -1,4 +1,4 @@
-# Requirement → test traceability (M0–M2)
+# Requirement → test traceability (M0–M3)
 
 M0 implements FR-01 and the foundations of FR-02 and FR-11, plus NFR-01, NFR-03 and NFR-05. Document, search and SQL behaviour (most of T1–T10) belongs to later milestones and is **not** marked complete here.
 
@@ -44,16 +44,33 @@ Tests below are in `backend/tests/`. Integration tests run on real PostgreSQL 17
 | Review fixes (PR #5) | Value-changing casts rejected (AST and runtime scale); per-event SSE reauthorization; query context bound to session identity + transaction secret (migration 0004) | `unit/test_report_semantics.py::test_value_changing_casts_are_rejected`, `test_report_workflow.py::test_rounded_amounts_never_receive_a_verified_label`, `::test_runtime_scale_check_blocks_rounding_the_ast_missed`, `::test_revocation_between_frames_of_one_batch_stops_content`, `test_report_sql_security.py::test_stale_context_is_not_inherited_by_a_reused_pid`, `::test_crashed_backend_context_is_cleaned_up`, `::test_pooled_connection_with_lingering_row_sees_nothing` |
 | **Real-model demonstration** | One end-to-end run on commit `1f1c127`: API, PostgreSQL 17.12 and the gateway together on a Colab T4 over loopback, inline dispatch; pinned Qwen3-8B-AWQ at 0.75 / 4096; published `figures_verified_narrative_dev_checked` with exact Q1 2026 figures and verified evidence | [`docs/evidence/m2/`](evidence/m2/README.md) (capture SHA-256 `192eb975…d490`) |
 
+## M3 authorized document answers
+
+Integration tests run on real PostgreSQL 17.6 and real Qdrant 1.15.4 with labelled fake embeddings and answerer; they are security and pipeline evidence, not retrieval-quality evidence.
+
+| Requirement | What M3 delivers | Evidence |
+| --- | --- | --- |
+| FR-02 Filtered retrieval | Eligible point ids from the reference policy over current PostgreSQL state; tenant + `has_id` filter on dense, sparse, each prefetch and fusion; recheck before text and publication | `test_documents_answers.py::test_t9_*`, `::test_t1_*`, `::test_t2_t3_*`, ADR 0303 |
+| FR-03 Citations | Exact code-point spans of the cited version, hashes rechecked on open, server-side slicing; UI source panel | `test_documents_answers.py::test_citations_use_code_point_offsets_for_tables_and_non_ascii`, `::test_repeated_passage_*`, `test_documents_ingestion.py::test_new_version_*`, ADR 0304 |
+| FR-04 Indistinguishable refusal | One `no_sources` template; restricted vs removed over 30 runs each | `test_documents_answers.py::test_t10_restricted_and_removed_documents_are_indistinguishable` |
+| FR-05 Deterministic ingestion | Permissions before scheduling, immutable versions, deterministic chunks and point ids, staged generations, atomic activation, tombstones | `test_documents_ingestion.py`, `unit/test_documents_parsing.py`, ADR 0301/0302 |
+| FR-09 Verification (documents) | Exact quotes, numbers in quotes, development NLI checker, at most 2 repairs | `test_documents_answers.py::test_fabricated_quote_*`, `::test_one_repair_then_published`, `::test_checker_rejection_*` |
+| FR-10 Connectors (upload) | Upload with permissions, versions, reindex, delete; SeaweedFS storage | `test_documents_ingestion.py`, `scripts/m3_demo.py` |
+| FR-14 Evaluation | Frozen retrieval dev cases; `retrieval-eval` harness (dense vs hybrid) | `fixtures/evaluation/documents-dev-m3.toml`, `test_retrieval_eval.py` |
+| **Retrieval quality (BGE-M3)** | 22 frozen cases with real BGE-M3 and Qdrant. Dense / hybrid recall@5 0.909 / 0.909 and MRR@5 0.886 / 0.841. Kept dense and the lexical gate. | [Retrieval and relevance results](evidence/m3/README.md#retrieval-and-relevance-decisions) |
+| **Docling for complex PDFs** | Docling 2.151.1 through the gateway recovered 100% two-column reading order and table cells on the table-heavy fixture. The scan was ready with 97.2% text similarity. With the parse route unavailable, text-layer PDFs used pdfplumber and the scan was `needs_ocr`. | [Docling and fallback scores](evidence/m3/README.md#acceptance-checks), ADR 0302 |
+| **Real-model document answer** | Qwen3-8B-AWQ in Colab gateway mode published an answer with an exact, verified versioned citation for finance. Sales received the standard `no_sources` response. | [Colab capture](evidence/m3/2026-11-21-colab-demo.json) |
+
 ## Security tests T1–T10 status
 
-| Test | Status (M0, updated for M2) |
+| Test | Status (updated for M3) |
 | --- | --- |
-| T1 / T2 | Policy-level only. Fixture cases show a finance reader allowed and a sales reader denied the finance report (in memory and from PostgreSQL). Retrieval-level tests come in M3. |
-| T3 | Database level: the app role cannot read another tenant's rows, and a cross-tenant resource decision is denied. Retrieval level comes in M3. |
-| T4 | Internal group removal changes the next decision (`test_group_removal_changes_next_decision`). Sync-based removal comes in M4. |
-| T5 | Not applicable yet: there is no file or document endpoint. M3. |
+| T1 / T2 | **M3:** finance reader retrieves the finance commentary with an exact citation; sales reader, explicit-deny reader and isolation tenant get `no_sources` and no markers (`test_documents_answers.py::test_t1_*`, `::test_t2_t3_*`). |
+| T3 | **M3:** cross-tenant retrieval returns nothing; the isolation tenant reads only its own document (`::test_t3_isolation_tenant_reads_only_its_own_documents`); RLS on all document tables. |
+| T4 | **M3:** internal group removal applies to the next request and during a run (before draft, verify, publish); revoked citations and replay expose nothing (`::test_t4_*`). External sync: M4. |
+| T5 | **M3:** guessed document and citation ids return 404 for other users and tenants (`::test_t5_guessed_document_and_citation_ids_are_not_found`). File download endpoint: not provided. |
 | T6 | **M2:** generated SQL cannot bypass database restrictions: validator rejections plus raw query-role attempts that bypass the validator (forged context, public objects, writes, DDL, borrowed context), cross-tenant predicates and joins, timeouts, row limits, pool reuse (`test_report_sql_security.py`). |
-| T7 | Evaluator level: unknown inputs deny (`test_unknown_required_inputs_deny`). Ingestion level comes in M3. |
-| T8 | Not applicable: no cache. Later. |
-| T9 | Not applicable: no Qdrant queries. Design in ADR 0104. M3. |
-| T10 | Not applicable. M3. |
+| T7 | **M3:** documents with unknown permissions are ingested but never retrieved until permissions are set (`::test_t7_*`). |
+| T8 | **M3:** no answer cache exists; repeated questions after revocation are re-authorized and re-searched (`::test_t8_*`). |
+| T9 | **M3:** asserted on the captured outbound Qdrant request for dense and hybrid modes; no request when nothing is eligible (`::test_t9_*`). |
+| T10 | **M3:** restricted vs removed document, 30 interleaved runs each: identical normalized responses; median difference 3.4% in the latest run (`::test_t10_*`). |

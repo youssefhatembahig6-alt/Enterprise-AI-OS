@@ -6,6 +6,7 @@ One root URL, four routes (docs/contracts/model-gateway.md):
     POST /v1/chat/completions    streamed proxy to the local vLLM (Qwen3-8B-AWQ)
     POST /v1/embeddings          BGE-M3 dense query embeddings (not used by M2 reports)
     POST /check                  NLI claim checker (public DeBERTa baseline, development only)
+    POST /parse                  Docling PDF conversion to canonical elements (M3)
 
 Every route except /health requires ``Authorization: Bearer $GATEWAY_TOKEN``. The
 gateway is an inference service, not an authority: it receives only the text the
@@ -20,11 +21,16 @@ with the real models (see README.md).
 from __future__ import annotations
 
 import asyncio
+import base64
 import hmac
+import json
 import os
+import subprocess
+import tempfile
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
@@ -53,14 +59,25 @@ CHECKER_MAX_TOKENS = 512
 MAX_BODY_BYTES = 256 * 1024
 MAX_CHECK_PAIRS = 16
 MAX_EMBED_INPUTS = 64
+# /parse carries a whole document: 10 MB upload limit, base64-encoded, plus JSON.
+MAX_PARSE_BODY_BYTES = 14 * 1024 * 1024
+MAX_PARSE_BYTES = 10 * 1024 * 1024
 
 
 class Embedder(Protocol):
     def encode(self, texts: list[str]) -> list[list[float]]: ...
 
+    def encode_with_sparse(
+        self, texts: list[str]
+    ) -> list[tuple[list[float], dict[int, float]]]: ...
+
 
 class Checker(Protocol):
     def score(self, premise: str, hypothesis: str) -> dict[str, Any]: ...
+
+
+class DocumentParser(Protocol):
+    def parse(self, filename: str, data: bytes) -> dict[str, Any]: ...
 
 
 @dataclass
@@ -99,8 +116,10 @@ def create_app(
     *,
     embedder: Embedder | None,
     checker: Checker | None,
+    parser: DocumentParser | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
+    parse_slot = asyncio.Semaphore(1)  # one Docling conversion at a time
     chat_slots = asyncio.Semaphore(config.max_concurrent_chats)
     upstream = httpx.AsyncClient(
         base_url=config.vllm_url,
@@ -134,7 +153,8 @@ def create_app(
         if request.url.path != "/health" and not authorized(request):
             return _error(401, "unauthorized")
         length = request.headers.get("content-length")
-        if length is not None and int(length) > MAX_BODY_BYTES:
+        limit = MAX_PARSE_BODY_BYTES if request.url.path == "/parse" else MAX_BODY_BYTES
+        if length is not None and int(length) > limit:
             return _error(413, "body_too_large")
         return await call_next(request)
 
@@ -145,6 +165,8 @@ def create_app(
             models.pop("embed", None)
         if checker is None:
             models.pop("checker", None)
+        if parser is not None:
+            models["parser"] = getattr(parser, "info", {"model": "docling"})
         return {
             "status": "ok",
             "models": models,
@@ -182,12 +204,25 @@ def create_app(
             inputs = [inputs]
         if not isinstance(inputs, list) or not inputs or len(inputs) > MAX_EMBED_INPUTS:
             return _error(400, "invalid_input")
-        vectors = await asyncio.to_thread(embedder.encode, [str(i) for i in inputs])
-        return {
-            "object": "list",
-            "model": config.served["embed"]["model"],
-            "data": [{"object": "embedding", "index": i, "embedding": v} for i, v in enumerate(vectors)],
-        }
+        texts = [str(i) for i in inputs]
+        if body.get("return_sparse"):
+            # BGE-M3 dense CLS vector plus its sparse lexical head (M3 hybrid retrieval).
+            pairs = await asyncio.to_thread(embedder.encode_with_sparse, texts)
+            data = [
+                {
+                    "object": "embedding",
+                    "index": i,
+                    "embedding": dense,
+                    "sparse": {"indices": list(sparse), "values": list(sparse.values())},
+                }
+                for i, (dense, sparse) in enumerate(pairs)
+            ]
+        else:
+            vectors = await asyncio.to_thread(embedder.encode, texts)
+            data = [
+                {"object": "embedding", "index": i, "embedding": v} for i, v in enumerate(vectors)
+            ]
+        return {"object": "list", "model": config.served["embed"]["model"], "data": data}
 
     @app.post("/check")
     async def check(request: Request) -> Any:
@@ -217,32 +252,125 @@ def create_app(
         return {"results": results, "model": checker_info["model"],
                 "revision": checker_info["revision"], "status": checker_info.get("status")}
 
+    @app.post("/parse")
+    async def parse(request: Request) -> Any:
+        if parser is None:
+            return _error(503, "parser_not_loaded")
+        body = await request.json()
+        filename = str(body.get("filename") or "document.pdf")
+        try:
+            data = base64.b64decode(str(body.get("content_base64") or ""), validate=True)
+        except ValueError:
+            return _error(400, "invalid_content")
+        if not data or len(data) > MAX_PARSE_BYTES:
+            return _error(400, "invalid_content")
+        async with parse_slot:
+            try:
+                return await asyncio.to_thread(parser.parse, filename, data)
+            except subprocess.TimeoutExpired:
+                return _error(504, "parse_timeout")
+            except ParseError as exc:
+                return _error(502, f"parse_failed: {exc}")
+
     return app
+
+
+class ParseError(Exception):
+    pass
+
+
+class DoclingSubprocess:
+    """Runs ``docling_worker.py`` in the separate Docling venv (its pins conflict with
+    vLLM's) for each document. The file is written to a private temporary directory
+    and removed afterwards."""
+
+    def __init__(self, python: str, timeout: float = 900.0) -> None:
+        self._python = python
+        self._timeout = timeout
+        self._worker = str(Path(__file__).resolve().parent / "docling_worker.py")
+        self.info = {"model": "docling", "version": self._version()}
+
+    def _version(self) -> str:
+        out = subprocess.run(  # noqa: S603 - fixed interpreter and arguments
+            [self._python, "-c", "from importlib.metadata import version; print(version('docling'))"],
+            capture_output=True, text=True, timeout=120, check=True,
+        )
+        return out.stdout.strip()
+
+    def parse(self, filename: str, data: bytes) -> dict[str, Any]:
+        suffix = Path(filename).suffix.lower() or ".pdf"
+        with tempfile.TemporaryDirectory(prefix="eaios-parse-") as tmp:
+            path = Path(tmp) / f"input{suffix}"
+            path.write_bytes(data)
+            done = subprocess.run(  # noqa: S603 - fixed interpreter and worker
+                [self._python, self._worker, str(path)],
+                capture_output=True, text=True, timeout=self._timeout, check=False,
+            )
+        if done.returncode != 0:
+            tail = done.stderr.strip().splitlines()[-1:] or ["worker failed"]
+            raise ParseError(tail[0][:200])
+        try:
+            return json.loads(done.stdout)
+        except json.JSONDecodeError as exc:
+            raise ParseError("worker returned invalid JSON") from exc
 
 
 # --- real models (Colab GPU only) -------------------------------------------------------
 
 
 class BgeM3Dense:
-    """BGE-M3 dense CLS embedding, normalized (as in the M1 benchmark)."""
+    """BGE-M3 dense CLS embedding (normalized) and its sparse head, as in the M1
+    benchmark (FlagEmbedding's BGEM3FlagModel layout: ``sparse_linear.pt``)."""
 
     def __init__(self, path: str) -> None:
+        import pathlib
+
         import torch
         from transformers import AutoModel, AutoTokenizer
 
         self.torch = torch
         self.tok = AutoTokenizer.from_pretrained(path)
         self.model = AutoModel.from_pretrained(path, torch_dtype=torch.float16).to("cuda").eval()
+        hidden = self.model.config.hidden_size
+        self.sparse = torch.nn.Linear(hidden, 1).to("cuda", torch.float16)
+        self.sparse.load_state_dict(
+            torch.load(pathlib.Path(path) / "sparse_linear.pt", map_location="cuda", weights_only=True)
+        )
+        self.skip_ids = {
+            i for i in (self.tok.cls_token_id, self.tok.eos_token_id, self.tok.pad_token_id,
+                        self.tok.unk_token_id) if i is not None
+        }
 
-    def encode(self, texts: list[str]) -> list[list[float]]:
+    def _forward(self, texts: list[str]) -> tuple[Any, Any, Any]:
         torch = self.torch
         with torch.inference_mode():
             batch = self.tok(texts, padding=True, truncation=False, return_tensors="pt")
             if int(batch["attention_mask"].sum(1).max()) > 8192:
                 raise ValueError("input exceeds 8192 tokens; refusing to truncate")
-            hidden = self.model(**{k: v.to("cuda") for k, v in batch.items()}).last_hidden_state
+            batch = {k: v.to("cuda") for k, v in batch.items()}
+            hidden = self.model(**batch).last_hidden_state
             dense = torch.nn.functional.normalize(hidden[:, 0].float(), dim=-1)
+            weights = torch.relu(self.sparse(hidden)).squeeze(-1).float()
+        return batch, dense, weights
+
+    def encode(self, texts: list[str]) -> list[list[float]]:
+        _, dense, _ = self._forward(texts)
         return dense.cpu().tolist()
+
+    def encode_with_sparse(self, texts: list[str]) -> list[tuple[list[float], dict[int, float]]]:
+        batch, dense, weights = self._forward(texts)
+        ids = batch["input_ids"].cpu().tolist()
+        mask = batch["attention_mask"].cpu().tolist()
+        out = []
+        for row_dense, row_ids, row_w, row_m in zip(
+            dense.cpu().tolist(), ids, weights.cpu().tolist(), mask, strict=True
+        ):
+            sparse: dict[int, float] = {}
+            for token, weight, m in zip(row_ids, row_w, row_m, strict=True):
+                if m and token not in self.skip_ids and weight > 0:
+                    sparse[int(token)] = max(sparse.get(int(token), 0.0), float(weight))
+            out.append((row_dense, sparse))
+        return out
 
 
 class NliChecker:
@@ -294,4 +422,9 @@ def colab_app() -> FastAPI:
         config,
         embedder=BgeM3Dense(os.environ["EMBED_PATH"]) if os.environ.get("EMBED_PATH") else None,
         checker=NliChecker(os.environ["CHECKER_PATH"]),
+        parser=(
+            DoclingSubprocess(os.environ["DOCLING_PYTHON"],
+                              float(os.environ.get("DOCLING_TIMEOUT", "900")))
+            if os.environ.get("DOCLING_PYTHON") else None
+        ),
     )

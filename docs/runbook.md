@@ -1,4 +1,4 @@
-# Runbook — local development stack (M0–M2)
+# Runbook — local development stack (M0–M3)
 
 Prerequisites: Docker Engine with Compose v2, and Python 3 for the helper script. Node 20.19+ is needed only for local frontend work. No GPU, model endpoint or paid API key is needed.
 
@@ -74,6 +74,33 @@ python3 scripts/m2_demo_capture.py
 ```
 
 The script prints whether the server labelled the run `gateway` or `fake`; only a `gateway` run with served revisions in its diagnostics is real-model evidence.
+
+## Authorized document answers (M3)
+
+`up` applies `0005_documents`. Then seed the fixture corpus through the API (development only). It uses the department administrators' development credentials and uploads `backend/fixtures/documents` with the permissions in `corpus.toml`:
+
+```bash
+python3 scripts/m3_demo.py seed      # uploads, then waits for ingestion; prints status per document
+python3 scripts/m3_demo.py capture   # authorized answer + opened citation, and the no-sources response
+```
+
+Ingestion needs embeddings. With no gateway (the default), documents stay `queued` with `embedding_unavailable` and are retried every 30 s. After three attempts they show `failed`, and an administrator can reindex them (`POST /api/v1/documents/{id}/reindex`, or re-run `seed` after reindexing). For a labelled local demo:
+
+```bash
+MODEL_MODE=fake docker compose up -d --wait api worker scheduler
+```
+
+In the web UI, administrators (for example `access.admin@niletech.example`) see an upload form; everyone sees the documents they may read. Choose **Documents you can access** (or Automatic) under **Ask**, and click a citation to open the exact passage of the cited version.
+
+**Retrieval measurement** (dense vs dense + sparse on the frozen dev cases, real Qdrant):
+
+```bash
+cd backend
+MODEL_MODE=fake .venv/bin/python -m app.cli retrieval-eval --qdrant http://127.0.0.1:6333   # harness check only
+MODEL_MODE=gateway LLM_BASE_URL=... MODEL_GATEWAY_TOKEN=... .venv/bin/python -m app.cli retrieval-eval --qdrant <url>
+```
+
+Only the gateway run (BGE-M3) is a retrieval-quality result. See `ml/model-gateway/README.md` for running it in Colab next to Qdrant.
 
 ## Restart
 

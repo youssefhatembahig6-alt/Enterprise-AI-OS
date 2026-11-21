@@ -10,13 +10,16 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from redis import Redis
 
-from app.api import auth, health, reports
+from app.api import auth, documents, health, reports
 from app.api.errors import install_error_handlers
 from app.config import Settings, get_settings
 from app.db.engine import create_app_engine
+from app.documents import store as doc_store
+from app.documents.ingest import DocumentService
+from app.documents.qdrant import QdrantClient
 from app.logging_setup import configure_logging, request_id_var
-from app.reporting.factory import build_runner
-from app.reporting.model_client import ModelClient
+from app.reporting.factory import build_components, build_object_store
+from app.reporting.model_client import ModelClient, build_model_client
 from app.reporting.service import InlineDispatcher, ReportService, build_dispatcher
 from app.security.passwords import PasswordVerifier
 from app.security.ratelimit import LoginRateLimiter
@@ -24,7 +27,7 @@ from app.services.health import ReadinessChecker
 from app.services.identity import IdentityService
 
 
-def create_app(settings: Settings | None = None, model: ModelClient | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, model: ModelClient | None = None) -> FastAPI:  # noqa: PLR0915
     """Build the API. ``model`` overrides the model client (tests inject doubles)."""
 
     settings = settings or get_settings()
@@ -39,36 +42,45 @@ def create_app(settings: Settings | None = None, model: ModelClient | None = Non
         socket_connect_timeout=settings.readiness_timeout_seconds,
     )
 
-    # Reports: the runner (and report-role engine) lives in the API only for inline
-    # dispatch; with Celery the worker owns it and the API only publishes jobs.
-    runner = None
-    report_engine = None
-    if settings.report_database_url is not None and settings.report_dispatch.value == "inline":
-        built = build_runner(settings, engine, model)
-        if built is not None:
-            runner, report_engine = built
-    dispatcher = (
-        build_dispatcher(settings, runner, engine)
-        if settings.report_database_url is not None
-        else None
+    # Runs (reports and document answers) and ingestion. With inline dispatch the API
+    # executes jobs on its own thread pools; with Celery the worker does and the API
+    # only writes job rows and publishes messages.
+    model_client = model or build_model_client(settings)
+    objects = build_object_store(settings)
+    qdrant = QdrantClient(settings.qdrant_url)
+    components = None
+    if settings.report_dispatch.value == "inline":
+        components = build_components(settings, engine, model_client, objects, qdrant)
+    runner = components.runner if components else None
+    dispatcher = build_dispatcher(settings, runner, engine)
+    ingest_dispatcher = build_dispatcher(
+        settings,
+        components.ingestion if components else None,
+        engine,
+        task="app.tasks.documents.ingest_document",
+        mark=doc_store.mark_job_dispatched,
     )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
-        if isinstance(dispatcher, InlineDispatcher):
-            dispatcher.shutdown()
-        if report_engine is not None:
-            report_engine.dispose()
+        for pool in (dispatcher, ingest_dispatcher):
+            if isinstance(pool, InlineDispatcher):
+                pool.shutdown()
+        if components is not None:
+            components.close()
+        else:
+            qdrant.close()
         engine.dispose()
         redis.close()  # type: ignore[no-untyped-call]
 
     app = FastAPI(
         title="Enterprise AI OS API",
-        version="0.2.0-m2",
+        version="0.3.0-m3",
         description=(
-            "Identity, tenant isolation and health (M0); verified SQL reports streamed "
-            "over Server-Sent Events (M2)."
+            "Identity, tenant isolation and health (M0); verified SQL reports (M2) and "
+            "authorized document answers with exact citations (M3), streamed over "
+            "Server-Sent Events."
         ),
         lifespan=lifespan,
     )
@@ -94,6 +106,15 @@ def create_app(settings: Settings | None = None, model: ModelClient | None = Non
         reauthenticate=lambda token: identity.authenticate(token, request_id_var.get()),
     )
     app.state.report_runner = runner
+    app.state.ingestion_runner = components.ingestion if components else None
+    app.state.documents = DocumentService(
+        engine,
+        settings,
+        objects,
+        qdrant,
+        model_client,
+        ingest_dispatcher.dispatch if ingest_dispatcher else None,
+    )
     app.state.readiness = ReadinessChecker(
         engine=engine,
         redis=redis,
@@ -121,7 +142,7 @@ def create_app(settings: Settings | None = None, model: ModelClient | None = Non
         CORSMiddleware,
         allow_origins=settings.cors_allowed_origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
         expose_headers=["X-Request-ID", "Retry-After", "X-Run-ID"],
         max_age=600,
@@ -130,4 +151,5 @@ def create_app(settings: Settings | None = None, model: ModelClient | None = Non
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(reports.router)
+    app.include_router(documents.router)
     return app

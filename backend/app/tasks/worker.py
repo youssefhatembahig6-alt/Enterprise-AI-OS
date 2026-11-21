@@ -19,12 +19,16 @@ from app.logging_setup import configure_logging
 logger = logging.getLogger("eaios.tasks")
 
 
-def _broker_url() -> str:
-    return os.environ["REDIS_URL"]
+def _broker_url() -> str | None:
+    # Worker and beat always run with REDIS_URL. The API sets the broker from its own
+    # settings when it builds a dispatcher (app.reporting.service.build_dispatcher).
+    return os.environ.get("REDIS_URL")
 
 
 celery_app = Celery(
-    "eaios", broker=_broker_url(), include=["app.tasks.worker", "app.tasks.reports"]
+    "eaios",
+    broker=_broker_url(),
+    include=["app.tasks.worker", "app.tasks.reports", "app.tasks.documents"],
 )
 celery_app.conf.update(
     task_default_queue="default",
@@ -45,6 +49,10 @@ celery_app.conf.update(
         # Outbox: re-dispatch report jobs whose publish failed or whose lease expired.
         "dispatch-due-report-jobs": {
             "task": "app.tasks.reports.dispatch_due_report_jobs",
+            "schedule": 30.0,
+        },
+        "dispatch-due-ingestion-jobs": {
+            "task": "app.tasks.documents.dispatch_due_ingestion_jobs",
             "schedule": 30.0,
         },
     },

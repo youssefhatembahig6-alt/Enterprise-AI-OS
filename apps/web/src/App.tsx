@@ -1,6 +1,7 @@
 import { Alert, Button, Card, Field, StatusPill, type StatusTone } from "@eaios/ui";
 import { useCallback, useState, type FormEvent } from "react";
 import { api, ApiError, type Identity } from "./api";
+import { DocumentsPanel } from "./DocumentsPanel";
 import { ReportPanel } from "./ReportPanel";
 import { useApiStatus, type ApiStatus } from "./useApiStatus";
 
@@ -198,6 +199,10 @@ export function App() {
       {session ? (
         <>
           <ReportPanel token={session.token} />
+          <DocumentsPanel
+            token={session.token}
+            canUpload={session.identity.capabilities.some((c) => c.capability === "resource.admin")}
+          />
           <IdentityView session={session} onSignOut={() => void signOut()} />
         </>
       ) : (

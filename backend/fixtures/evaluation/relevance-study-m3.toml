@@ -1,0 +1,182 @@
+# M3 relevance-filter study (dev split). Frozen 2026-11-21.
+#
+# Each pair is a question and one passage copied verbatim from the M3 corpus, labelled
+# by hand: `relevant = true` when the passage answers the question. The four kinds:
+#   paraphrase  relevant, but shares no significant term with the question
+#               (a word-overlap gate wrongly drops it)
+#   trap        irrelevant, but shares a keyword with the question
+#               (a word-overlap gate wrongly keeps it)
+#   match       relevant and shares terms (control)
+#   unrelated   irrelevant and shares nothing (control)
+# `python -m app.cli relevance-study` scores every pair with the lexical gate and with
+# BGE-M3 dense cosine similarity (real only in MODEL_MODE=gateway).
+
+version = 1
+
+[[pairs]]
+id = "para-vacation-cairo"
+kind = "paraphrase"
+relevant = true
+question = "How much vacation does someone in Cairo get?"
+passage = "Employees in Egypt receive 21 working days of annual leave per year; after ten years of service this rises to 30 days. Employees in the UAE receive 30 calendar days."
+
+[[pairs]]
+id = "para-missing-computer"
+kind = "paraphrase"
+relevant = true
+question = "What should I do if my work computer goes missing?"
+passage = "Company laptops use full-disk encryption. Report a lost or stolen laptop to the IT service desk within one hour."
+
+[[pairs]]
+id = "para-server-bill"
+kind = "paraphrase"
+relevant = true
+question = "Why did the server bill go above target?"
+passage = "Cloud hosting exceeded budget because the data-platform migration ran six weeks longer than planned."
+
+[[pairs]]
+id = "para-late-bills"
+kind = "paraphrase"
+relevant = true
+question = "How many customer bills were late?"
+passage = "Collections lagged revenue because 370 open invoices were already past their due date at the reference date. The finance team will chase overdue balances weekly until the backlog falls below 100 invoices."
+
+[[pairs]]
+id = "para-login-secret"
+kind = "paraphrase"
+relevant = true
+question = "What is the minimum length for a login secret?"
+passage = "All accounts require multi-factor authentication. Passwords must be at least 14 characters and are never shared over chat or email."
+
+[[pairs]]
+id = "para-save-holiday"
+kind = "paraphrase"
+relevant = true
+question = "Can I save holiday I didn't take for later?"
+passage = "Up to five unused days may be carried into the first quarter of the next year. Carried days expire on 31 March. Requests must be approved by the line manager."
+
+[[pairs]]
+id = "para-scam-drills"
+kind = "paraphrase"
+relevant = true
+question = "How often do we test staff with fake scam messages?"
+passage = "Forward suspicious emails to the security mailbox and do not click links. The security team runs a phishing simulation every quarter."
+
+[[pairs]]
+id = "para-income-quarter"
+kind = "paraphrase"
+relevant = true
+question = "What did we earn from completed purchases between January and March?"
+passage = "Net fulfilled sales for Q1 2026 were USD 80,934,385.00 across 291 orders. Pending and cancelled orders are excluded from this figure."
+
+[[pairs]]
+id = "trap-leave-holidays"
+kind = "trap"
+relevant = false
+question = "How many annual leave days do employees in Egypt get?"
+passage = "Public holidays follow the official calendar of each country, including Sham el-Nessim and Eid al-Fitr (عيد الفطر). Holidays that fall during approved leave are not deducted."
+
+[[pairs]]
+id = "trap-travel-budget"
+kind = "trap"
+relevant = false
+question = "What was the travel budget?"
+passage = "Cloud hosting exceeded budget because the data-platform migration ran six weeks longer than planned."
+
+[[pairs]]
+id = "trap-family-days"
+kind = "trap"
+relevant = false
+question = "How many days of family leave do parents get?"
+passage = "Up to five unused days may be carried into the first quarter of the next year. Carried days expire on 31 March. Requests must be approved by the line manager."
+
+[[pairs]]
+id = "trap-laptop-purchase"
+kind = "trap"
+relevant = false
+question = "Who approves new laptop purchases?"
+passage = "Company laptops use full-disk encryption. Report a lost or stolen laptop to the IT service desk within one hour."
+
+[[pairs]]
+id = "trap-board-2026"
+kind = "trap"
+relevant = false
+question = "When is the 2026 shareholder meeting?"
+passage = "Net fulfilled sales for Q1 2026 were USD 80,934,385.00 across 291 orders. Pending and cancelled orders are excluded from this figure."
+
+[[pairs]]
+id = "trap-mailbox-password"
+kind = "trap"
+relevant = false
+question = "What is the password for the shared finance mailbox?"
+passage = "Forward suspicious emails to the security mailbox and do not click links. The security team runs a phishing simulation every quarter."
+
+[[pairs]]
+id = "trap-alexandria-count"
+kind = "trap"
+relevant = false
+question = "How many invoices did the Alexandria office issue in February?"
+passage = "The largest single order in the quarter came from the Alexandria logistics segment and was invoiced in February."
+
+[[pairs]]
+id = "trap-contractor-names"
+kind = "trap"
+relevant = false
+question = "Which contractors worked on the data-platform migration?"
+passage = "Cloud hosting exceeded budget because the data-platform migration ran six weeks longer than planned."
+
+[[pairs]]
+id = "match-egypt-leave"
+kind = "match"
+relevant = true
+question = "How many annual leave days do employees in Egypt get?"
+passage = "Employees in Egypt receive 21 working days of annual leave per year; after ten years of service this rises to 30 days. Employees in the UAE receive 30 calendar days."
+
+[[pairs]]
+id = "match-overdue"
+kind = "match"
+relevant = true
+question = "How many open invoices were past their due date?"
+passage = "Collections lagged revenue because 370 open invoices were already past their due date at the reference date. The finance team will chase overdue balances weekly until the backlog falls below 100 invoices."
+
+[[pairs]]
+id = "match-phishing"
+kind = "match"
+relevant = true
+question = "How often does the security team run a phishing simulation?"
+passage = "Forward suspicious emails to the security mailbox and do not click links. The security team runs a phishing simulation every quarter."
+
+[[pairs]]
+id = "match-cloud"
+kind = "match"
+relevant = true
+question = "Why did cloud hosting exceed its budget?"
+passage = "Cloud hosting exceeded budget because the data-platform migration ran six weeks longer than planned."
+
+[[pairs]]
+id = "unrelated-mfa-leave"
+kind = "unrelated"
+relevant = false
+question = "Is multi-factor authentication required?"
+passage = "Up to five unused days may be carried into the first quarter of the next year. Carried days expire on 31 March. Requests must be approved by the line manager."
+
+[[pairs]]
+id = "unrelated-sales-phishing"
+kind = "unrelated"
+relevant = false
+question = "What were net fulfilled sales in the first quarter?"
+passage = "Forward suspicious emails to the security mailbox and do not click links. The security team runs a phishing simulation every quarter."
+
+[[pairs]]
+id = "unrelated-holidays-cloud"
+kind = "unrelated"
+relevant = false
+question = "Which public holidays are observed in Egypt?"
+passage = "Cloud hosting exceeded budget because the data-platform migration ran six weeks longer than planned."
+
+[[pairs]]
+id = "unrelated-encryption-revenue"
+kind = "unrelated"
+relevant = false
+question = "Do company laptops use disk encryption?"
+passage = "Collections lagged revenue because 370 open invoices were already past their due date at the reference date. The finance team will chase overdue balances weekly until the backlog falls below 100 invoices."
