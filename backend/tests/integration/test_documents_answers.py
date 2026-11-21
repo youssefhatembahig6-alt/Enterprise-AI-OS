@@ -611,7 +611,8 @@ def test_fabricated_quote_and_number_are_repaired_or_abstained(
     stream = ask_docs(client, documents_db, "niletech/finance-reader", FINANCE_Q)
     assert stream.done["outcome"] == "abstained"
     assert stream.done["abstention"]["code"] == "verification_failed"
-    assert "999" not in stream.raw and "371" not in stream.raw
+    for _, _, payload in _normalize(stream):
+        assert "999" not in payload and "371" not in payload
     assert not stream.of("token")
 
 

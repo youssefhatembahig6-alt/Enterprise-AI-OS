@@ -33,6 +33,10 @@ class CollectionMissing(QdrantError):
     """The collection does not exist (nothing indexed with this embedding space yet)."""
 
 
+class QdrantConflict(QdrantError):
+    """Qdrant reported an HTTP conflict."""
+
+
 @dataclass(frozen=True, slots=True)
 class SparseVector:
     indices: list[int]
@@ -75,6 +79,8 @@ class QdrantClient:
             return None
         if response.status_code == 404 and "doesn't exist" in response.text:
             raise CollectionMissing(path)
+        if response.status_code == 409:
+            raise QdrantConflict(f"{method} {path} -> 409: {response.text[:200]}")
         if response.status_code >= 400:
             raise QdrantError(f"{method} {path} -> {response.status_code}: {response.text[:200]}")
         return response.json().get("result")
@@ -82,23 +88,31 @@ class QdrantClient:
     # -- collections ---------------------------------------------------------------
 
     def ensure_collection(self, name: str, dense_size: int) -> None:
-        existing = self._call("GET", f"/collections/{name}")
+        path = f"/collections/{name}"
+        existing = self._call("GET", path)
         if existing is None:
-            self._call(
-                "PUT",
-                f"/collections/{name}",
-                {
-                    "vectors": {DENSE: {"size": dense_size, "distance": "Cosine"}},
-                    "sparse_vectors": {SPARSE: {}},
-                },
-            )
-            for field in ("tenant_id", "document_id"):
+            try:
                 self._call(
                     "PUT",
-                    f"/collections/{name}/index?wait=true",
-                    {"field_name": field, "field_schema": "keyword"},
+                    path,
+                    {
+                        "vectors": {DENSE: {"size": dense_size, "distance": "Cosine"}},
+                        "sparse_vectors": {SPARSE: {}},
+                    },
                 )
-            return
+            except QdrantConflict:
+                # Another ingestion worker can create the collection after our GET.
+                existing = self._call("GET", path)
+                if existing is None:
+                    raise
+            else:
+                for field in ("tenant_id", "document_id"):
+                    self._call(
+                        "PUT",
+                        f"{path}/index?wait=true",
+                        {"field_name": field, "field_schema": "keyword"},
+                    )
+                return
         size = existing["config"]["params"]["vectors"][DENSE]["size"]
         if size != dense_size:
             raise QdrantError(f"collection {name} has dense size {size}, expected {dense_size}")

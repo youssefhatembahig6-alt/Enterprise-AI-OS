@@ -2,9 +2,30 @@
 
 from __future__ import annotations
 
+import uuid
+from typing import Any
+
 from app.documents.evaluate import markdown_summary, run_retrieval_eval
 from app.documents.qdrant import QdrantClient
 from app.reporting.model_client import FakeModelClient
+
+
+def test_concurrent_collection_creation_is_idempotent(qdrant_url: str) -> None:
+    name = f"test_{uuid.uuid4().hex}"
+    winner = QdrantClient(qdrant_url)
+
+    def create_before_put(method: str, path: str, body: dict[str, Any] | None) -> None:
+        if method == "PUT" and path == f"/collections/{name}":
+            winner.ensure_collection(name, 256)
+
+    other = QdrantClient(qdrant_url, on_request=create_before_put)
+    try:
+        other.ensure_collection(name, 256)
+        assert name in qdrant_collections(qdrant_url)
+    finally:
+        winner.delete_collection(name)
+        winner.close()
+        other.close()
 
 
 def test_harness_compares_dense_and_hybrid_on_the_same_cases(qdrant_url: str) -> None:
