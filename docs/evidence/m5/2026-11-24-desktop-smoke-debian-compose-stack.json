@@ -1,0 +1,165 @@
+{
+  "kind": "m5_desktop_smoke",
+  "result": "passed",
+  "live": "real Electron app and real backend; fake model (embeddings only); simulated network outage",
+  "backend": "running stack at http://localhost:8000; /ready model_inference=fake",
+  "started_at": "2026-11-24T14:15:31.335158+00:00",
+  "finished_at": "2026-11-24T14:15:36.147112+00:00",
+  "host": {
+    "system": "Linux",
+    "release": "6.12.117+deb13-amd64",
+    "python": "3.13.5"
+  },
+  "electron": {
+    "kind": "desktop_smoke",
+    "result": "passed",
+    "started_at": "2026-11-24T14:15:31.998Z",
+    "finished_at": "2026-11-24T14:15:34.657Z",
+    "platform": {
+      "os": "linux",
+      "release": "6.12.117+deb13-amd64",
+      "arch": "x64"
+    },
+    "versions": {
+      "electron": "39.8.10",
+      "node": "22.22.1",
+      "chrome": "142.0.7444.265"
+    },
+    "api_base": "http://localhost:8000",
+    "steps": [
+      {
+        "name": "renderer_loads_shared_react_app",
+        "ok": true,
+        "detail": {
+          "origin": "app://eaios",
+          "text_sample": "Enterprise AI OS\nChecking API\u2026\nSign in\nOrganization\nEmail\nPassword\nSign in"
+        }
+      },
+      {
+        "name": "renderer_has_bridge_without_node",
+        "ok": true,
+        "detail": {
+          "bridge": [
+            "addFolder",
+            "chooseFolder",
+            "listFolders",
+            "onStatus",
+            "removeFolder",
+            "setSession",
+            "syncNow",
+            "version"
+          ]
+        }
+      },
+      {
+        "name": "content_security_policy",
+        "ok": true,
+        "detail": {
+          "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:8000; img-src 'self' data:; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+        }
+      },
+      {
+        "name": "sign_in",
+        "ok": true,
+        "detail": {
+          "status": 200
+        }
+      },
+      {
+        "name": "register_folder",
+        "ok": true,
+        "detail": {
+          "source_id": "ec868740-df92-419a-b615-76968f9b711b"
+        }
+      },
+      {
+        "name": "recursive_watcher",
+        "ok": true,
+        "detail": {
+          "platform": "linux"
+        }
+      },
+      {
+        "name": "initial_sync_recursion_and_exclusions",
+        "ok": true,
+        "detail": {
+          "server_items": [
+            {
+              "path": "projects/2026/plan.md",
+              "state": "active",
+              "reason": null,
+              "sha256": "4a95fbaf89d9799ed606d993ae2ac55e0ff9795b98415f38fb352fa672a78d25",
+              "last_seq": 2,
+              "document_id": "9662039e-5d2f-4ee5-b7f6-8d66df7044b1"
+            },
+            {
+              "path": "travel.md",
+              "state": "active",
+              "reason": null,
+              "sha256": "7a73447f1d25a5526fe2e0777355b5d054a32ad6cb0870d8dd3e4f41d81547ca",
+              "last_seq": 1,
+              "document_id": "350c1329-0619-41e6-bcd8-f1f406998196"
+            }
+          ],
+          "skipped_locally": 5,
+          "symlink_created": true
+        }
+      },
+      {
+        "name": "watcher_edit_add_delete_and_dedup",
+        "ok": true,
+        "detail": {
+          "events_enqueued": 3,
+          "expected": 3,
+          "note": "two identical writes of travel.md produce one upsert"
+        }
+      },
+      {
+        "name": "offline_retry_same_event_ids",
+        "ok": true,
+        "detail": {
+          "attempts": 2,
+          "simulated": "first send returned a network failure (no request reached the server)"
+        }
+      },
+      {
+        "name": "server_view_matches_folder",
+        "ok": true,
+        "detail": {
+          "active": [
+            "offline.md",
+            "projects/notes.txt",
+            "travel.md"
+          ]
+        }
+      }
+    ],
+    "exit_code": 0,
+    "stderr_tail": ""
+  },
+  "backend_checks": [
+    {
+      "name": "owner_answer_cites_folder_file",
+      "ok": true,
+      "detail": {
+        "quotes": [
+          "Train tickets above 50 USD need approval."
+        ]
+      }
+    },
+    {
+      "name": "unshared_user_never_receives_folder_content",
+      "ok": true,
+      "detail": {
+        "folder_documents": 4,
+        "other_outcome": "published",
+        "other_abstention": null,
+        "other_cited_folder_documents": []
+      }
+    },
+    {
+      "name": "cleanup_temporary_folder_source",
+      "ok": true
+    }
+  ]
+}

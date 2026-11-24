@@ -1,9 +1,10 @@
 {
   "kind": "m5_desktop_smoke",
   "result": "passed",
-  "live": "real Electron app, real FastAPI server, real PostgreSQL and Qdrant; fake model (embeddings only) and a simulated network outage",
-  "started_at": "2026-11-24T13:37:23.160851+00:00",
-  "finished_at": "2026-11-24T13:37:28.868848+00:00",
+  "live": "real Electron app and real backend; fake model (embeddings only); simulated network outage",
+  "backend": "disposable: in-process FastAPI, disposable PostgreSQL, Qdrant test service; fake model",
+  "started_at": "2026-11-24T14:15:36.274374+00:00",
+  "finished_at": "2026-11-24T14:15:44.898918+00:00",
   "host": {
     "system": "Linux",
     "release": "6.12.117+deb13-amd64",
@@ -12,8 +13,8 @@
   "electron": {
     "kind": "desktop_smoke",
     "result": "passed",
-    "started_at": "2026-11-24T13:37:25.435Z",
-    "finished_at": "2026-11-24T13:37:28.078Z",
+    "started_at": "2026-11-24T14:15:40.992Z",
+    "finished_at": "2026-11-24T14:15:43.845Z",
     "platform": {
       "os": "linux",
       "release": "6.12.117+deb13-amd64",
@@ -24,7 +25,7 @@
       "node": "22.22.1",
       "chrome": "142.0.7444.265"
     },
-    "api_base": "http://127.0.0.1:53021",
+    "api_base": "http://127.0.0.1:59093",
     "steps": [
       {
         "name": "renderer_loads_shared_react_app",
@@ -54,7 +55,7 @@
         "name": "content_security_policy",
         "ok": true,
         "detail": {
-          "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:53021; img-src 'self' data:; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+          "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:59093; img-src 'self' data:; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
         }
       },
       {
@@ -68,7 +69,7 @@
         "name": "register_folder",
         "ok": true,
         "detail": {
-          "source_id": "23e2a5c7-ca37-4b9e-9fb9-0bf2222481d6"
+          "source_id": "853316e3-7f61-45df-919b-319fd0c25570"
         }
       },
       {
@@ -89,7 +90,7 @@
               "reason": null,
               "sha256": "4a95fbaf89d9799ed606d993ae2ac55e0ff9795b98415f38fb352fa672a78d25",
               "last_seq": 2,
-              "document_id": "d9a05854-1cbc-4b56-a404-54e32364424d"
+              "document_id": "c8b5ea2b-724a-4eb8-ad09-4a09a7c4ea4f"
             },
             {
               "path": "travel.md",
@@ -97,7 +98,7 @@
               "reason": null,
               "sha256": "7a73447f1d25a5526fe2e0777355b5d054a32ad6cb0870d8dd3e4f41d81547ca",
               "last_seq": 1,
-              "document_id": "2de023e3-d94e-4be7-a644-3c693f3e01b1"
+              "document_id": "fbe4e70c-b759-4e6a-9252-904a74cb2430"
             }
           ],
           "skipped_locally": 5,
@@ -147,8 +148,14 @@
       }
     },
     {
-      "name": "unshared_user_gets_no_sources",
-      "ok": true
+      "name": "unshared_user_never_receives_folder_content",
+      "ok": true,
+      "detail": {
+        "folder_documents": 4,
+        "other_outcome": "abstained",
+        "other_abstention": "no_sources",
+        "other_cited_folder_documents": []
+      }
     }
   ]
 }
