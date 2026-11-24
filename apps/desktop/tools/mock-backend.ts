@@ -123,7 +123,7 @@ async function runSmoke(reportPath: string): Promise<number> {
     JSON.stringify(
       {
         kind: "m5_desktop_smoke_mocked_backend",
-        backend: "mock (apps/desktop/test/mock-backend.ts): no authorization, ingestion or answers",
+        backend: "mock (apps/desktop/tools/mock-backend.ts): no authorization, ingestion or answers",
         exit_code: code,
         electron: electronResult,
       },

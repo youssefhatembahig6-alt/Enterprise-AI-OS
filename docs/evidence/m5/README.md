@@ -26,7 +26,7 @@ Environment of the local runs (21–24 November 2026): Debian 13 (kernel 6.12), 
 | D5 | Offline retries | engine "keeps events queued while offline…", "re-sends a batch whose reply was lost", "pauses without a session"; smoke `offline_retry_same_event_ids` | pass | real FS + HTTP double; smoke outage is **simulated** in the transport | desktop tests, smoke |
 | D6 | Duplicate watcher events | engine "ignores duplicate and no-op changes…", "drops a queued upsert whose file changed again"; `::test_duplicate_events_and_unchanged_content_change_nothing`; smoke (two identical writes → one event) | pass | as above | as above |
 | D7 | Smoke test on Debian | `2026-11-24-desktop-smoke-debian-live.json`: 10 Electron steps + 2 backend checks (owner's answer cites the folder file; unshared user gets `no_sources`) | **pass** | **live**: real Electron, real FastAPI, PostgreSQL, Qdrant; fake model for embeddings | `scripts/m5_desktop_smoke.py` |
-| D8 | Smoke test on Windows | CI job `desktop` on `windows-2022`: engine tests and the real Electron smoke against the **mock backend**; result in the PR checks and artifact `desktop-smoke-Windows` | see PR CI | **mocked backend** | CI, or `npm run smoke:mock -w @eaios/desktop` on Windows |
+| D8 | Smoke test on Windows | CI job `desktop` on `windows-2022`: engine tests and the real Electron smoke against the **mock backend**; result in the PR checks and artifact `desktop-smoke-Windows` | **pass**: CI run 45408304102, all 10 Electron steps on Windows Server 2022 (`2026-11-24-desktop-smoke-windows-ci-mocked-backend.json`) | **mocked backend** | CI, or `npm run smoke:mock -w @eaios/desktop` on Windows |
 | X1 | No regression in M0–M4 | full backend suite | **833 passed** (2026-11-24; Ruff and Mypy clean) | real services | `pytest -q` |
 
 ## Reproduction commands
@@ -73,4 +73,5 @@ python3 scripts/m5_github_acceptance.py --repo <owner/name> --login <collaborato
 | --- | --- |
 | `2026-11-24-desktop-smoke-debian-live.json` | Real Electron + real backend on Debian (passed) |
 | `2026-11-24-desktop-smoke-debian-mocked-backend.json` | Real Electron + mock backend on Debian, same run as the CI Windows job (passed) |
+| `2026-11-24-desktop-smoke-windows-ci-mocked-backend.json` | Real Electron + mock backend on the GitHub Actions `windows-2022` runner (passed) |
 | `2026-11-21-github-shape-check.json` | Read-only live GitHub responses parsed by the connector client (counts only) |
