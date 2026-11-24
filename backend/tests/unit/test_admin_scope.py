@@ -51,3 +51,21 @@ def test_routing_respects_enabled_packs() -> None:
         choose_kind(sales, "report", frozenset({"documents"}))
     with pytest.raises(CapabilityDisabled):
         choose_kind(sales, "auto", frozenset())
+
+
+def test_m5_routing_sends_contract_and_code_questions_to_their_packs() -> None:
+    every = frozenset({"documents", "sales_reports", "legal", "code"})
+    assert choose_kind("Which contracts expire in 2027?", "auto", every) == "legal"
+    assert choose_kind("Compare the termination clauses", "auto", every) == "legal"
+    assert choose_kind("Where is the reserve function implemented?", "auto", every) == "code"
+    assert choose_kind("What does app/main.py configure?", "auto", every) == "code"
+    # Ordinary document wording stays with documents.
+    assert choose_kind("What is the method for expense claims?", "auto", every) == "documents"
+    assert choose_kind("What is the notice period for leave?", "auto", every) == "documents"
+    assert choose_kind("What were fulfilled sales in Q1 2026?", "auto", every) == "report"
+    assert choose_kind("What is the leave policy?", "auto", every) == "documents"
+    # Disabled packs are never routed to in auto mode; an explicit mode is refused.
+    base = frozenset({"documents", "sales_reports"})
+    assert choose_kind("Which contracts expire in 2027?", "auto", base) == "report"
+    with pytest.raises(CapabilityDisabled):
+        choose_kind("Compare the termination clauses", "legal", base)

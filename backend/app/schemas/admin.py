@@ -49,8 +49,17 @@ class GroupLinksIn(StrictModel):
 
 
 class SourceIn(StrictModel):
+    kind: Literal["google_drive", "github"] = "google_drive"
     name: str = Field(min_length=1, max_length=200)
-    external_root: str = Field(pattern=r"^[A-Za-z0-9_-]{5,200}$", description="Drive folder id")
+    external_root: str = Field(
+        pattern=r"^(?:[A-Za-z0-9_-]{5,200}|[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100})$",
+        description="Drive folder id, or owner/repository for GitHub",
+    )
+    external_ref: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9._/-]{1,200}$",
+        description="GitHub branch (default: the repository's default branch)",
+    )
     department: str = Field(pattern=DEPARTMENT)
     classification: CLASSIFICATION
     department_restricted: bool = False
@@ -64,3 +73,11 @@ class SourcePatchIn(StrictModel):
     department_restricted: bool | None = None
     allowed_countries: list[str] | None = Field(default=None, min_length=1, max_length=50)
     status: Literal["active", "paused", "deleted"] | None = None
+
+
+class ExternalAccountsIn(StrictModel):
+    github: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$",
+        description="GitHub login linked to this user (null removes the link)",
+    )

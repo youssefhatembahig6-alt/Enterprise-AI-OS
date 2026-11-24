@@ -32,6 +32,8 @@ from uuid import UUID
 from sqlalchemy import Connection, Engine, text
 
 from app.connectors.drive import ConnectorConfig
+from app.connectors.github import GitHubConnectorConfig
+from app.connectors.local_folder import tombstone_source
 from app.connectors.sync import SyncOutcome
 from app.db.engine import tenant_transaction
 from app.repositories.audit import record_audit_event
@@ -110,10 +112,14 @@ class AdminService:
         engine: Engine,
         drive_config: ConnectorConfig,
         run_sync: SyncRunner | None,
+        github_config: GitHubConnectorConfig | None = None,
+        drop_points: Callable[[list[UUID]], None] | None = None,
     ) -> None:
         self._engine = engine
         self._drive_config = drive_config
         self._run_sync = run_sync
+        self._github_config = github_config or GitHubConnectorConfig(None)
+        self._drop_points = drop_points
 
     def _tx(self, ctx: AccessContext) -> Any:
         return tenant_transaction(self._engine, ctx.tenant_id, ctx.user_id)
@@ -211,6 +217,9 @@ class AdminService:
             )
         ).all():
             groups.setdefault(g.user_id, []).append(g.key)
+        accounts: dict[UUID, dict[str, str]] = {}
+        for a in conn.execute(text("SELECT user_id, provider, login FROM external_accounts")).all():
+            accounts.setdefault(a.user_id, {})[a.provider] = a.login
         return [
             {
                 "user_id": str(row.id),
@@ -222,6 +231,7 @@ class AdminService:
                 "department": row.department,
                 "roles": roles.get(row.id, []),
                 "groups": groups.get(row.id, []),
+                "external_accounts": accounts.get(row.id, {}),
                 "updated_at": _iso(row.updated_at),
             }
             for row in rows
@@ -231,6 +241,53 @@ class AdminService:
         scope = _require(ctx, Capability.IDENTITY_ADMIN)
         with self._tx(ctx) as conn:
             return [u for u in self._user_rows(conn) if _in_scope(scope, u["department"])]
+
+    def set_external_accounts(
+        self, ctx: AccessContext, user_id: UUID, github: str | None
+    ) -> dict[str, Any]:
+        """Link (or unlink) a GitHub login to a user (M5, ADR 0502). Tenant-wide
+        ``identity.admin`` only, never your own user: the link is what turns a
+        repository collaborator into an allow for this user. Unlinking applies at the
+        next authorization point (policy epoch)."""
+
+        _require_tenant_wide(ctx, Capability.IDENTITY_ADMIN)
+        if user_id == ctx.user_id:
+            raise AdminInvalid("cannot_link_self", "You cannot link an account to yourself.")
+        with self._tx(ctx) as conn:
+            self._target(conn, None, user_id)
+            conn.execute(
+                text("DELETE FROM external_accounts WHERE provider = 'github' AND user_id = :u"),
+                {"u": user_id},
+            )
+            if github:
+                login = github.lower()
+                taken = conn.execute(
+                    text(
+                        "SELECT user_id FROM external_accounts"
+                        " WHERE provider = 'github' AND login = :l"
+                    ),
+                    {"l": login},
+                ).scalar_one_or_none()
+                if taken is not None:
+                    raise AdminInvalid(
+                        "account_already_linked", "This GitHub login is linked to another user."
+                    )
+                conn.execute(
+                    text(
+                        "INSERT INTO external_accounts (tenant_id, provider, login, user_id,"
+                        " created_by) VALUES (:t, 'github', :l, :u, :by)"
+                    ),
+                    {"t": ctx.tenant_id, "l": login, "u": user_id, "by": ctx.user_id},
+                )
+            self._audit(
+                conn,
+                ctx,
+                "admin.user",
+                "external_account_linked" if github else "external_account_unlinked",
+                action="identity.admin",
+                details={"target_user_id": str(user_id), "provider": "github"},
+            )
+            return self._user_rows(conn, user_id)[0]
 
     def _target(self, conn: Connection, scope: frozenset[str] | None, user_id: UUID) -> Any:
         row = conn.execute(
@@ -629,7 +686,12 @@ class AdminService:
                (s.last_verified_sync_at IS NOT NULL AND s.last_verified_sync_at
                     > now() - make_interval(secs => ts.max_staleness_seconds)) AS fresh,
                (SELECT count(*) FROM drive_items i WHERE i.source_id = s.id
-                    AND i.state <> 'removed') AS item_count
+                    AND i.state <> 'removed')
+                 + (SELECT count(*) FROM connector_items i WHERE i.source_id = s.id
+                    AND i.state <> 'removed') AS item_count,
+               s.external_ref, s.visibility, s.external_revision, s.unresolved_principals,
+               s.owner_user_id, (SELECT email FROM users u WHERE u.id = s.owner_user_id)
+                 AS owner_email
           FROM connector_sources s LEFT JOIN tenant_settings ts ON ts.tenant_id = s.tenant_id
     """
 
@@ -639,6 +701,8 @@ class AdminService:
             access = "connector_disabled"
         elif r.status != "active":
             access = "paused"
+        elif r.kind == "local_folder":
+            access = "current"  # backend-assigned sharing; nothing external to go stale
         elif r.last_verified_sync_at is None:
             access = "never_verified"
         elif not r.permissions_current and r.last_error_code in (
@@ -673,6 +737,12 @@ class AdminService:
             "sync_interval_seconds": r.sync_interval_seconds,
             "max_staleness_seconds": r.max_staleness_seconds,
             "item_count": int(r.item_count),
+            # M5: GitHub branch/visibility/commit; local-folder owner and device label.
+            "external_ref": r.external_ref,
+            "visibility": r.visibility,
+            "external_revision": r.external_revision,
+            "unresolved_principals": r.unresolved_principals or [],
+            "owner": r.owner_email,
         }
 
     def _load_source(self, conn: Connection, scope: frozenset[str] | None, source_id: UUID) -> Any:
@@ -728,7 +798,12 @@ class AdminService:
                 for i in conn.execute(
                     text(
                         "SELECT external_id, name, path, state, document_id, unresolved_principals,"
-                        " updated_at FROM drive_items WHERE source_id = :s ORDER BY path"
+                        " updated_at FROM drive_items WHERE source_id = :s"
+                        " UNION ALL"
+                        " SELECT path, path, path, CASE WHEN reason IS NULL THEN state"
+                        "        ELSE state || ':' || reason END, document_id, '[]'::jsonb,"
+                        "        updated_at FROM connector_items WHERE source_id = :s"
+                        " ORDER BY 3"
                     ),
                     {"s": source_id},
                 ).all()
@@ -743,34 +818,51 @@ class AdminService:
         if body["classification"] not in CLASSIFICATION_RANK:
             raise AdminInvalid("invalid_classification", "Unknown classification.")
         root = body["external_root"]
+        kind = body.get("kind") or "google_drive"
         with self._tx(ctx) as conn:
-            require_connector(conn, "google_drive")
-            config = self._drive_config.tenant(ctx.tenant_slug)  # re-read each time
-            if config is None:
-                raise AdminInvalid(
-                    "drive_not_configured",
-                    "Google Drive credentials are not configured for this organization.",
-                )
-            if root not in config.allowed_roots:
-                raise AdminInvalid(
-                    "root_not_allowed",
-                    "This folder is not one the server operator allowed for this organization.",
-                )
+            require_connector(conn, kind)
+            if kind == "github":
+                gh = self._github_config.tenant(ctx.tenant_slug)  # re-read each time
+                if gh is None:
+                    raise AdminInvalid(
+                        "github_not_configured",
+                        "GitHub credentials are not configured for this organization.",
+                    )
+                if "/" not in root or root.lower() not in gh.allowed_repositories:
+                    raise AdminInvalid(
+                        "repository_not_allowed",
+                        "This repository is not one the server operator allowed for this "
+                        "organization.",
+                    )
+            else:
+                config = self._drive_config.tenant(ctx.tenant_slug)  # re-read each time
+                if config is None:
+                    raise AdminInvalid(
+                        "drive_not_configured",
+                        "Google Drive credentials are not configured for this organization.",
+                    )
+                if root not in config.allowed_roots:
+                    raise AdminInvalid(
+                        "root_not_allowed",
+                        "This folder is not one the server operator allowed for this organization.",
+                    )
             source_id = uuid.uuid4()
             try:
                 conn.execute(
                     text(
                         """
                         INSERT INTO connector_sources (id, tenant_id, kind, name, external_root,
-                            department, classification, department_restricted,
+                            external_ref, department, classification, department_restricted,
                             allowed_countries, created_by)
-                        VALUES (:id, :t, 'google_drive', :n, :root, :dept, :cls, :restricted,
+                        VALUES (:id, :t, :kind, :n, :root, :ref, :dept, :cls, :restricted,
                                 :countries, :u)
                         """
                     ),
                     {
                         "id": source_id,
                         "t": ctx.tenant_id,
+                        "kind": kind,
+                        "ref": body.get("external_ref") if kind == "github" else None,
                         "n": body["name"][:200],
                         "root": root,
                         "dept": department,
@@ -790,7 +882,7 @@ class AdminService:
                 "admin.source",
                 "source_created",
                 action="resource.admin",
-                details={"source_id": str(source_id), "department": department},
+                details={"source_id": str(source_id), "department": department, "kind": kind},
             )
             return self._source_out(self._load_source(conn, scope, source_id))
 
@@ -811,8 +903,20 @@ class AdminService:
             raise AdminInvalid("invalid_status", "Status must be active, paused or deleted.")
         if "department" in changes and not _in_scope(scope, changes["department"]):
             raise AdminForbidden
+        removed: list[UUID] = []
         with self._tx(ctx) as conn:
-            self._load_source(conn, scope, source_id)
+            current = self._load_source(conn, scope, source_id)
+            if current.kind == "local_folder" and set(changes) - {"status"}:
+                # Local folders carry backend-assigned attributes; only their status
+                # can be administered (pause or delete).
+                raise AdminInvalid(
+                    "managed_by_owner", "A local folder's attributes are assigned by the server."
+                )
+            deleting = changes.get("status") == "deleted"
+            if deleting and current.kind in ("github", "local_folder"):
+                # M5: deleting a repository or folder source tombstones its documents.
+                removed = tombstone_source(conn, source_id)
+                changes = {k: v for k, v in changes.items() if k != "status"}
             if changes:
                 sets = ", ".join(f"{k} = :{k}" for k in sorted(changes))
                 # Attribute changes apply to items at the next verified sync; until then
@@ -841,9 +945,13 @@ class AdminService:
                 action="resource.admin",
                 details={"source_id": str(source_id), "fields": sorted(changes)},
             )
-            if changes.get("status") == "deleted":
-                return {"source_id": str(source_id), "status": "deleted"}
-            return self._source_out(self._load_source(conn, scope, source_id))
+            if deleting:
+                out: dict[str, Any] = {"source_id": str(source_id), "status": "deleted"}
+            else:
+                out = self._source_out(self._load_source(conn, scope, source_id))
+        if removed and self._drop_points is not None:
+            self._drop_points(removed)
+        return out
 
     def sync_source(self, ctx: AccessContext, source_id: UUID) -> dict[str, Any]:
         """Create a queued run row first, so the caller can wait for *this* run (a
@@ -854,8 +962,12 @@ class AdminService:
             raise AdminInvalid("sync_unavailable", "Sync is not available on this server.")
         run_id = uuid.uuid4()
         with self._tx(ctx) as conn:
-            self._load_source(conn, scope, source_id)
-            require_connector(conn, "google_drive")
+            row = self._load_source(conn, scope, source_id)
+            if row.kind == "local_folder":
+                raise AdminInvalid(
+                    "not_pull_connector", "A local folder is synced by the desktop app."
+                )
+            require_connector(conn, row.kind)
             conn.execute(
                 text(
                     "INSERT INTO connector_sync_runs (id, tenant_id, source_id, trigger,"
