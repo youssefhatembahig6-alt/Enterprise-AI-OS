@@ -1,0 +1,168 @@
+{
+    "kind":  "m5_desktop_smoke",
+    "result":  "passed",
+    "live":  "real Electron app and real backend; fake model (embeddings only); simulated network outage",
+    "backend":  "running stack at http://localhost:8000; /ready model_inference=fake",
+    "started_at":  "2026-11-24T15:21:21.845843+00:00",
+    "finished_at":  "2026-11-24T15:22:43.171784+00:00",
+    "host":  {
+                 "system":  "Windows",
+                 "release":  "10",
+                 "python":  "3.11.9"
+             },
+    "electron":  {
+                     "kind":  "desktop_smoke",
+                     "result":  "passed",
+                     "started_at":  "2026-11-24T15:21:40.800Z",
+                     "finished_at":  "2026-11-24T15:22:22.833Z",
+                     "platform":  {
+                                      "os":  "win32",
+                                      "release":  "10.0.26200",
+                                      "arch":  "x64"
+                                  },
+                     "versions":  {
+                                      "electron":  "39.8.10",
+                                      "node":  "22.22.1",
+                                      "chrome":  "142.0.7444.265"
+                                  },
+                     "api_base":  "http://localhost:8000",
+                     "steps":  [
+                                   {
+                                       "name":  "renderer_loads_shared_react_app",
+                                       "ok":  true,
+                                       "detail":  {
+                                                      "origin":  "app://eaios",
+                                                      "text_sample":  "Enterprise AI OS\nChecking APIâ€¦\nSign in\nOrganization\nEmail\nPassword\nSign in"
+                                                  }
+                                   },
+                                   {
+                                       "name":  "renderer_has_bridge_without_node",
+                                       "ok":  true,
+                                       "detail":  {
+                                                      "bridge":  [
+                                                                     "addFolder",
+                                                                     "chooseFolder",
+                                                                     "listFolders",
+                                                                     "onStatus",
+                                                                     "removeFolder",
+                                                                     "setSession",
+                                                                     "syncNow",
+                                                                     "version"
+                                                                 ]
+                                                  }
+                                   },
+                                   {
+                                       "name":  "content_security_policy",
+                                       "ok":  true,
+                                       "detail":  {
+                                                      "csp":  "default-src \u0027self\u0027; script-src \u0027self\u0027; style-src \u0027self\u0027 \u0027unsafe-inline\u0027; connect-src \u0027self\u0027 http://localhost:8000; img-src \u0027self\u0027 data:; font-src \u0027self\u0027 data:; object-src \u0027none\u0027; base-uri \u0027none\u0027; frame-ancestors \u0027none\u0027; form-action \u0027none\u0027"
+                                                  }
+                                   },
+                                   {
+                                       "name":  "sign_in",
+                                       "ok":  true,
+                                       "detail":  {
+                                                      "status":  200
+                                                  }
+                                   },
+                                   {
+                                       "name":  "register_folder",
+                                       "ok":  true,
+                                       "detail":  {
+                                                      "source_id":  "86f4330a-7771-42ef-a81f-1b200f7252a8"
+                                                  }
+                                   },
+                                   {
+                                       "name":  "recursive_watcher",
+                                       "ok":  true,
+                                       "detail":  {
+                                                      "platform":  "win32"
+                                                  }
+                                   },
+                                   {
+                                       "name":  "initial_sync_recursion_and_exclusions",
+                                       "ok":  true,
+                                       "detail":  {
+                                                      "server_items":  [
+                                                                           {
+                                                                               "path":  "projects/2026/plan.md",
+                                                                               "state":  "active",
+                                                                               "reason":  null,
+                                                                               "sha256":  "4a95fbaf89d9799ed606d993ae2ac55e0ff9795b98415f38fb352fa672a78d25",
+                                                                               "last_seq":  2,
+                                                                               "document_id":  "46670496-b472-418a-8547-19eb12d21166"
+                                                                           },
+                                                                           {
+                                                                               "path":  "travel.md",
+                                                                               "state":  "active",
+                                                                               "reason":  null,
+                                                                               "sha256":  "7a73447f1d25a5526fe2e0777355b5d054a32ad6cb0870d8dd3e4f41d81547ca",
+                                                                               "last_seq":  1,
+                                                                               "document_id":  "e6da1b33-4361-4968-9993-b5e1395524e4"
+                                                                           }
+                                                                       ],
+                                                      "skipped_locally":  4,
+                                                      "symlink_created":  false
+                                                  }
+                                   },
+                                   {
+                                       "name":  "watcher_edit_add_delete_and_dedup",
+                                       "ok":  true,
+                                       "detail":  {
+                                                      "events_enqueued":  3,
+                                                      "expected":  3,
+                                                      "note":  "two identical writes of travel.md produce one upsert"
+                                                  }
+                                   },
+                                   {
+                                       "name":  "offline_retry_same_event_ids",
+                                       "ok":  true,
+                                       "detail":  {
+                                                      "attempts":  2,
+                                                      "simulated":  "first send returned a network failure (no request reached the server)"
+                                                  }
+                                   },
+                                   {
+                                       "name":  "server_view_matches_folder",
+                                       "ok":  true,
+                                       "detail":  {
+                                                      "active":  [
+                                                                     "offline.md",
+                                                                     "projects/notes.txt",
+                                                                     "travel.md"
+                                                                 ]
+                                                  }
+                                   }
+                               ],
+                     "exit_code":  0,
+                     "stderr_tail":  ""
+                 },
+    "backend_checks":  [
+                           {
+                               "name":  "owner_answer_cites_folder_file",
+                               "ok":  true,
+                               "detail":  {
+                                              "quotes":  [
+                                                             "Train tickets above 50 USD need approval."
+                                                         ]
+                                          }
+                           },
+                           {
+                               "name":  "unshared_user_never_receives_folder_content",
+                               "ok":  true,
+                               "detail":  {
+                                              "folder_documents":  4,
+                                              "other_outcome":  "abstained",
+                                              "other_abstention":  "no_sources",
+                                              "other_cited_folder_documents":  [
+
+                                                                               ]
+                                          }
+                           },
+                           {
+                               "name":  "cleanup_temporary_folder_source",
+                               "ok":  true
+                           }
+                       ],
+    "tested_commit":  "27c38f5b53e80d2698a21bb9083ffcb4df4416e2"
+}

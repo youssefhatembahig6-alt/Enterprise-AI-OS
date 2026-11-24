@@ -60,6 +60,13 @@ def test_published_openapi_matches_app() -> None:
         "/api/v1/admin/sources/{source_id}/sync",
         "/api/v1/admin/sources/{source_id}/runs/{run_id}",
         "/api/v1/admin/audit",
+        # M5
+        "/api/v1/admin/users/{user_id}/external-accounts",
+        "/api/v1/local-folders",
+        "/api/v1/local-folders/{source_id}",
+        "/api/v1/local-folders/{source_id}/sharing",
+        "/api/v1/local-folders/{source_id}/items",
+        "/api/v1/local-folders/{source_id}/events",
     }
     chat = generated["paths"]["/api/v1/chat"]["post"]["responses"]["200"]["content"]
     assert "text/event-stream" in chat

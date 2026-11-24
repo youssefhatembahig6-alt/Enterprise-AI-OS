@@ -292,6 +292,12 @@ function DocumentCitationPanel({
               <strong>{passage.title}</strong> · {passage.filename} · version {passage.version}
               {passage.is_current_version ? "" : ` (current is ${passage.current_version}; this is the version the answer used)`}
             </p>
+            {passage.repository && passage.commit ? (
+              <p className="text-xs text-muted-fg break-all">
+                {passage.repository} · {passage.path} · commit <code>{passage.commit.slice(0, 12)}</code>
+                {passage.line_start ? ` · lines ${passage.line_start}–${passage.line_end}` : ""}
+              </p>
+            ) : null}
             <blockquote className="rounded-md bg-muted p-3 whitespace-pre-wrap break-words">
               <span className="text-muted-fg">…{passage.before}</span>
               <mark className="bg-warn-bg text-warn-fg">{passage.quote}</mark>
@@ -318,6 +324,8 @@ function DocumentCitationPanel({
 export function ReportPanel({ token, packs }: { token: string; packs: string[] | null }) {
   // Menus follow the tenant's packs; the backend refuses disabled packs regardless.
   const docsOn = packs === null || packs.includes("documents");
+  const legalOn = packs !== null && packs.includes("legal");
+  const codeOn = packs !== null && packs.includes("code");
   const reportsOn = packs === null || packs.includes("sales_reports");
   const [question, setQuestion] = useState("");
   const [mode, setMode] = useState<AskMode>("auto");
@@ -425,10 +433,12 @@ export function ReportPanel({ token, packs }: { token: string; packs: string[] |
               <option value="auto">Automatic</option>
               {docsOn ? <option value="documents">Documents you can access</option> : null}
               {reportsOn ? <option value="report">Sales report (SQL)</option> : null}
+              {legalOn ? <option value="legal">Contracts (clauses and expiry)</option> : null}
+              {codeOn ? <option value="code">Code repositories</option> : null}
             </select>
           </div>
           <label htmlFor="question" className="text-sm font-medium">
-            Ask about your documents or fulfilled sales
+            Ask about your documents, contracts, code or fulfilled sales
           </label>
           <textarea
             id="question"
@@ -589,9 +599,12 @@ export function ReportPanel({ token, packs }: { token: string; packs: string[] |
           <ul className="mt-4 flex flex-col gap-1 text-xs text-muted-fg">
             {view.citations.map((c) => (
               <li key={c.citation_id}>
-                [{citationNumber(c.citation_id)}] {c.title} (version {c.version}
+                [{citationNumber(c.citation_id)}] {c.repository ? `${c.repository}/` : ""}
+                {c.title} (version {c.version}
+                {c.commit ? `, commit ${c.commit.slice(0, 12)}` : ""}
+                {c.line_start ? `, lines ${c.line_start}–${c.line_end}` : ""}
                 {c.page ? `, page ${c.page}` : ""}
-                {c.heading_path?.length ? `, ${c.heading_path.join(" › ")}` : ""})
+                {c.heading_path?.length && !c.repository ? `, ${c.heading_path.join(" › ")}` : ""})
               </li>
             ))}
           </ul>

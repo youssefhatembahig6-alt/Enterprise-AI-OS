@@ -6,6 +6,7 @@ Foreign, unknown and no-longer-authorized runs and evidence all return the same 
 
 from __future__ import annotations
 
+import re
 import secrets
 from typing import Annotated, Any
 from uuid import UUID
@@ -43,26 +44,44 @@ _SSE_DOC: dict[int | str, dict[str, Any]] = {
 }
 
 
+# Auto routing cues (M5). Kept narrow so ordinary document questions ("the method for
+# expense claims", "notice period for leave") stay with the documents pack.
+_LEGAL = re.compile(r"\b(contracts?|agreements?|clauses?|licen[cs]es?)\b", re.I)
+_CODE = re.compile(
+    r"\b(code|codebase|source code|repositor(?:y|ies)|repo|endpoints?|implemented|"
+    r"implementation)\b|\bfunction\s+`?\w+|\b\w+\(\)|`[^`]+`|"
+    r"\b[\w/-]+\.(?:py|ts|tsx|js|jsx|go|java|rs|sql)\b",
+    re.I,
+)
+
+
 def choose_kind(question: str, mode: str, enabled: frozenset[str] | None = None) -> str:
-    """``auto`` keeps M2 behaviour for anything that looks like a sales/period request
-    (topic word, quarter, month or year) and sends the rest to document answers.
+    """``auto`` routes contract clause/expiry questions to the legal pack and repository
+    code questions to the code pack (M5), keeps M2 behaviour for anything that looks like
+    a sales/period request (topic word, quarter, month or year) and sends the rest to
+    document answers.
 
     M4: only packs the tenant enabled are routable. An explicit mode for a disabled
-    pack raises ``CapabilityDisabled``; ``auto`` falls back to the enabled pack."""
+    pack raises ``CapabilityDisabled``; ``auto`` falls back to an enabled pack."""
 
-    if mode == "report":
-        kind = "report"
-    elif mode == "documents":
-        kind = "documents"
+    def on(kind: str) -> bool:
+        return enabled is None or RUN_KIND_PACK[kind] in enabled
+
+    if mode in ("report", "documents", "legal", "code"):
+        kind = mode
+    elif _LEGAL.search(question) and on("legal"):
+        kind = "legal"
+    elif _CODE.search(question) and on("code"):
+        kind = "code"
     elif _TOPIC.search(question) or extract_periods(question) or _YEAR_ONLY.search(question):
         kind = "report"
     else:
         kind = "documents"
-    if enabled is None or RUN_KIND_PACK[kind] in enabled:
+    if on(kind):
         return kind
     if mode == "auto":
         for other in ("documents", "report"):
-            if RUN_KIND_PACK[other] in enabled:
+            if on(other):
                 return other
     raise CapabilityDisabled("pack", RUN_KIND_PACK[kind])
 

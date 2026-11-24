@@ -17,10 +17,11 @@ version = 1
 slug = "niletech"
 name = "NileTech Solutions"
 
-  # M4 tenant configuration: both packs, upload and Google Drive, 15-minute demo sync.
+  # M4 tenant configuration (15-minute demo sync), extended in M5 with the legal and
+  # code packs and the GitHub and desktop local-folder connectors.
   [tenants.settings]
-  enabled_packs = ["documents", "sales_reports"]
-  enabled_connectors = ["upload", "google_drive"]
+  enabled_packs = ["documents", "sales_reports", "legal", "code"]
+  enabled_connectors = ["upload", "google_drive", "github", "local_folder"]
   sync_mode = "demo"
 
   [[tenants.roles]]

@@ -7,7 +7,7 @@ import hashlib
 import json
 import logging
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -34,7 +34,7 @@ from app.reporting.workflow import ReportWorkflow
 from app.repositories.audit import record_audit_event
 from app.security.context import AccessContext
 from app.security.policy import Decision, Reason
-from app.tenancy.config import RUN_KIND_PACK, load_settings, require_pack
+from app.tenancy.config import DOCUMENT_RUN_KINDS, RUN_KIND_PACK, load_settings, require_pack
 
 logger = logging.getLogger("eaios.reports")
 
@@ -60,6 +60,8 @@ class ReportRunner:
     workflow: ReportWorkflow
     settings: Settings
     documents_workflow: ReportWorkflow | None = None
+    # M5: legal and code workflows, keyed by run kind.
+    extra_workflows: Mapping[str, ReportWorkflow] | None = None
 
     def run_job(self, run_id: UUID, tenant_id: UUID) -> str:
         with tenant_transaction(self.app_engine, tenant_id) as conn:
@@ -75,12 +77,17 @@ class ReportRunner:
         if attempt > self.settings.report_job_max_attempts:
             self._fail_exhausted(run_id, tenant_id, run.owner_user_id)
             return "attempts_exhausted"
-        workflow = self.workflow
-        if run.kind == "documents":
-            if self.documents_workflow is None:
+        workflow: ReportWorkflow | None = self.workflow
+        if run.kind in DOCUMENT_RUN_KINDS:
+            workflow = (
+                self.documents_workflow
+                if run.kind == "documents"
+                else (self.extra_workflows or {}).get(run.kind)
+            )
+            if workflow is None:
                 self._fail_exhausted(run_id, tenant_id, run.owner_user_id)
-                return "documents_unavailable"
-            workflow = self.documents_workflow
+                return f"{run.kind}_unavailable"
+        assert workflow is not None  # noqa: S101 - reports always have a workflow
         workflow.run(run_id, tenant_id, run.owner_user_id, run.question, run.inference_mode)
         return "ran"
 
@@ -301,7 +308,7 @@ class ReportService:
         ``resource.read`` on every cited document, which must not be deleted.
         """
 
-        if run.kind != "documents":
+        if run.kind not in DOCUMENT_RUN_KINDS:
             return authorize_dataset(conn, user_id, run.resource_id)
         from app.documents import access as doc_access  # noqa: PLC0415 - avoid cycle
         from app.documents import store as doc_store  # noqa: PLC0415
@@ -472,6 +479,7 @@ class ReportService:
             raise RunNotFound
         canonical = version.canonical_text or ""
         quote = canonical[source.char_start : source.char_end]
+        located = source_location(version, canonical, source.char_start, source.char_end)
         integrity = (
             hashlib.sha256(canonical.encode()).hexdigest()
             == source.text_sha256
@@ -498,6 +506,7 @@ class ReportService:
             "after": canonical[source.char_end : after_end],
             "context_start": before_start,
             "integrity": "verified" if integrity else "mismatch",
+            **located,
         }
 
     # -- evidence ------------------------------------------------------------------
@@ -544,6 +553,31 @@ class ReportService:
             "result_sha256": row.result_sha256,
             "integrity": "verified" if recomputed == row.result_sha256 else "mismatch",
         }
+
+
+def source_location(version: Any, canonical: str, start: int, end: int) -> dict[str, Any]:
+    """Repository, path, commit and exact source lines of a cited span (M5). Lines are
+    given only for verbatim (line-preserving) canonical texts."""
+
+    from app.documents.canonical import line_range  # noqa: PLC0415 - avoid cycle
+
+    out: dict[str, Any] = {}
+    revision = version.source_revision or {}
+    for key in ("repository", "path", "commit", "blob_sha"):
+        if revision.get(key):
+            out[key] = revision[key]
+    notes = version.parse_notes or {}
+    if notes.get("verbatim_lines"):
+        first, last = line_range(canonical, int(notes.get("first_line") or 1), start, end)
+        out["line_start"], out["line_end"] = first, last
+        if revision.get("repository") and revision.get("commit") and revision.get("path"):
+            from urllib.parse import quote  # noqa: PLC0415
+
+            out["url"] = (
+                f"https://github.com/{revision['repository']}/blob/{revision['commit']}/"
+                f"{quote(revision['path'])}#L{first}-L{last}"
+            )
+    return out
 
 
 def build_dispatcher(

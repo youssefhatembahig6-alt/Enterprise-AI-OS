@@ -21,4 +21,10 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Electron main/preload and the sync engine run on Node, not in the browser.
+    files: ["apps/desktop/**/*.ts"],
+    languageOptions: { globals: { ...globals.node } },
+    rules: { "react-hooks/rules-of-hooks": "off" },
+  },
 );

@@ -1,0 +1,60 @@
+# M5 legal pack fixture: three synthetic NileTech contracts (no real companies).
+# Uploaded through the normal document API with the permissions below (M0 vocabulary).
+# finance.reader may read Aswan (finance-team) and Red Sea (all-staff), not NileCloud
+# (restricted, direct grant to board.member only). Expected facts are the independent
+# reference for the legal tests (computed by hand, not by the extractor).
+
+version = 1
+
+[[contracts]]
+key = "aswan-supply"
+file = "aswan-components-supply.md"
+title = "Master Supply Agreement — Aswan Components"
+department = "legal"
+  [contracts.permissions]
+  classification = "confidential"
+  department_restricted = false
+  allowed_countries = ["EG"]
+  grants = [{ group = "finance-team", effect = "allow" }]
+  [contracts.expected]
+  effective = "2025-04-01"
+  expiry = "2027-03-31"          # 24 months from 1 April 2025, last day inclusive
+  expiry_derived = true
+  renewal_notice_days = 90
+  notice_deadline = "2026-12-31" # 31 March 2027 minus 90 days
+  termination_notice_days = 60
+  payment_days = 45
+
+[[contracts]]
+key = "red-sea-logistics"
+file = "red-sea-freight-logistics.md"
+title = "Logistics Services Agreement — Red Sea Freight"
+department = "legal"
+  [contracts.permissions]
+  classification = "internal"
+  department_restricted = false
+  allowed_countries = ["*"]
+  grants = [{ group = "all-staff", effect = "allow" }]
+  [contracts.expected]
+  effective = "2024-07-01"
+  expiry = "2026-06-30"
+  expiry_derived = false
+  termination_notice_days = 30
+  payment_days = 30
+
+[[contracts]]
+key = "nilecloud-licence"
+file = "nilecloud-software-licence.md"
+title = "Enterprise Software Licence — NileCloud"
+department = "legal"
+marker = "NILETECH-LEGAL-RESTRICTED-5150"
+  [contracts.permissions]
+  classification = "restricted"
+  department_restricted = false
+  allowed_countries = ["EG"]
+  grants = [{ user = "board-member", effect = "allow" }]
+  [contracts.expected]
+  effective = "2026-01-15"
+  expiry = "2029-01-14"          # 3 years from 15 January 2026, last day inclusive
+  expiry_derived = true
+  termination_notice_days = 90

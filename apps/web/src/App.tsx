@@ -3,7 +3,9 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { admin, type TenantSettings } from "./admin";
 import { AdminPanel } from "./AdminPanel";
 import { api, ApiError, type Identity } from "./api";
+import { desktop } from "./desktop";
 import { DocumentsPanel } from "./DocumentsPanel";
+import { LocalFoldersPanel } from "./LocalFoldersPanel";
 import { ReportPanel } from "./ReportPanel";
 import { useApiStatus, type ApiStatus } from "./useApiStatus";
 
@@ -174,17 +176,29 @@ function IdentityView({ session, onSignOut }: { session: Session; onSignOut: () 
 
 export function App() {
   const status = useApiStatus();
+  const bridge = desktop();
   const [session, setSession] = useState<Session | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [settings, setSettings] = useState<TenantSettings | null>(null);
+  const [desktopSession, setDesktopSession] = useState<{ session: Session; ready: boolean } | null>(null);
 
   useEffect(() => {
-    if (!session) {
-      setSettings(null);
-      return;
+    let current = true;
+    // The panel waits for identity, watcher setup and pending removal retries in Electron.
+    void bridge?.setSession(session?.token ?? null).then(
+      () => { if (current && session) setDesktopSession({ session, ready: true }); },
+      () => { if (current && session) setDesktopSession({ session, ready: false }); },
+    );
+    setDesktopSession(null);
+    setSettings(null);
+    if (session) {
+      void admin.tenantSettings(session.token).then(
+        (value) => { if (current) setSettings(value); },
+        () => { if (current) setSettings(null); },
+      );
     }
-    admin.tenantSettings(session.token).then(setSettings, () => setSettings(null));
-  }, [session]);
+    return () => { current = false; };
+  }, [bridge, session]);
 
   const signOut = useCallback(async () => {
     const current = session;
@@ -217,6 +231,19 @@ export function App() {
               Boolean(settings?.enabled_connectors.includes("upload"))
             }
           />
+          {bridge && settings?.enabled_connectors.includes("local_folder") ? (
+            desktopSession?.session === session && desktopSession.ready ? (
+              <LocalFoldersPanel token={session.token} groups={session.identity.groups} />
+            ) : (
+              <Card title="Local folders">
+                {desktopSession?.session === session ? (
+                  <Alert>Could not connect local folders to this account. Sign in again to retry.</Alert>
+                ) : (
+                  <p className="text-sm text-muted-fg" role="status">Loading local folders…</p>
+                )}
+              </Card>
+            )
+          ) : null}
           <AdminPanel
             token={session.token}
             identity={session.identity}

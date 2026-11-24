@@ -37,7 +37,7 @@ from app.config import Settings
 from app.db.engine import tenant_transaction
 from app.documents import access, store
 from app.documents.canonical import CanonicalDocument, elements_to_json, from_stored
-from app.documents.chunker import CHUNKER_VERSION, ChunkSpec, chunk_document
+from app.documents.chunker import CHUNKER_VERSION, ChunkSpec, chunk_document, chunker_version
 from app.documents.parsers import DoclingUnavailable, ParseFailed, detect, parse
 from app.documents.qdrant import QdrantClient, QdrantError, SparseVector
 from app.documents.storage import ObjectStore, StorageError, object_key, read_verified
@@ -530,7 +530,7 @@ class IngestionRunner:
     ) -> str:
         assert job.generation is not None  # noqa: S101
         try:
-            canonical = self._canonical(version)
+            canonical = self._canonical(version, verbatim=doc.source == "github")
         except ParseFailed as exc:
             status = "needs_ocr" if exc.code == "needs_ocr" else "failed"
             with tenant_transaction(self._engine, job.tenant_id) as conn:
@@ -573,7 +573,7 @@ class IngestionRunner:
                 job.document_id,
                 job.generation,
                 job.version,
-                CHUNKER_VERSION,
+                chunker_version(canonical),
                 *self._space_strings(),
                 collection,
             )
@@ -662,7 +662,7 @@ class IngestionRunner:
         except ModelError as exc:
             raise DoclingUnavailable(type(exc).__name__) from exc
 
-    def _canonical(self, version: store.VersionRow) -> CanonicalDocument:
+    def _canonical(self, version: store.VersionRow, *, verbatim: bool = False) -> CanonicalDocument:
         """Stored elements win: reindexing and retries rebuild the exact canonical
         document that was cited, without re-running a parser that may have changed or
         be unavailable. Otherwise parse the verified bytes."""
@@ -677,7 +677,7 @@ class IngestionRunner:
                 version.parse_notes,
             )
         data = read_verified(self._objects, version.storage_key, version.byte_sha256)
-        return parse(version.filename, data, docling=self._docling)
+        return parse(version.filename, data, docling=self._docling, verbatim=verbatim)
 
     def _space_strings(self) -> tuple[str]:
         space = self._model.embedding_space()

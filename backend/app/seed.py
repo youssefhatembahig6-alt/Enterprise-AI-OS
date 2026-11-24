@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import tempfile
 from collections.abc import Callable
@@ -175,6 +176,14 @@ def _seed_tenant(
             )
     if tenant.settings is not None:
         # Upsert: migration 0007 gives existing tenants a default row; the fixture wins.
+        # Values the schema does not know yet (seeding a database at an older revision,
+        # as the upgrade tests do) are left out rather than failing the seed.
+        packs = _accepted(
+            conn, "tenant_settings_enabled_packs_check", tenant.settings["enabled_packs"]
+        )
+        conns = _accepted(
+            conn, "tenant_settings_enabled_connectors_check", tenant.settings["enabled_connectors"]
+        )
         result.bump(
             "tenant_settings",
             conn.execute(
@@ -195,8 +204,8 @@ def _seed_tenant(
                 ),
                 {
                     "t": tenant.id,
-                    "packs": tenant.settings["enabled_packs"],
-                    "conns": tenant.settings["enabled_connectors"],
+                    "packs": packs,
+                    "conns": conns,
                     "mode": tenant.settings["sync_mode"],
                 },
             ).rowcount,
@@ -217,6 +226,19 @@ def _seed_tenant(
                 },
             ),
         )
+
+
+def _accepted(conn: Connection, constraint: str, values: list[str]) -> list[str]:
+    """``values`` filtered to the vocabulary in the named CHECK constraint."""
+
+    definition = conn.execute(
+        text("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = :c"),
+        {"c": constraint},
+    ).scalar_one_or_none()
+    if definition is None:
+        return list(values)
+    known = set(re.findall(r"'([a-z_]+)'::text", definition))
+    return [v for v in values if v in known]
 
 
 def seed_foundation(

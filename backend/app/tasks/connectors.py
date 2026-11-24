@@ -13,7 +13,7 @@ from uuid import UUID
 from sqlalchemy import text
 
 from app.config import get_settings
-from app.connectors.sync import DriveSyncService
+from app.connectors.router import ConnectorSyncRouter
 from app.db.engine import contextless_transaction, create_app_engine
 from app.documents import store as doc_store
 from app.logging_setup import configure_logging
@@ -23,10 +23,10 @@ from app.tasks.worker import celery_app
 
 logger = logging.getLogger("eaios.tasks.connectors")
 _lock = threading.Lock()
-_service: DriveSyncService | None = None
+_service: ConnectorSyncRouter | None = None
 
 
-def _get_service() -> DriveSyncService:
+def _get_service() -> ConnectorSyncRouter:
     global _service  # noqa: PLW0603 - one service (and pools) per worker process
     with _lock:
         if _service is None:
@@ -40,7 +40,9 @@ def _get_service() -> DriveSyncService:
             ingest = CeleryDispatcher(
                 engine, send, "app.tasks.documents.ingest_document", doc_store.mark_job_dispatched
             )
-            service = build_components(settings, engine, ingest_dispatch=ingest.dispatch).drive_sync
+            service = build_components(
+                settings, engine, ingest_dispatch=ingest.dispatch
+            ).sync_router
             assert service is not None  # noqa: S101
             _service = service
         return _service

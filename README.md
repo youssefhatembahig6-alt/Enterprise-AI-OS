@@ -1,13 +1,14 @@
 # Enterprise AI OS
 
-Application repository for the Enterprise AI OS graduation project. **M0** delivered the runnable foundation (tenant isolation, login, reference authorization policy) and **M1** the NileTech data baseline and feasibility measurements. **M2** adds the first feature: login → router → read-only SQL through a separate restricted role → report → verification → verified result streamed over SSE, with an authorized evidence view ([contract](docs/contracts/reports.md)). **M3** adds authorized document answers: upload with permissions, deterministic ingestion into Qdrant, retrieval filtered by current permissions on every search branch, and verified answers whose citations open the exact passage of the version cited ([contract](docs/contracts/documents.md)). **M4** adds Google Drive folder sync whose content is served only while the last verified sync is current, a scoped admin console (documents, sources, users, roles, audit) and per-tenant packs and connectors enforced in the backend ([contract](docs/contracts/admin.md)). GitHub, the legal pack and the desktop shell come in M5.
+Application repository for the Enterprise AI OS graduation project. **M0** delivered the runnable foundation (tenant isolation, login, reference authorization policy) and **M1** the NileTech data baseline and feasibility measurements. **M2** adds the first feature: login → router → read-only SQL through a separate restricted role → report → verification → verified result streamed over SSE, with an authorized evidence view ([contract](docs/contracts/reports.md)). **M3** adds authorized document answers: upload with permissions, deterministic ingestion into Qdrant, retrieval filtered by current permissions on every search branch, and verified answers whose citations open the exact passage of the version cited ([contract](docs/contracts/documents.md)). **M4** adds Google Drive folder sync whose content is served only while the last verified sync is current, a scoped admin console (documents, sources, users, roles, audit) and per-tenant packs and connectors enforced in the backend ([contract](docs/contracts/admin.md)). **M5** adds the legal pack (clause comparison and expiry answers whose every value is re-derived from exact cited passages), GitHub repository sync with repository-level permissions and code answers that cite repository, file, commit and lines, and the Electron desktop shell with a local-folder connector whose sharing the backend assigns ([contract](docs/contracts/m5.md)).
 
 | Path | Contents |
 | --- | --- |
 | `backend/` | FastAPI app (`app/api`, `services`, `repositories`, `security`, `tasks`, `db`), Alembic migrations, fixtures, tests |
 | `apps/web/` | React + Vite + Tailwind sign-in and identity screen |
-| `packages/ui/` | Shared React components and theme tokens (reused by the later Electron shell) |
-| `scripts/` | Portable Python helpers: `dev.py`, `smoke_stack.py`, `m2_demo_capture.py` |
+| `packages/ui/` | Shared React components and theme tokens (also used by the desktop shell) |
+| `apps/desktop/` | Electron shell (loads the web build) and the local-folder sync engine (M5) |
+| `scripts/` | Portable Python helpers: `dev.py`, `smoke_stack.py`, demo/acceptance runners (`m2_demo_capture.py` … `m5_desktop_smoke.py`, `m5_github_acceptance.py`) |
 | `ml/model-gateway/` | Colab GPU gateway (chat/embed/check/health) used by M2 |
 | `infra/postgres/` | First-run role bootstrap for the PostgreSQL container |
 | `docs/` | ADRs, contracts, runbook, OpenAPI schema and traceability |

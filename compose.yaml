@@ -18,7 +18,7 @@ x-backend-env: &backend-env
   JWT_ISSUER: ${JWT_ISSUER:-eaios-api}
   JWT_AUDIENCE: ${JWT_AUDIENCE:-eaios-web}
   ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
-  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,app://eaios}
   LLM_BASE_URL: ${LLM_BASE_URL:-}
   MODEL_MODE: ${MODEL_MODE:-gateway}
   MODEL_GATEWAY_TOKEN: ${MODEL_GATEWAY_TOKEN:-}
@@ -35,6 +35,8 @@ x-backend-env: &backend-env
   # M4 Google Drive: operator-owned JSON (credentials + allowed folders per tenant),
   # e.g. /run/eaios/connectors/drive.json from ./var/connectors (git-ignored).
   DRIVE_CONNECTOR_CONFIG: ${DRIVE_CONNECTOR_CONFIG:-}
+  # M5: GitHub repositories, e.g. /run/eaios/connectors/github.json (same mount).
+  GITHUB_CONNECTOR_CONFIG: ${GITHUB_CONNECTOR_CONFIG:-}
   PASSWORD_VERIFY_CONCURRENCY: ${PASSWORD_VERIFY_CONCURRENCY:-2}
   PASSWORD_VERIFY_QUEUE_TIMEOUT_SECONDS: ${PASSWORD_VERIFY_QUEUE_TIMEOUT_SECONDS:-5}
 

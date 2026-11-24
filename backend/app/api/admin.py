@@ -17,6 +17,7 @@ from app.admin.service import AdminForbidden, AdminInvalid, AdminNotFound, Admin
 from app.api.deps import CurrentContext
 from app.api.errors import ApiError
 from app.schemas.admin import (
+    ExternalAccountsIn,
     GroupLinksIn,
     RoleIn,
     SourceIn,
@@ -112,6 +113,15 @@ def set_user_groups(
     user_id: UUID, body: UserGroupsIn, ctx: CurrentContext, admin: Admin
 ) -> dict[str, Any]:
     return _call(lambda: admin.set_user_groups(ctx, user_id, body.groups))
+
+
+@router.put("/admin/users/{user_id}/external-accounts", responses=_ERRORS)
+def set_external_accounts(
+    user_id: UUID, body: ExternalAccountsIn, ctx: CurrentContext, admin: Admin
+) -> dict[str, Any]:
+    """Link or unlink the user's GitHub login (tenant-wide ``identity.admin``; M5)."""
+
+    return _call(lambda: admin.set_external_accounts(ctx, user_id, body.github))
 
 
 @router.get("/admin/roles", responses=_ERRORS)

@@ -90,11 +90,13 @@
           },
           "mode": {
             "default": "auto",
-            "description": "auto: sales/period questions go to the verified SQL report, everything else to authorized document answers.",
+            "description": "auto: sales/period questions go to the verified SQL report, contract clause and expiry questions to the legal pack, repository code questions to the code pack, everything else to authorized document answers (enabled packs only).",
             "enum": [
               "auto",
               "report",
-              "documents"
+              "documents",
+              "legal",
+              "code"
             ],
             "title": "Mode",
             "type": "string"
@@ -123,6 +125,17 @@
             "title": "Before",
             "type": "string"
           },
+          "blob_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blob Sha"
+          },
           "char_end": {
             "title": "Char End",
             "type": "integer"
@@ -134,6 +147,17 @@
           "citation_id": {
             "title": "Citation Id",
             "type": "string"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
           },
           "context_start": {
             "title": "Context Start",
@@ -163,14 +187,58 @@
             "title": "Is Current Version",
             "type": "boolean"
           },
+          "line_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line End"
+          },
+          "line_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Start"
+          },
           "offset_unit": {
             "const": "unicode_code_point",
             "title": "Offset Unit",
             "type": "string"
           },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
           "quote": {
             "title": "Quote",
             "type": "string"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository"
           },
           "run_id": {
             "title": "Run Id",
@@ -183,6 +251,17 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
           },
           "version": {
             "title": "Version",
@@ -253,6 +332,101 @@
           "error"
         ],
         "title": "ErrorResponse",
+        "type": "object"
+      },
+      "EventIn": {
+        "additionalProperties": false,
+        "properties": {
+          "content_base64": {
+            "anyOf": [
+              {
+                "maxLength": 14000000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Base64"
+          },
+          "event_id": {
+            "description": "Idempotency key; a replay returns the first result",
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              "upsert",
+              "delete"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "path": {
+            "description": "Relative path, '/' separated",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Per-folder sequence; older events for a path are stale",
+            "minimum": 0.0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          }
+        },
+        "required": [
+          "event_id",
+          "seq",
+          "op",
+          "path"
+        ],
+        "title": "EventIn",
+        "type": "object"
+      },
+      "EventsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventIn"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "title": "EventsIn",
         "type": "object"
       },
       "EvidenceOut": {
@@ -351,6 +525,57 @@
           "integrity"
         ],
         "title": "EvidenceOut",
+        "type": "object"
+      },
+      "ExternalAccountsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "github": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "GitHub login linked to this user (null removes the link)",
+            "title": "Github"
+          }
+        },
+        "title": "ExternalAccountsIn",
+        "type": "object"
+      },
+      "FolderIn": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "default": "",
+            "description": "Device label",
+            "maxLength": 200,
+            "title": "Device",
+            "type": "string"
+          },
+          "folder_id": {
+            "description": "Generated by the desktop app for this folder",
+            "format": "uuid",
+            "title": "Folder Id",
+            "type": "string"
+          },
+          "name": {
+            "description": "Folder label shown to the owner",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "folder_id",
+          "name"
+        ],
+        "title": "FolderIn",
         "type": "object"
       },
       "GrantIn": {
@@ -766,6 +991,25 @@
         "title": "RunOut",
         "type": "object"
       },
+      "SharingIn": {
+        "additionalProperties": false,
+        "properties": {
+          "groups": {
+            "description": "Group keys the owner belongs to",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Groups",
+            "type": "array"
+          }
+        },
+        "required": [
+          "groups"
+        ],
+        "title": "SharingIn",
+        "type": "object"
+      },
       "SourceIn": {
         "additionalProperties": false,
         "properties": {
@@ -798,10 +1042,32 @@
             "title": "Department Restricted",
             "type": "boolean"
           },
+          "external_ref": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9._/-]{1,200}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "GitHub branch (default: the repository's default branch)",
+            "title": "External Ref"
+          },
           "external_root": {
-            "description": "Drive folder id",
-            "pattern": "^[A-Za-z0-9_-]{5,200}$",
+            "description": "Drive folder id, or owner/repository for GitHub",
+            "pattern": "^(?:[A-Za-z0-9_-]{5,200}|[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100})$",
             "title": "External Root",
+            "type": "string"
+          },
+          "kind": {
+            "default": "google_drive",
+            "enum": [
+              "google_drive",
+              "github"
+            ],
+            "title": "Kind",
             "type": "string"
           },
           "name": {
@@ -1263,9 +1529,9 @@
     }
   },
   "info": {
-    "description": "Identity, tenant isolation and health (M0); verified SQL reports (M2) and authorized document answers with exact citations (M3), streamed over Server-Sent Events; Google Drive sync, scoped administration and tenant configuration (M4).",
+    "description": "Identity, tenant isolation and health (M0); verified SQL reports (M2) and authorized document answers with exact citations (M3), streamed over Server-Sent Events; Google Drive sync, scoped administration and tenant configuration (M4); legal clause/expiry answers, GitHub repositories with code citations and desktop local folders (M5).",
     "title": "Enterprise AI OS API",
-    "version": "0.4.0-m4"
+    "version": "0.5.0-m5"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2523,6 +2789,97 @@
         ]
       }
     },
+    "/api/v1/admin/users/{user_id}/external-accounts": {
+      "put": {
+        "description": "Link or unlink the user's GitHub login (tenant-wide ``identity.admin``; M5).",
+        "operationId": "set_external_accounts_api_v1_admin_users__user_id__external_accounts_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalAccountsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set External Accounts Api V1 Admin Users  User Id  External Accounts Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set External Accounts",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/users/{user_id}/groups": {
       "put": {
         "operationId": "set_user_groups_api_v1_admin_users__user_id__groups_put",
@@ -3496,6 +3853,492 @@
         "summary": "Get Evidence",
         "tags": [
           "reports"
+        ]
+      }
+    },
+    "/api/v1/local-folders": {
+      "get": {
+        "operationId": "list_folders_api_v1_local_folders_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Folders Api V1 Local Folders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Folders",
+        "tags": [
+          "local-folders"
+        ]
+      },
+      "post": {
+        "description": "Register a folder owned by the caller (idempotent per ``folder_id``).",
+        "operationId": "register_api_v1_local_folders_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Register Api V1 Local Folders Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Register",
+        "tags": [
+          "local-folders"
+        ]
+      }
+    },
+    "/api/v1/local-folders/{source_id}": {
+      "delete": {
+        "description": "Owner removes the folder; every document in it is tombstoned.",
+        "operationId": "delete_api_v1_local_folders__source_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete",
+        "tags": [
+          "local-folders"
+        ]
+      }
+    },
+    "/api/v1/local-folders/{source_id}/events": {
+      "post": {
+        "description": "Apply a batch of file events. Each event is applied once (by ``event_id``); the\nresponse lists a result per event in order.",
+        "operationId": "events_api_v1_local_folders__source_id__events_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Events Api V1 Local Folders  Source Id  Events Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Events",
+        "tags": [
+          "local-folders"
+        ]
+      }
+    },
+    "/api/v1/local-folders/{source_id}/items": {
+      "get": {
+        "description": "Paths the server holds for this folder (owner only), for reconciliation.",
+        "operationId": "items_api_v1_local_folders__source_id__items_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Items Api V1 Local Folders  Source Id  Items Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Items",
+        "tags": [
+          "local-folders"
+        ]
+      }
+    },
+    "/api/v1/local-folders/{source_id}/sharing": {
+      "put": {
+        "description": "Owner only; groups the owner belongs to.",
+        "operationId": "set_sharing_api_v1_local_folders__source_id__sharing_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Sharing Api V1 Local Folders  Source Id  Sharing Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Sharing",
+        "tags": [
+          "local-folders"
         ]
       }
     },

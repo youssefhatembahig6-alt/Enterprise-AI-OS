@@ -14,7 +14,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-ElementType = Literal["heading", "paragraph", "list_item", "table"]
+ElementType = Literal["heading", "paragraph", "list_item", "table", "code"]
 SEPARATOR = "\n\n"
 
 
@@ -81,6 +81,14 @@ def build_canonical(
         parser=parser,
         notes=dict(notes or {}),
     )
+
+
+def line_range(text: str, first_line: int, start: int, end: int) -> tuple[int, int]:
+    """1-based inclusive source lines covered by the code-point span ``[start, end)`` of a
+    verbatim (code) canonical text whose first line is source line ``first_line``."""
+
+    last = max(start, end - 1)
+    return first_line + text.count("\n", 0, start), first_line + text.count("\n", 0, last)
 
 
 def elements_to_json(doc: CanonicalDocument) -> list[dict[str, Any]]:

@@ -23,3 +23,6 @@ meeting. Repository ADRs start at 0101 so they never collide with the source lis
 | [0401](0401-drive-sync-and-freshness.md) | Google Drive sync and permission freshness | Accepted for M4 (pending planning review) | FR-10, FR-02, roadmap M4 connector details |
 | [0402](0402-scoped-administration.md) | Scoped administration | Accepted for M4 (pending planning review) | ADR 0014 (Proposed), FR-11 |
 | [0403](0403-tenant-configuration.md) | Tenant configuration: packs and connectors | Accepted for M4 (pending planning review) | ADR 0010, FR-12 |
+| [0501](0501-legal-pack.md) | Legal pack: clause comparison and expiry answers | Accepted for M5 (pending planning review) | FR-06, FR-03, FR-09 |
+| [0502](0502-github-repositories-and-code.md) | GitHub repositories and the code pack | Accepted for M5 (pending planning review) | FR-10, FR-02, FR-06 |
+| [0503](0503-desktop-local-folder.md) | Electron shell and the local-folder connector | Accepted for M5 (pending planning review) | ADR 0009, FR-13, NFR-07 |

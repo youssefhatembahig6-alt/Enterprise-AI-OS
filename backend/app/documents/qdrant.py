@@ -14,6 +14,7 @@ actually sent (T9), not on what came back.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -88,6 +89,22 @@ class QdrantClient:
     # -- collections ---------------------------------------------------------------
 
     def ensure_collection(self, name: str, dense_size: int) -> None:
+        """Create the collection if needed. Qdrant can answer 500 for a collection that a
+        concurrent ingestion is still creating, so a few short retries absorb that race
+        before the job falls back to its normal transient-retry path."""
+
+        for attempt in range(4):
+            try:
+                self._ensure_collection(name, dense_size)
+                return
+            except QdrantConflict:
+                raise
+            except QdrantError:
+                if attempt == 3:
+                    raise
+                time.sleep(0.25 * (attempt + 1))
+
+    def _ensure_collection(self, name: str, dense_size: int) -> None:
         path = f"/collections/{name}"
         existing = self._call("GET", path)
         if existing is None:

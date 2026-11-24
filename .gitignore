@@ -18,3 +18,4 @@ var/
 # Raw GPU benchmark outputs stay local; commit only the reports
 ml/gpu-feasibility/**/*.zip
 ml/gpu-feasibility/**/vllm-*.log
+apps/desktop/smoke-report*.json
