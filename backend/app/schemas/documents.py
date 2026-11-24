@@ -63,3 +63,11 @@ class CitationOut(StrictModel):
     after: str
     context_start: int
     integrity: Literal["verified", "mismatch"]
+    # M5: repository citations (code pack) and any verbatim source.
+    repository: str | None = None
+    path: str | None = None
+    commit: str | None = None
+    blob_sha: str | None = None
+    line_start: int | None = None
+    line_end: int | None = None
+    url: str | None = None

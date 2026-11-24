@@ -126,6 +126,7 @@ class DocState(TypedDict, total=False):
     answer_feedback: list[str]
     sentences: list[dict[str, Any]]
     checker_scores: list[float]
+    planned: list[dict[str, Any]]  # legal pack: deterministic sentences from retrieval
 
 
 def _stem(term: str) -> str:
@@ -258,6 +259,12 @@ def parse_answer(text_: str) -> tuple[bool, list[dict[str, Any]]]:
 
 
 class DocumentAnswerWorkflow(ReportWorkflow):
+    """Document answers. Subclasses (legal, code; M5) reuse eligibility, the access
+    recheck before text, the publication boundary and per-event re-authorization, and
+    change only the pack, the source scope, the prompt and the citation fields."""
+
+    kind = "documents"
+
     def __init__(
         self, deps: WorkflowDeps, qdrant: QdrantClient, collection: Callable[[], str]
     ) -> None:
@@ -313,7 +320,7 @@ class DocumentAnswerWorkflow(ReportWorkflow):
             if run is None or run.status in TERMINAL_STATUSES:
                 return {"terminal": {"kind": "noop"}}
             runs.update_run(conn, run.id, status=RunStatus.RUNNING)
-            if not pack_enabled(conn, "documents"):
+            if not pack_enabled(conn, self.kind):
                 return {"terminal": self._disabled("start")}
         self._status(state, Step.AUTHORIZATION, "completed")
         stats = self._stats_for(state)
@@ -322,11 +329,11 @@ class DocumentAnswerWorkflow(ReportWorkflow):
         stats["embedding_space"] = self.deps.model.embedding_space().slug
         return {"answer_attempt": 0, "passages": []}
 
-    def retrieve(self, state: DocState) -> dict[str, Any]:
+    def retrieve(self, state: DocState) -> dict[str, Any]:  # noqa: PLR0915
         settings = self.deps.settings
         tenant_id, user_id = state["tenant_id"], state["user_id"]
         with self._tx(state) as conn:
-            elig = access.eligible(conn, user_id)
+            elig = access.eligible(conn, user_id, self.kind)
         hits = []
         if elig.point_ids:
             vector = self.deps.model.embed_text([state["question"]], cancel=self._token(state))[0]
@@ -375,6 +382,7 @@ class DocumentAnswerWorkflow(ReportWorkflow):
                     if version is None or version.canonical_text is None:
                         continue
                     span_text = version.canonical_text[chunk.char_start : chunk.char_end]
+                    first_line = int((version.parse_notes or {}).get("first_line") or 1)
                     passages.append(
                         {
                             "source_id": f"s{len(passages) + 1}",
@@ -391,6 +399,14 @@ class DocumentAnswerWorkflow(ReportWorkflow):
                             "span_text": span_text,
                             "text_sha256": version.text_sha256,
                             "score": hit.score,
+                            "source": doc.source,
+                            "source_revision": version.source_revision,
+                            "verbatim_lines": bool(
+                                (version.parse_notes or {}).get("verbatim_lines")
+                            ),
+                            # Source line of the passage's first code point (verbatim only).
+                            "line_at_start": first_line
+                            + version.canonical_text.count("\n", 0, chunk.char_start),
                         }
                     )
         relevant = relevance_filter(
@@ -443,7 +459,7 @@ class DocumentAnswerWorkflow(ReportWorkflow):
                 max_attempts=self.max_drafts,
             )
         answer = self.deps.model.chat(
-            answer_messages(state["question"], state["passages"], state.get("answer_feedback")),
+            self.messages(state["question"], state["passages"], state.get("answer_feedback")),
             purpose="answer",
             max_tokens=ANSWER_MAX_TOKENS,
             cancel=self._token(state),
@@ -562,31 +578,52 @@ class DocumentAnswerWorkflow(ReportWorkflow):
             }
         return super().finish(state)
 
-    def doc_publish(self, state: DocState) -> dict[str, Any]:
-        message_id = uuid.uuid4()
-        sentences = state["sentences"]
+    # -- extension points (M5) ---------------------------------------------------------
+
+    def messages(
+        self, question: str, passages: list[dict[str, Any]], feedback: list[str] | None
+    ) -> list[dict[str, str]]:
+        return answer_messages(question, passages, feedback)
+
+    def citation_fields(self, passage: dict[str, Any], start: int, end: int) -> dict[str, Any]:
+        """Extra public fields of a citation whose exact span is ``[start, end)`` in the
+        canonical text. Documents add none; code adds repository, path, commit, lines."""
+
+        return {}
+
+    def build_answer(
+        self, state: DocState
+    ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+        """Published sentences ``{text, citations}`` and the citations they reference."""
+
         cited: dict[str, dict[str, Any]] = {}
         answer = []
-        for sentence in sentences:
+        for sentence in state["sentences"]:
             cid = f"c{len(cited) + 1}"
             passage = sentence["passage"]
-            cited[cid] = {
-                "citation_id": cid,
-                "document_id": passage["document_id"],
-                "title": passage["title"],
-                "version": passage["version"],
-                "generation": passage["generation"],
-                "point_id": passage["point_id"],
-                "page": passage["page"],
-                "heading_path": passage["heading_path"],
-                "char_start": sentence["char_start"],
-                "char_end": sentence["char_end"],
-                "text_sha256": passage["text_sha256"],
-                "quote": sentence["quote"],
-            }
+            cited[cid] = self.citation(cid, passage, sentence["char_start"], sentence["char_end"])
             answer.append({"text": sentence["text"], "citations": [cid]})
-        doc_ids = sorted({UUID(c["document_id"]) for c in cited.values()})
-        mode = state["inference_mode"]
+        return answer, cited
+
+    def citation(self, cid: str, passage: dict[str, Any], start: int, end: int) -> dict[str, Any]:
+        rel_start, rel_end = start - passage["char_start"], end - passage["char_start"]
+        return {
+            "citation_id": cid,
+            "document_id": passage["document_id"],
+            "title": passage["title"],
+            "version": passage["version"],
+            "generation": passage["generation"],
+            "point_id": passage["point_id"],
+            "page": passage["page"],
+            "heading_path": passage["heading_path"],
+            "char_start": start,
+            "char_end": end,
+            "text_sha256": passage["text_sha256"],
+            "quote": passage["span_text"][rel_start:rel_end],
+            **self.citation_fields(passage, start, end),
+        }
+
+    def verification(self, state: DocState, mode: str) -> dict[str, Any]:
         verification: dict[str, Any] = {
             "label": VerificationLabel.ANSWER_VERIFIED_DEV_CHECKER.value,
             "quotes": "exact_spans_of_cited_versions",
@@ -606,9 +643,17 @@ class DocumentAnswerWorkflow(ReportWorkflow):
         }
         if mode == "fake":
             verification["inference_label"] = FAKE_LABEL
+        return verification
+
+    def doc_publish(self, state: DocState) -> dict[str, Any]:
+        message_id = uuid.uuid4()
+        answer, cited = self.build_answer(state)
+        doc_ids = sorted({UUID(c["document_id"]) for c in cited.values()})
+        mode = state["inference_mode"]
+        verification = self.verification(state, mode)
         result = {
             "message_id": str(message_id),
-            "kind": "documents",
+            "kind": self.kind,
             "answer": answer,
             "citations": list(cited.values()),
             "verification": verification,
@@ -620,7 +665,7 @@ class DocumentAnswerWorkflow(ReportWorkflow):
                 return {"terminal": {"kind": "noop"}}
             if run.cancel_requested:
                 return {"terminal": {"kind": "cancel", "code": ErrorCode.CANCELLED}}
-            if not pack_enabled(conn, "documents"):
+            if not pack_enabled(conn, self.kind):
                 return {"terminal": self._disabled("publication")}
             locked = store.lock_documents(conn, doc_ids)
             for citation in cited.values():

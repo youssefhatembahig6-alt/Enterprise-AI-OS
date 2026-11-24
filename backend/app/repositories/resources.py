@@ -16,11 +16,16 @@ from app.security.policy import Grant, ResourceMeta
 SOURCE_JOIN_SQL = """FROM resources r
               LEFT JOIN connector_sources cs ON cs.tenant_id = r.tenant_id AND cs.id = r.source_id
               LEFT JOIN tenant_settings ts ON ts.tenant_id = r.tenant_id"""
+#
+# M5 (ADR 0503): a local-folder source has no external permission system to go stale;
+# its readers are assigned by the backend (owner + ``source_grants``), so only the
+# source status and the tenant's connector switch apply.
 PERMISSIONS_CURRENT_SQL = """(r.permission_state = 'verified' AND (r.source_id IS NULL OR (
-                       cs.status = 'active' AND cs.permissions_current
+                       cs.status = 'active'
                        AND cs.kind = ANY (ts.enabled_connectors)
-                       AND cs.last_verified_sync_at
-                           > now() - make_interval(secs => ts.max_staleness_seconds))))
+                       AND (cs.kind = 'local_folder' OR (cs.permissions_current
+                            AND cs.last_verified_sync_at
+                                > now() - make_interval(secs => ts.max_staleness_seconds))))))
                    AS permissions_current"""
 
 
@@ -38,12 +43,56 @@ DRIVE_GROUP_GRANTS_SQL = """
 """
 
 
+# M5 (ADR 0502): a GitHub repository's read-capable logins (as of the last verified
+# sync) become allows only through a current link to a tenant user. Unlinking applies at
+# the next authorization point, without a sync.
+GITHUB_GRANTS_SQL = """
+    SELECT r.id AS resource_id, ea.user_id, NULL::uuid AS group_id FROM resources r
+      JOIN connector_sources cs ON cs.tenant_id = r.tenant_id AND cs.id = r.source_id
+                               AND cs.kind = 'github'
+      JOIN github_collaborators gc ON gc.tenant_id = r.tenant_id AND gc.source_id = cs.id
+      JOIN external_accounts ea ON ea.tenant_id = r.tenant_id AND ea.provider = 'github'
+                               AND ea.login = gc.login
+     WHERE r.id = ANY(:ids)
+"""
+
+# M5 (ADR 0503): a local-folder source is readable by its owner and by the users and
+# groups the backend recorded in ``source_grants``; operating-system permissions on the
+# owner's machine are never mapped.
+LOCAL_FOLDER_GRANTS_SQL = """
+    SELECT r.id AS resource_id, cs.owner_user_id AS user_id, NULL::uuid AS group_id
+      FROM resources r
+      JOIN connector_sources cs ON cs.tenant_id = r.tenant_id AND cs.id = r.source_id
+                               AND cs.kind = 'local_folder'
+     WHERE r.id = ANY(:ids)
+    UNION ALL
+    SELECT r.id, sg.user_id, sg.group_id FROM resources r
+      JOIN connector_sources cs ON cs.tenant_id = r.tenant_id AND cs.id = r.source_id
+                               AND cs.kind = 'local_folder'
+      JOIN source_grants sg ON sg.tenant_id = r.tenant_id AND sg.source_id = cs.id
+     WHERE r.id = ANY(:ids)
+"""
+
+
 def _drive_group_grants(conn: Connection, ids: list[UUID]) -> dict[UUID, list[Grant]]:
+    """Grants derived from connector state (Drive groups, GitHub collaborators, local
+    folder owner and sharing). Every content path loads them through this function."""
+
     out: dict[UUID, list[Grant]] = {}
     for row in conn.execute(text(DRIVE_GROUP_GRANTS_SQL), {"ids": ids}).all():
         out.setdefault(row.resource_id, []).append(
             Grant(effect="allow", action="resource.read", user_id=row.user_id)
         )
+    for sql in (GITHUB_GRANTS_SQL, LOCAL_FOLDER_GRANTS_SQL):
+        for row in conn.execute(text(sql), {"ids": ids}).all():
+            out.setdefault(row.resource_id, []).append(
+                Grant(
+                    effect="allow",
+                    action="resource.read",
+                    user_id=row.user_id,
+                    group_id=row.group_id,
+                )
+            )
     return out
 
 

@@ -14,11 +14,15 @@ import uuid
 from typing import Any
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import text
 
 from app.db.engine import create_app_engine, tenant_transaction
 from app.documents import access
 from tests.integration.conftest import DbHarness, disposable_database, migrate, owner_exec
+
+HEAD = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
 
 
 def resource(db: DbHarness, *, source_id: uuid.UUID | None, key: str) -> uuid.UUID:
@@ -125,7 +129,7 @@ def test_upgrade_denies_drive_access_until_resync(
         assert groups_left == 0
         with db.owner_engine.connect() as conn:
             assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
-                "0010_drive_group_grant_key"
+                HEAD  # later milestones add revisions on top of 0010
             )
 
 

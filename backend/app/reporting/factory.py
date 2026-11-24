@@ -14,13 +14,19 @@ from uuid import UUID
 
 from sqlalchemy import Engine
 
+from app.code.workflow import CodeAnswerWorkflow
 from app.config import DocumentStoreKind, Settings
 from app.connectors.drive import ConnectorConfig, DriveClientFactory, http_client_factory
+from app.connectors.github import GitHubClientFactory, GitHubConnectorConfig
+from app.connectors.github import http_client_factory as github_http_factory
+from app.connectors.github_sync import GitHubSyncService
+from app.connectors.router import ConnectorSyncRouter
 from app.connectors.sync import DriveSyncService
 from app.documents.answers import DocumentAnswerWorkflow
 from app.documents.ingest import IngestionRunner, collection_name
 from app.documents.qdrant import QdrantClient
 from app.documents.storage import FileSystemStore, ObjectStore, S3Store
+from app.legal.workflow import LegalAnswerWorkflow
 from app.reporting.executor import ReportExecutor, create_report_engine
 from app.reporting.model_client import ModelClient, build_model_client
 from app.reporting.service import ReportRunner
@@ -36,6 +42,8 @@ class Components:
     ingestion: IngestionRunner
     report_engine: Engine | None
     drive_sync: DriveSyncService | None = None
+    github_sync: GitHubSyncService | None = None
+    sync_router: ConnectorSyncRouter | None = None
 
     def close(self) -> None:
         self.qdrant.close()
@@ -62,6 +70,7 @@ def build_components(
     qdrant: QdrantClient | None = None,
     drive_clients: DriveClientFactory | None = None,
     ingest_dispatch: Callable[[UUID, UUID], None] | None = None,
+    github_clients: GitHubClientFactory | None = None,
 ) -> Components:
     model = model or build_model_client(settings)
     objects = objects or build_object_store(settings)
@@ -84,7 +93,13 @@ def build_components(
         qdrant,
         lambda: collection_name(settings, model),
     )
-    runner = ReportRunner(app_engine, ReportWorkflow(deps), settings, documents)
+    doc_deps = WorkflowDeps(app_engine=app_engine, executor=None, model=model, settings=settings)
+    collection = lambda: collection_name(settings, model)  # noqa: E731
+    extra = {
+        "legal": LegalAnswerWorkflow(doc_deps, qdrant, collection),
+        "code": CodeAnswerWorkflow(doc_deps, qdrant, collection),
+    }
+    runner = ReportRunner(app_engine, ReportWorkflow(deps), settings, documents, extra)
     ingestion = IngestionRunner(app_engine, settings, objects, qdrant, model)
     connector_config = ConnectorConfig(settings.drive_connector_config)
     clients = drive_clients or http_client_factory(connector_config)
@@ -99,7 +114,22 @@ def build_components(
         lease_seconds=settings.drive_sync_lease_seconds,
         roots=connector_config.allowed_roots,
     )
-    return Components(model, objects, qdrant, runner, ingestion, report_engine, drive_sync)
+    github_config = GitHubConnectorConfig(settings.github_connector_config)
+    github_sync = GitHubSyncService(
+        app_engine,
+        settings,
+        objects,
+        qdrant,
+        model,
+        github_clients or github_http_factory(github_config),
+        ingest_dispatch,
+        lease_seconds=settings.drive_sync_lease_seconds,
+        roots=github_config.allowed_repositories,
+    )
+    router = ConnectorSyncRouter(app_engine, {"google_drive": drive_sync, "github": github_sync})
+    return Components(
+        model, objects, qdrant, runner, ingestion, report_engine, drive_sync, github_sync, router
+    )
 
 
 def build_runner(

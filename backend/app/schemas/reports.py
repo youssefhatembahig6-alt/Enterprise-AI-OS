@@ -13,10 +13,11 @@ from app.schemas.auth import StrictModel
 
 class ChatRequest(StrictModel):
     question: str = Field(min_length=1, max_length=1000)
-    mode: Literal["auto", "report", "documents"] = Field(
+    mode: Literal["auto", "report", "documents", "legal", "code"] = Field(
         default="auto",
-        description="auto: sales/period questions go to the verified SQL report, everything "
-        "else to authorized document answers.",
+        description="auto: sales/period questions go to the verified SQL report, contract "
+        "clause and expiry questions to the legal pack, repository code questions to the "
+        "code pack, everything else to authorized document answers (enabled packs only).",
     )
     client_request_id: str | None = Field(
         default=None,

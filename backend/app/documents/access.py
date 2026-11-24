@@ -23,6 +23,18 @@ from app.repositories.identity import load_subject
 from app.repositories.resources import load_resource_meta, load_resource_metas
 from app.security.policy import Action, Decision, Reason, ResourceMeta, Subject, evaluate
 
+# M5: which document sources each answering pack searches. Code from repositories is
+# answered by the code pack only; documents and legal answers never search it.
+REPOSITORY_SOURCES = frozenset({"github"})
+
+
+def pack_sources(kind: str) -> tuple[frozenset[str] | None, frozenset[str]]:
+    """(only these sources or ``None`` for any, excluded sources) for a run kind."""
+
+    if kind == "code":
+        return REPOSITORY_SOURCES, frozenset()
+    return None, REPOSITORY_SOURCES
+
 
 @dataclass(frozen=True, slots=True)
 class Eligibility:
@@ -32,10 +44,18 @@ class Eligibility:
     denied: dict[UUID, str]  # private reasons, for the audit log only
 
 
-def eligible(conn: Connection, user_id: UUID) -> Eligibility:
+def eligible(conn: Connection, user_id: UUID, kind: str = "documents") -> Eligibility:
+    """Eligible documents and active point ids for ``user_id`` at the current policy
+    epoch, limited to the sources the run kind's pack searches (``pack_sources``)."""
+
     epoch = int(conn.execute(text("SELECT policy_epoch FROM tenants")).scalar_one())
     subject = load_subject(conn, user_id)
-    docs = store.searchable_documents(conn)
+    only, excluded = pack_sources(kind)
+    docs = [
+        d
+        for d in store.searchable_documents(conn)
+        if d.source not in excluded and (only is None or d.source in only)
+    ]
     metas = load_resource_metas(conn, [d.id for d in docs])
     allowed: list[UUID] = []
     denied: dict[UUID, str] = {}

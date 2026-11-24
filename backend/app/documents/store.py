@@ -46,6 +46,8 @@ class VersionRow:
     created_at: datetime
     updated_at: datetime
     elements: list[dict[str, Any]] | None = None
+    # M5: where the bytes came from (repository/commit/path/blob, or local path), immutable.
+    source_revision: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +154,7 @@ def create_document(
     created_by: UUID | None,
     source: str = "upload",
     document_id: UUID | None = None,
+    source_revision: dict[str, Any] | None = None,
 ) -> tuple[UUID, UUID, str]:
     """Create the protected resource, its grants, the document, version 1 and its
     ingestion job, all in the caller's transaction. Permissions are therefore saved
@@ -202,6 +205,7 @@ def create_document(
         byte_sha256,
         key,
         created_by,
+        source_revision,
     )
     job_id = _insert_job(conn, tenant_id, document_id, 1, "ingest")
     return document_id, job_id, key
@@ -218,13 +222,14 @@ def _insert_version(
     byte_sha256: str,
     key: str,
     created_by: UUID | None,
+    source_revision: dict[str, Any] | None = None,
 ) -> None:
     conn.execute(
         text(
             """
             INSERT INTO document_versions (tenant_id, document_id, version, filename, media_type,
-                byte_size, byte_sha256, storage_key, status, created_by)
-            VALUES (:t, :d, :v, :f, :m, :n, :sha, :key, 'queued', :u)
+                byte_size, byte_sha256, storage_key, status, created_by, source_revision)
+            VALUES (:t, :d, :v, :f, :m, :n, :sha, :key, 'queued', :u, CAST(:rev AS jsonb))
             """
         ),
         {
@@ -237,6 +242,7 @@ def _insert_version(
             "sha": byte_sha256,
             "key": key,
             "u": created_by,
+            "rev": json.dumps(source_revision, sort_keys=True) if source_revision else None,
         },
     )
 
@@ -252,6 +258,7 @@ def add_version(
     byte_sha256: str,
     storage_key_for: Any,
     created_by: UUID | None,
+    source_revision: dict[str, Any] | None = None,
 ) -> tuple[int, UUID, str]:
     row = conn.execute(
         text(
@@ -272,6 +279,7 @@ def add_version(
         byte_sha256,
         key,
         created_by,
+        source_revision,
     )
     conn.execute(
         text(
@@ -392,6 +400,7 @@ def load_version(conn: Connection, document_id: UUID, version: int) -> VersionRo
         created_at=row.created_at,
         updated_at=row.updated_at,
         elements=row.elements,
+        source_revision=row.source_revision,
     )
 
 
@@ -500,6 +509,14 @@ def stage_generation(
         text("DELETE FROM document_chunks WHERE document_id = :d AND generation = :g"),
         {"d": document_id, "g": generation},
     )
+    if status == "staging":  # the parsed content decides the chunker (code lines, M5)
+        conn.execute(
+            text(
+                "UPDATE document_generations SET chunker = :c"
+                " WHERE document_id = :d AND generation = :g AND chunker <> :c"
+            ),
+            {"c": chunker, "d": document_id, "g": generation},
+        )
     if status is None:
         conn.execute(
             text(

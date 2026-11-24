@@ -28,6 +28,11 @@ def settings_of(m4: M4, ref: str) -> dict[str, Any]:
     return dict(response.json())
 
 
+# M5: the NileTech fixture enables the legal and code packs and two more connectors.
+NILE_PACKS = ["documents", "sales_reports", "legal", "code"]
+NILE_CONNECTORS = ["upload", "google_drive", "github", "local_folder"]
+
+
 def put_settings(m4: M4, body: dict[str, Any], ref: str = ADMIN) -> Any:
     return m4.client.put("/api/v1/admin/tenant/settings", json=body, headers=auth(m4.token(ref)))
 
@@ -38,8 +43,8 @@ def restore_niletech(m4: M4) -> Iterator[None]:
     response = put_settings(
         m4,
         {
-            "enabled_packs": ["documents", "sales_reports"],
-            "enabled_connectors": ["upload", "google_drive"],
+            "enabled_packs": NILE_PACKS,
+            "enabled_connectors": NILE_CONNECTORS,
             "sync_mode": "demo",
         },
     )
@@ -59,8 +64,8 @@ def runs_of(m4: M4, ref: str) -> int:
 def test_two_tenants_have_different_configuration_from_fixtures(m4: M4) -> None:
     nile = settings_of(m4, "niletech/finance-reader")
     iso = settings_of(m4, ISO_READER)
-    assert nile["enabled_packs"] == ["documents", "sales_reports"]
-    assert nile["enabled_connectors"] == ["google_drive", "upload"]
+    assert nile["enabled_packs"] == sorted(NILE_PACKS)
+    assert nile["enabled_connectors"] == sorted(NILE_CONNECTORS)
     assert (nile["sync_mode"], nile["sync_interval_seconds"]) == ("demo", 900)
     assert iso["enabled_packs"] == ["documents"]
     assert iso["enabled_connectors"] == ["upload"]
@@ -178,9 +183,9 @@ def test_tenant_configuration_needs_tenant_wide_tenant_config(m4: M4) -> None:
     assert dept.status_code == 403
     iso = put_settings(m4, {"enabled_packs": ["documents"]}, ref="isolation-test/finance-admin")
     assert iso.status_code == 403
-    bogus = put_settings(m4, {"enabled_packs": ["documents", "legal"]})
-    assert bogus.status_code == 422  # M5 pack is not implemented yet
-    assert settings_of(m4, ADMIN)["enabled_packs"] == ["documents", "sales_reports"]
+    bogus = put_settings(m4, {"enabled_packs": ["documents", "payroll"]})
+    assert bogus.status_code == 422  # not a pack in the code vocabulary
+    assert settings_of(m4, ADMIN)["enabled_packs"] == sorted(NILE_PACKS)
 
 
 def test_configuration_changes_are_versioned_and_audited(m4: M4, restore_niletech: None) -> None:

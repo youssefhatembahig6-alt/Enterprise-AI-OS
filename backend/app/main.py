@@ -11,10 +11,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from redis import Redis
 
 from app.admin.service import AdminService
-from app.api import admin, auth, documents, health, reports
+from app.api import admin, auth, documents, health, local_folders, reports
 from app.api.errors import install_error_handlers
 from app.config import Settings, get_settings
 from app.connectors.drive import ConnectorConfig, DriveClientFactory, http_client_factory
+from app.connectors.github import GitHubClientFactory, GitHubConnectorConfig
+from app.connectors.github import http_client_factory as github_http_factory
+from app.connectors.github_sync import GitHubSyncService
+from app.connectors.local_folder import LocalFolderService
+from app.connectors.router import ConnectorSyncRouter
 from app.connectors.sync import DriveSyncService, SyncOutcome
 from app.db.engine import create_app_engine
 from app.documents import store as doc_store
@@ -34,9 +39,10 @@ def create_app(  # noqa: PLR0915
     settings: Settings | None = None,
     model: ModelClient | None = None,
     drive_clients: DriveClientFactory | None = None,
+    github_clients: GitHubClientFactory | None = None,
 ) -> FastAPI:
-    """Build the API. ``model`` and ``drive_clients`` override the model client and the
-    Google Drive client factory (tests inject doubles)."""
+    """Build the API. ``model``, ``drive_clients`` and ``github_clients`` override the
+    model client and the Google Drive / GitHub client factories (tests inject doubles)."""
 
     settings = settings or get_settings()
     configure_logging()
@@ -58,7 +64,9 @@ def create_app(  # noqa: PLR0915
     qdrant = QdrantClient(settings.qdrant_url)
     components = None
     if settings.report_dispatch.value == "inline":
-        components = build_components(settings, engine, model_client, objects, qdrant)
+        components = build_components(
+            settings, engine, model_client, objects, qdrant, github_clients=github_clients
+        )
     runner = components.runner if components else None
     dispatcher = build_dispatcher(settings, runner, engine)
     ingest_dispatcher = build_dispatcher(
@@ -84,12 +92,13 @@ def create_app(  # noqa: PLR0915
 
     app = FastAPI(
         title="Enterprise AI OS API",
-        version="0.4.0-m4",
+        version="0.5.0-m5",
         description=(
             "Identity, tenant isolation and health (M0); verified SQL reports (M2) and "
             "authorized document answers with exact citations (M3), streamed over "
             "Server-Sent Events; Google Drive sync, scoped administration and tenant "
-            "configuration (M4)."
+            "configuration (M4); legal clause/expiry answers, GitHub repositories with "
+            "code citations and desktop local folders (M5)."
         ),
         lifespan=lifespan,
     )
@@ -139,12 +148,37 @@ def create_app(  # noqa: PLR0915
         roots=drive_config.allowed_roots,
     )
     app.state.drive_sync = drive_sync
+    # M5: GitHub repositories (same fenced runs) and desktop local folders (push).
+    github_config = GitHubConnectorConfig(settings.github_connector_config)
+    github_sync = GitHubSyncService(
+        engine,
+        settings,
+        objects,
+        qdrant,
+        model_client,
+        github_clients or github_http_factory(github_config),
+        ingest_dispatcher.dispatch if ingest_dispatcher else None,
+        lease_seconds=settings.drive_sync_lease_seconds,
+        roots=github_config.allowed_repositories,
+    )
+    app.state.github_sync = github_sync
+    sync_router = ConnectorSyncRouter(engine, {"google_drive": drive_sync, "github": github_sync})
+    app.state.sync_router = sync_router
+    local = LocalFolderService(
+        engine,
+        settings,
+        objects,
+        qdrant,
+        model_client,
+        ingest_dispatcher.dispatch if ingest_dispatcher else None,
+    )
+    app.state.local_folders = local
 
     def run_sync(
         tenant_id: uuid.UUID, source_id: uuid.UUID, user_id: uuid.UUID, run_id: uuid.UUID
     ) -> SyncOutcome | None:
         if settings.report_dispatch.value == "inline":
-            return drive_sync.sync(
+            return sync_router.sync(
                 tenant_id, source_id, trigger="manual", requested_by=user_id, run_id=run_id
             )
         from app.tasks.worker import celery_app  # noqa: PLC0415
@@ -157,7 +191,13 @@ def create_app(  # noqa: PLR0915
         )
         return None
 
-    app.state.admin = AdminService(engine, drive_config, run_sync)
+    app.state.admin = AdminService(
+        engine,
+        drive_config,
+        run_sync,
+        github_config,
+        local.drop_points,
+    )
     app.state.readiness = ReadinessChecker(
         engine=engine,
         redis=redis,
@@ -196,4 +236,5 @@ def create_app(  # noqa: PLR0915
     app.include_router(reports.router)
     app.include_router(documents.router)
     app.include_router(admin.router)
+    app.include_router(local_folders.router)
     return app

@@ -161,6 +161,9 @@ class Settings(BaseSettings):
     drive_sync_lease_seconds: int = Field(
         default=900, alias="DRIVE_SYNC_LEASE_SECONDS", ge=60, le=7200
     )
+    # M5 GitHub connector: operator-owned JSON binding each tenant slug to a server-side
+    # read-only token and the repositories it may sync (app/connectors/github.py).
+    github_connector_config: str | None = Field(default=None, alias="GITHUB_CONNECTOR_CONFIG")
 
     sse_poll_interval_seconds: float = Field(
         default=0.5, alias="SSE_POLL_INTERVAL_SECONDS", gt=0, le=5

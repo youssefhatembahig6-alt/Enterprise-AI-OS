@@ -25,7 +25,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from app.documents.canonical import CanonicalDocument, Element, build_canonical
+from app.documents.canonical import CanonicalDocument, Element, build_canonical, normalize_text
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_XLSX_CELLS = 200_000
@@ -38,6 +38,19 @@ SUPPORTED = {
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".pdf": "application/pdf",
 }
+# M5: source code and configuration files, kept verbatim (one ``code`` element) so a
+# citation maps to exact source lines. Repository sources ingest every text file this
+# way (``verbatim=True``), including Markdown, so line numbers always hold.
+CODE_MEDIA_TYPE = "text/x-source"
+CODE_EXTENSIONS = frozenset(
+    {
+        ".py", ".pyi", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".java", ".kt", ".go",
+        ".rs", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs", ".rb", ".php", ".swift", ".scala",
+        ".sh", ".bash", ".ps1", ".sql", ".yaml", ".yml", ".toml", ".json", ".ini", ".cfg",
+        ".html", ".css", ".scss", ".xml", ".gradle", ".r", ".lua", ".dart", ".vue",
+    }
+)  # fmt: skip
+VERBATIM_EXTENSIONS = CODE_EXTENSIONS | {".md", ".markdown", ".txt", ".csv"}
 
 
 class ParseFailed(Exception):
@@ -69,10 +82,13 @@ def detect(filename: str, data: bytes) -> Detected:
 
     match = re.search(r"(\.[A-Za-z0-9]+)$", filename or "")
     extension = match.group(1).lower() if match else ""
+    if extension in CODE_EXTENSIONS:
+        return Detected(extension, CODE_MEDIA_TYPE)
     if extension not in SUPPORTED:
         raise ParseFailed(
             "unsupported_type",
-            "Unsupported file type. Upload PDF, Markdown, plain text, CSV or XLSX.",
+            "Unsupported file type. Upload PDF, Markdown, plain text, CSV, XLSX or a source "
+            "code file.",
         )
     if extension == ".pdf" and not data.startswith(b"%PDF-"):
         raise ParseFailed("malformed_file", "The file is not a valid PDF.")
@@ -285,16 +301,53 @@ def elements_from_docling(payload: dict[str, Any]) -> CanonicalDocument:
     return doc
 
 
-def parse(filename: str, data: bytes, docling: DoclingCall | None = None) -> CanonicalDocument:
+def parse_code(filename: str, data: bytes) -> CanonicalDocument:
+    """One verbatim ``code`` element. Only line endings are normalised (``\r\n`` ->
+    ``\n``) and Unicode is NFC-normalised, so line *n* of the canonical text is line
+    ``first_line + n - 1`` of the file. ``first_line`` accounts for leading blank lines
+    that canonicalisation strips."""
+
+    if b"\x00" in data:
+        raise ParseFailed("unsupported_type", "Binary files are not indexed.")
+    try:
+        text, encoding = _decode_text(data)
+    except UnicodeDecodeError as exc:
+        raise ParseFailed("encoding_error", "The text could not be decoded.") from exc
+    normalized = normalize_text(text)
+    leading = len(normalized) - len(normalized.lstrip("\n"))
+    name = filename.rsplit("/", 1)[-1][:200] or "file"
+    doc = build_canonical(
+        [Element("code", normalized, None, (name,))],
+        "builtin-code-v1",
+        {"encoding": encoding, "first_line": 1 + leading, "verbatim_lines": True},
+    )
+    if not doc.text.strip():
+        raise ParseFailed("empty_document", "The file has no text.")
+    return doc
+
+
+def parse(
+    filename: str,
+    data: bytes,
+    docling: DoclingCall | None = None,
+    *,
+    verbatim: bool = False,
+) -> CanonicalDocument:
     """Parse an upload. PDFs go to Docling when a Docling call is available (the M1
     choice: layout, tables, OCR on the Colab GPU); if Docling is unavailable, the
-    documented fallback is the local text-layer parser, and scans become needs_ocr."""
+    documented fallback is the local text-layer parser, and scans become needs_ocr.
+
+    ``verbatim`` (repository sources) parses every text format line-for-line."""
 
     if len(data) > MAX_UPLOAD_BYTES:
         raise ParseFailed("too_large", "The file is larger than 10 MB.")
     if not data:
         raise ParseFailed("empty_document", "The file is empty.")
     detected = detect(filename, data)
+    if detected.media_type == CODE_MEDIA_TYPE or (
+        verbatim and detected.extension in VERBATIM_EXTENSIONS
+    ):
+        return parse_code(filename, data)
     if detected.extension in (".md", ".markdown", ".txt"):
         return parse_markdown(data)
     if detected.extension == ".csv":

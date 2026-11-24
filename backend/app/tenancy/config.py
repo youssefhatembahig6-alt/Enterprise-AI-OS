@@ -19,13 +19,24 @@ from sqlalchemy import Connection, text
 PACKS: dict[str, str] = {
     "documents": "Document answers with citations (M3)",
     "sales_reports": "Verified sales reports over SQL (M2)",
+    "legal": "Contract clause comparison and expiry answers with exact citations (M5)",
+    "code": "Code answers over synced repositories with file, revision and line citations (M5)",
 }
 CONNECTORS: dict[str, str] = {
     "upload": "Manual upload with explicit sharing",
     "google_drive": "Google Drive folder sync",
+    "github": "GitHub repository sync (code)",
+    "local_folder": "Desktop local folder with backend-assigned sharing",
 }
 SYNC_MODES: tuple[str, ...] = ("demo", "nightly")
-RUN_KIND_PACK: dict[str, str] = {"report": "sales_reports", "documents": "documents"}
+RUN_KIND_PACK: dict[str, str] = {
+    "report": "sales_reports",
+    "documents": "documents",
+    "legal": "legal",
+    "code": "code",
+}
+# Run kinds whose published content is document citations (re-authorized per document).
+DOCUMENT_RUN_KINDS: frozenset[str] = frozenset({"documents", "legal", "code"})
 
 
 class CapabilityDisabled(Exception):

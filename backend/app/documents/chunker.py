@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from app.documents.canonical import CanonicalDocument, PlacedElement
 
 CHUNKER_VERSION = "header-recursive-v1"
+CODE_CHUNKER_VERSION = "header-recursive-v1+code-lines-v1"
 MAX_CHARS = 700
 _SENTENCE_END = re.compile(r"(?<=[.!?؟。])\s+")
 
@@ -117,6 +118,11 @@ def chunk_document(doc: CanonicalDocument, max_chars: int = MAX_CHARS) -> list[C
             flush()
             _chunk_table(placed, text, max_chars, emit)
             continue
+        if element.element_type == "code":
+            flush()
+            for start, end in code_ranges(text, placed.start, placed.end, max_chars):
+                emit(start, end, _prefix(element.heading_path), None, element.heading_path, "code")
+            continue
         if length > max_chars:
             flush()
             for start, end in _split_long(element.text, placed.start, max_chars):
@@ -139,6 +145,55 @@ def chunk_document(doc: CanonicalDocument, max_chars: int = MAX_CHARS) -> list[C
         group.append(placed)
     flush()
     return chunks
+
+
+def chunker_version(doc: CanonicalDocument) -> str:
+    """Recorded on the generation; code elements use the line chunker as well."""
+
+    if any(p.element.element_type == "code" for p in doc.elements):
+        return CODE_CHUNKER_VERSION
+    return CHUNKER_VERSION
+
+
+def code_ranges(text: str, start: int, end: int, max_chars: int) -> list[tuple[int, int]]:
+    """Split verbatim code into whole-line chunks of at most ``max_chars`` code points,
+    preferring to cut after a blank line (between functions or blocks). A single line
+    longer than the limit is cut at the limit. Ranges are contiguous and cover every
+    non-blank line exactly once, so every chunk maps to exact source lines."""
+
+    lines: list[tuple[int, int]] = []
+    cursor = start
+    while cursor < end:
+        newline = text.find("\n", cursor, end)
+        stop = end if newline < 0 else newline
+        lines.append((cursor, stop))
+        cursor = stop + 1
+    ranges: list[tuple[int, int]] = []
+    group: list[tuple[int, int]] = []
+
+    def close(upto: int) -> None:
+        chunk = group[:upto]
+        del group[:upto]
+        first = next((s for s, e in chunk if e > s and text[s:e].strip()), None)
+        if first is not None:
+            last = max(e for s, e in chunk if text[s:e].strip())
+            ranges.append((first, last))
+
+    for first_char, line_end in lines:
+        line_start = first_char
+        while line_end - line_start > max_chars:  # an overlong line: hard cut
+            if group:
+                close(len(group))
+            ranges.append((line_start, line_start + max_chars))
+            line_start += max_chars
+        if group and line_end - group[0][0] > max_chars:
+            blank = [i for i, (s, e) in enumerate(group) if not text[s:e].strip()]
+            cut = blank[-1] + 1 if blank and blank[-1] + 1 >= len(group) // 2 else len(group)
+            close(cut)
+        group.append((line_start, line_end))
+    if group:
+        close(len(group))
+    return [(s, e) for s, e in ranges if e > s]
 
 
 def _chunk_table(placed: PlacedElement, text: str, max_chars: int, emit) -> None:  # type: ignore[no-untyped-def]
