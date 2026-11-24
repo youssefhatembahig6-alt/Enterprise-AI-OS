@@ -1,0 +1,289 @@
+{
+  "kind": "m5_github_acceptance",
+  "live_github": "no: in-memory GitHub double; real model via the Colab gateway",
+  "repository": "niletech/acceptance-fixture",
+  "api": "http://127.0.0.1:41907",
+  "started_at": "2026-11-24T18:44:06.624380+00:00",
+  "steps": [
+    {
+      "step": "A_link_login_to_reader",
+      "ok": true,
+      "at": "2026-11-24T18:44:07.122209+00:00",
+      "http": 200
+    },
+    {
+      "step": "A_login_is_collaborator_on_github",
+      "ok": true,
+      "at": "2026-11-24T18:44:07.122269+00:00"
+    },
+    {
+      "step": "A_sync_1",
+      "ok": true,
+      "at": "2026-11-24T18:44:07.301587+00:00",
+      "run": {
+        "run_id": "96cbd332-9eff-43b9-bd1d-e75de9764abe",
+        "trigger": "manual",
+        "status": "succeeded",
+        "terminal": true,
+        "requested_at": "2026-11-24T18:44:07.161697+00:00",
+        "started_at": "2026-11-24T18:44:07.170899+00:00",
+        "finished_at": "2026-11-24T18:44:07.211552+00:00",
+        "error_code": null,
+        "stats": {
+          "seen": 2,
+          "created": 2,
+          "collaborators": 1,
+          "collaborators_removed": 0,
+          "unlinked_collaborators": 0
+        },
+        "policy_version": 1
+      },
+      "access": "current",
+      "commit": "d81e222ceb5cd759427aaadd0dadf5d035cf9d5e"
+    },
+    {
+      "step": "A_ingested",
+      "ok": true,
+      "at": "2026-11-24T18:44:09.392008+00:00"
+    },
+    {
+      "step": "B_citation_a_matches_github",
+      "ok": true,
+      "at": "2026-11-24T18:45:27.320896+00:00",
+      "problems": [],
+      "inference": "gateway",
+      "verification_label": "answer_quotes_verified_dev_checked",
+      "checker": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+      "citation": {
+        "repository": "niletech/acceptance-fixture",
+        "path": "inventory/reservations.py",
+        "commit": "d81e222ceb5cd759427aaadd0dadf5d035cf9d5e",
+        "blob_sha": "04d7f691e339946ff41413042addfa5960b2693e",
+        "line_start": 6,
+        "line_end": 6,
+        "quote": "RESERVATION_MINUTES = 45  # inventory reservations last 45 minutes before they expire",
+        "url": "https://github.com/niletech/acceptance-fixture/blob/d81e222ceb5cd759427aaadd0dadf5d035cf9d5e/inventory/reservations.py#L6-L6"
+      }
+    },
+    {
+      "step": "B_citation_b_matches_github",
+      "ok": true,
+      "at": "2026-11-24T18:46:18.861609+00:00",
+      "problems": [],
+      "inference": "gateway",
+      "verification_label": "answer_quotes_verified_dev_checked",
+      "checker": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+      "citation": {
+        "repository": "niletech/acceptance-fixture",
+        "path": "billing/refunds.py",
+        "commit": "d81e222ceb5cd759427aaadd0dadf5d035cf9d5e",
+        "blob_sha": "49d287915d6d75545bd0d2f06f8cbf9150cde291",
+        "line_start": 3,
+        "line_end": 4,
+        "quote": "# The refund processing fee is 2.5 percent of the order total.\nREFUND_FEE_PERCENT = 2.5",
+        "url": "https://github.com/niletech/acceptance-fixture/blob/d81e222ceb5cd759427aaadd0dadf5d035cf9d5e/billing/refunds.py#L3-L4"
+      }
+    },
+    {
+      "step": "C_sync_2_sees_rename_and_delete",
+      "ok": true,
+      "at": "2026-11-24T18:46:18.959554+00:00",
+      "run": {
+        "run_id": "fd1b1a27-5212-4dbb-969a-6b1d6461003d",
+        "trigger": "manual",
+        "status": "succeeded",
+        "terminal": true,
+        "requested_at": "2026-11-24T18:46:18.871342+00:00",
+        "started_at": "2026-11-24T18:46:18.880133+00:00",
+        "finished_at": "2026-11-24T18:46:18.911651+00:00",
+        "error_code": null,
+        "stats": {
+          "seen": 1,
+          "created": 1,
+          "removed": 2,
+          "collaborators": 1,
+          "collaborators_removed": 0,
+          "unlinked_collaborators": 0
+        },
+        "policy_version": 1
+      },
+      "commit": "387291b3dc3100da8bc3fe7938e7d5e3d0dc0ce3",
+      "items": [
+        {
+          "external_id": "inventory/reservations.py",
+          "name": "inventory/reservations.py",
+          "path": "inventory/reservations.py",
+          "state": "removed",
+          "document_id": "6ccd4f28-d035-4ead-ba97-48d1f1489129",
+          "unresolved_principals": [],
+          "updated_at": "2026-11-24T18:46:18.907638+00:00"
+        },
+        {
+          "external_id": "inventory/holds.py",
+          "name": "inventory/holds.py",
+          "path": "inventory/holds.py",
+          "state": "active",
+          "document_id": "9bd88a43-37c6-417d-ba8a-5f20b5f5e766",
+          "unresolved_principals": [],
+          "updated_at": "2026-11-24T18:46:18.894427+00:00"
+        },
+        {
+          "external_id": "billing/refunds.py",
+          "name": "billing/refunds.py",
+          "path": "billing/refunds.py",
+          "state": "removed",
+          "document_id": "3ee57b38-dd58-4015-bcbc-15334726ed63",
+          "unresolved_principals": [],
+          "updated_at": "2026-11-24T18:46:18.904386+00:00"
+        }
+      ]
+    },
+    {
+      "step": "C_reader_still_collaborator",
+      "ok": true,
+      "at": "2026-11-24T18:46:18.960627+00:00"
+    },
+    {
+      "step": "C_old_citations_inaccessible",
+      "ok": true,
+      "at": "2026-11-24T18:46:18.997148+00:00"
+    },
+    {
+      "step": "C_deleted_file_cannot_contribute",
+      "ok": true,
+      "at": "2026-11-24T18:46:19.561348+00:00",
+      "outcome": "abstained",
+      "abstention": "no_sources"
+    },
+    {
+      "step": "C_old_path_cannot_contribute",
+      "ok": true,
+      "at": "2026-11-24T18:46:42.384665+00:00"
+    },
+    {
+      "step": "C_renamed_file_cited_at_new_commit",
+      "ok": true,
+      "at": "2026-11-24T18:46:42.408236+00:00",
+      "problems": [],
+      "inference": "gateway",
+      "verification_label": "answer_quotes_verified_dev_checked",
+      "checker": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+      "citation": {
+        "repository": "niletech/acceptance-fixture",
+        "path": "inventory/holds.py",
+        "commit": "387291b3dc3100da8bc3fe7938e7d5e3d0dc0ce3",
+        "blob_sha": "04d7f691e339946ff41413042addfa5960b2693e",
+        "line_start": 6,
+        "line_end": 6,
+        "quote": "RESERVATION_MINUTES = 45  # inventory reservations last 45 minutes before they expire",
+        "url": "https://github.com/niletech/acceptance-fixture/blob/387291b3dc3100da8bc3fe7938e7d5e3d0dc0ce3/inventory/holds.py#L6-L6"
+      }
+    },
+    {
+      "step": "D_delete_source",
+      "ok": true,
+      "at": "2026-11-24T18:46:42.436614+00:00",
+      "http": 200
+    },
+    {
+      "step": "D_reader_still_collaborator",
+      "ok": true,
+      "at": "2026-11-24T18:46:42.436668+00:00"
+    },
+    {
+      "step": "D_deleted_source_cannot_contribute",
+      "ok": true,
+      "at": "2026-11-24T18:46:42.966930+00:00",
+      "outcome": "abstained",
+      "abstention": "no_sources"
+    },
+    {
+      "step": "D_old_citation_inaccessible",
+      "ok": true,
+      "at": "2026-11-24T18:46:42.982720+00:00"
+    },
+    {
+      "step": "D_recreated_source_syncs",
+      "ok": true,
+      "at": "2026-11-24T18:46:43.079083+00:00",
+      "run": {
+        "run_id": "32bc1abc-8bac-4910-9782-9dd5d616b96f",
+        "trigger": "manual",
+        "status": "succeeded",
+        "terminal": true,
+        "requested_at": "2026-11-24T18:46:43.007933+00:00",
+        "started_at": "2026-11-24T18:46:43.016119+00:00",
+        "finished_at": "2026-11-24T18:46:43.038755+00:00",
+        "error_code": null,
+        "stats": {
+          "seen": 1,
+          "created": 1,
+          "collaborators": 1,
+          "collaborators_removed": 0,
+          "unlinked_collaborators": 0
+        },
+        "policy_version": 1
+      }
+    },
+    {
+      "step": "D_reader_answered_again_from_new_source",
+      "ok": true,
+      "at": "2026-11-24T18:47:31.185736+00:00",
+      "problems": [],
+      "inference": "gateway",
+      "verification_label": "answer_quotes_verified_dev_checked",
+      "checker": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+      "citation": {
+        "repository": "niletech/acceptance-fixture",
+        "path": "inventory/holds.py",
+        "commit": "387291b3dc3100da8bc3fe7938e7d5e3d0dc0ce3",
+        "blob_sha": "04d7f691e339946ff41413042addfa5960b2693e",
+        "line_start": 6,
+        "line_end": 6,
+        "quote": "RESERVATION_MINUTES = 45  # inventory reservations last 45 minutes before they expire",
+        "url": "https://github.com/niletech/acceptance-fixture/blob/387291b3dc3100da8bc3fe7938e7d5e3d0dc0ce3/inventory/holds.py#L6-L6"
+      }
+    },
+    {
+      "step": "E_login_removed_on_github",
+      "ok": true,
+      "at": "2026-11-24T18:47:31.185797+00:00"
+    },
+    {
+      "step": "E_sync_detects_removal",
+      "ok": true,
+      "at": "2026-11-24T18:47:31.246650+00:00",
+      "run": {
+        "run_id": "9d78f5d7-8138-463d-933f-edd987ffa2b7",
+        "trigger": "manual",
+        "status": "succeeded",
+        "terminal": true,
+        "requested_at": "2026-11-24T18:47:31.202348+00:00",
+        "started_at": "2026-11-24T18:47:31.211542+00:00",
+        "finished_at": "2026-11-24T18:47:31.229542+00:00",
+        "error_code": null,
+        "stats": {
+          "seen": 1,
+          "unchanged": 1,
+          "collaborators": 0,
+          "collaborators_removed": 1,
+          "unlinked_collaborators": 0
+        },
+        "policy_version": 1
+      }
+    },
+    {
+      "step": "E_revoked_reader_refused",
+      "ok": true,
+      "at": "2026-11-24T18:47:31.776937+00:00",
+      "outcome": "abstained"
+    },
+    {
+      "step": "E_old_citation_inaccessible",
+      "ok": true,
+      "at": "2026-11-24T18:47:31.799343+00:00"
+    }
+  ],
+  "finished_at": "2026-11-24T18:47:31.799447+00:00",
+  "result": "pass"
+}

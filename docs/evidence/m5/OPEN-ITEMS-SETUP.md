@@ -1,6 +1,6 @@
 # M5 open items: exact setup and commands
 
-Real-model code answers remain open. Live GitHub acceptance (22 checks, fake model) and the Windows real-backend smoke (13 checks) passed on 24 November 2026; sections 1 and 2 remain as reproduction instructions. See the evidence README for the recorded commit and working-tree provenance. Everything else is done (see [README.md](README.md)). Each section ends with the evidence file to add and the matrix row it closes. Never paste a token or password into a chat, an issue, a commit or an evidence file; the runners never print or record them.
+All three acceptance runs passed on 24 November 2026. Live GitHub acceptance passed 22 checks with the fake model, native Windows passed 13 real-backend smoke checks, and Colab passed 22 real-model checks. The sections below document reproduction. See the [evidence README](README.md) for the tested commits and working-tree provenance. Never paste a token or password into a chat, an issue, a commit or an evidence file; the runners never print or record them.
 
 ## 1. Dedicated private GitHub test repository
 
@@ -103,7 +103,7 @@ Exit code 0 and `desktop smoke passed` close the item. The script uses only the 
 
 ## 3. Real-model code answers (Colab)
 
-Closes row G7 (real model). Needs: a Colab runtime with a **T4 GPU** (Colab Pro), about 40 minutes. Everything runs over loopback inside the runtime as in the M2/M3 runs, so no tunnel is opened (the Colab usage gate in the roadmap does not arise). GitHub is the in-memory double holding the same fixture files; the run proves the real model's code answers and their line citations, not live GitHub (that is section 1).
+Completed by `2026-11-24-colab-code-real-model.json` (22/22 checks, row G7). To reproduce, use a Colab runtime with a **T4 GPU** and allow about 40 minutes. Everything runs over loopback inside the runtime as in the M2/M3 runs, so no tunnel is opened (the Colab usage gate in the roadmap does not arise). GitHub is the in-memory double holding the same fixture files; the run proves the real model's code answers and their line citations, not live GitHub (that is section 1).
 
 Ready-to-run notebook: [`ml/colab-m5/m5_acceptance.ipynb`](../../../ml/colab-m5/m5_acceptance.ipynb).
 

@@ -12,7 +12,7 @@ The native Windows real-backend run on `27c38f5b53e80d2698a21bb9083ffcb4df4416e2
 
 The live GitHub run (`2026-11-24-github-acceptance-live-fake-model.json`) passed all 22 stages A–E checks against the private synthetic fixture repository, using the fake model. It records base `786973f` with uncommitted changes and backend image `sha256:dfd80e0b0578e127041e8ec07515ce0be1c842b43b7209b479d861916e398f9f`; it is not claimed as a clean-head run. Its runner SHA-256 `31149d166b7303685d4077a2139188ef691b5a2901dc2495a4c13b0a4adeaa26` matches the current runner.
 
-Real-model code answers remain **open**; their exact setup is in [OPEN-ITEMS-SETUP.md](OPEN-ITEMS-SETUP.md).
+The **Colab real-model run passed all 22 checks** at `70ae689625f61ef0c22ba0e8b2751cab44b92dea` (exit 0). All four code answers used the Qwen3-8B-AWQ gateway and passed independent citation checks against the synthetic fixture revisions. The source bundle is `m5-evidence-20261124T184732Z.zip` (SHA-256 `4591fb3cc9ef5b81da834dd45e1790f67a7ff33ad80207e84261b51e5ff76b71`).
 
 ## Requirement → result
 
@@ -30,7 +30,7 @@ Real-model code answers remain **open**; their exact setup is in [OPEN-ITEMS-SET
 | G4 | Code answers cite repository, file, revision and lines, verified independently | Integration: `::test_code_answer_cites_repository_file_revision_and_exact_lines` (lines computed independently, leading blank lines and CRLF covered). Runner: every `*_matches_github` / `*_cited_at_new_commit` step reads the file at the cited commit through a **separate channel** and checks repository, path, commit, blob SHA, `line_start`, `line_end`, that the quote lies at exactly those lines, and the permalink; also re-opens the citation through the API. Verifier unit tests: `test_m5_citation_verifier.py` (4: exact citation; each field wrong; off-by-one; quote not ending on the last line) | pass | **live GitHub, fake model**; independent citation checks passed | R1, R2, R3; setup §1 |
 | G5 | Excluded, symlinked, submodule and oversized paths never ingested | `::test_sync_records_every_path_and_ingests_only_eligible_files` | pass | **mocked GitHub** | R1 |
 | G6 | GitHub HTTP client | `test_m5_github_client.py` (10): pagination, permission mapping, 401/403/404/301/rate limit, truncated tree | pass | recorded-shape mock transport | R2 |
-| G7 | Real-model code answers | Colab runner `ml/colab-m5/run_m5_code_colab.py` (stages A–E with `--require-gateway`). Wiring dry run in fake mode: all 22 steps pass; with `--require-gateway` the same fake run **fails** (`*_real_model` steps), so a fake run can never pass as real-model evidence | wiring checked; **real model: open** | fake model; Colab: open | setup §3 |
+| G7 | Real-model code answers | Colab runner `ml/colab-m5/run_m5_code_colab.py` (stages A–E with `--require-gateway`), captured in `2026-11-24-colab-code-real-model.json` | **22/22 passed**, four exact citations verified | real model gateway and backend, in-memory GitHub fixture | setup §3 |
 | D1 | Reuse the working React interface | Smoke steps `renderer_loads_shared_react_app`, `renderer_has_bridge_without_node`, `content_security_policy` | pass | **live** Electron (Debian, Windows CI) | R5 |
 | D2 | Backend assigns ownership and sharing | `test_m5_local_folder.py::test_backend_assigns_ownership_and_only_the_owner_reads`, `::test_sharing_is_backend_assigned_and_revocable`, `::test_registration_is_idempotent_and_owned`, `::test_admin_sees_local_folders_but_cannot_change_their_attributes`. Smoke: `unshared_user_never_receives_folder_content` (no folder document cited for sales.reader) | pass | real backend; **live** smoke | R1, R5 |
 | D3 | Recursion, symlinks, excluded files, size limits | `engine.test.ts` "recurses, skips…"; `::test_rules_are_reapplied_on_the_server`; smoke `initial_sync_recursion_and_exclusions` | pass | engine on real filesystem; **live** smoke | R1, R5, R6 |
@@ -101,12 +101,9 @@ docker exec eaios-postgres-1 psql -U postgres -d eaios -Atc "select version_num 
 curl -s http://localhost:8000/ready
 ```
 
-## Open acceptance items
+## Acceptance status
 
-| Item | Rows | Why open | What closes it |
-| --- | --- | --- | --- |
-| Real-model code answers | G7 | Needs the Colab T4 runtime | [Setup §3](OPEN-ITEMS-SETUP.md#3-real-model-code-answers-colab) |
-| Installer packaging and code signing | — | Outside M5 | — |
+All M5 acceptance items have recorded results. Installer packaging and code signing are outside M5.
 
 ## Files
 
@@ -118,6 +115,9 @@ curl -s http://localhost:8000/ready
 | `2026-11-24-desktop-smoke-windows-live.json` | Native Windows: 10 Electron steps + 3 backend checks on `27c38f5` | live (fake embeddings; simulated outage; no Windows symlink created) |
 | `2026-11-24-desktop-smoke-windows-ci-mocked-backend.json` | Real Electron + mock backend on the `windows-2022` runner | mocked backend |
 | `2026-11-24-github-acceptance-live-fake-model.json` | Stages A–E, 22/22 checks; recorded dirty-tree base and runner hash retained | live GitHub, fake model |
+| `2026-11-24-colab-code-real-model.json` | Colab stages A–E, 22/22 checks and four independently verified citations | real model gateway, in-memory GitHub fixture |
+| `2026-11-24-colab-code-real-model-gateway-health.json` | Gateway model pins and engine settings | Colab gateway |
+| `2026-11-24-colab-code-real-model-versions.json` | Tested application commit and runner exit code | Colab runtime |
 | `2026-11-24-github-acceptance-dryrun-mocked-github.json` | Acceptance runner, stages A–E, 22 steps, real API | mocked GitHub, fake model |
 | `2026-11-21-github-shape-check.json` | Read-only live GitHub responses parsed by the connector client (counts only) | live, read-only |
 | [OPEN-ITEMS-SETUP.md](OPEN-ITEMS-SETUP.md) | Setup and reproduction for external acceptance items | — |
