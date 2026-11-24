@@ -1,4 +1,4 @@
-# Runbook — local development stack (M0–M4)
+# Runbook — local development stack (M0–M5)
 
 Prerequisites: Docker Engine with Compose v2, and Python 3 for the helper script. Node 20.19+ is needed only for local frontend work. No GPU, model endpoint or paid API key is needed.
 
@@ -113,6 +113,24 @@ After pulling M4: `python scripts/dev.py up` (runs migration 0007), then `python
   `docker compose run --rm -v "$PWD/var:/app/var" migrate python -m app.cli add-drive-reader --email <google account>`
 - Live acceptance: `python3 scripts/m4_drive_acceptance.py --folder <folder id> --file-id <test file id> --reader <google account>`. It waits for the exact run each sync request created, exits nonzero on failure or timeout, and always writes evidence (see `docs/evidence/m4/README.md`).
 - Drive **group** shares grant access only with verified Google membership (`group_membership: "directory"`, Workspace only). Otherwise use direct user shares.
+
+## Legal pack, GitHub repositories and the desktop app (M5)
+
+After pulling M5: `python3 scripts/dev.py up` (runs migration 0011), then `python3 scripts/dev.py seed` once. The seed enables the `legal` and `code` packs and the `github` and `local_folder` connectors for NileTech. Add `app://eaios` to `CORS_ALLOWED_ORIGINS` in `.env` if you run the desktop app (the new `.env.example` has it).
+
+- **Legal pack.** Upload the three synthetic contracts in `backend/fixtures/legal/` (permissions in `legal.toml`) as `access.admin`, then ask under **Contracts**, for example "When do our contracts expire?" or "Compare the termination clauses of the Aswan and Red Sea agreements". No model is needed; the answer cites the exact sentences and every value is re-derived from them.
+- **GitHub.** Put a fine-grained, repository-scoped token in `./var/connectors/github-token`, write `./var/connectors/github.json` ([contract](contracts/m5.md#operator-configuration)), set `GITHUB_CONNECTOR_CONFIG=/run/eaios/connectors/github.json` and run `up`. In the admin console: **Roles & groups → GitHub logins** links a login to a user; **Sources → GitHub repository** adds the repository; **Sync now**. Ask under **Code repositories**.
+- **Live GitHub acceptance** (needs a dedicated test repository, a second GitHub account as read collaborator, and the token above): `python3 scripts/m5_github_acceptance.py --repo <owner/name> --login <collaborator> --path <file> --question "<question about that file>"`. Read-only response-shape check with your own `gh` login: `backend/.venv/bin/python scripts/m5_github_shape_check.py --repo <owner/name>`.
+- **Desktop app** (Node 20.19+; the first `npm install` downloads Electron, about 110 MB):
+
+  ```bash
+  npm install
+  npm run build -w @eaios/web
+  EAIOS_API_BASE_URL=http://localhost:8000 npm start -w @eaios/desktop
+  ```
+
+  Sign in, then **Local folders → Add a folder**. Only you can read the files until you share the folder with one of your groups. Folder state and the offline queue live in the app-data folder (`~/.config/@eaios/desktop/local-folders` on Linux, `%APPDATA%\@eaios\desktop\local-folders` on Windows); the session is never stored.
+- **Desktop tests.** Engine tests: `npm test -w @eaios/desktop`. Smoke against the mock backend (any OS): `npm run smoke:mock -w @eaios/desktop`. Live smoke against the real backend (Debian or Windows with the test services from "Checks"): `cd backend && .venv/bin/python ../scripts/m5_desktop_smoke.py --out ../var/m5-desktop-smoke.json`.
 
 ## Restart
 

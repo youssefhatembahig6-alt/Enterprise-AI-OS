@@ -1,0 +1,25 @@
+{
+  "kind": "m5_github_shape_check",
+  "live_responses": true,
+  "writes_to_github": false,
+  "sync_or_revocation_tested": false,
+  "checked_at": "2026-11-21T20:10:15.733391+00:00",
+  "repository_visibility": "public",
+  "default_branch_resolved": true,
+  "collaborators": {
+    "http": 200,
+    "count": 1,
+    "permission_levels": [
+      "admin"
+    ],
+    "fields_used_present": true
+  },
+  "tree": {
+    "truncated": false,
+    "entries": 454,
+    "blobs": 384,
+    "symlinks": 0,
+    "submodules": 0
+  },
+  "blob_decoded_and_git_id_matches": true
+}

@@ -1,0 +1,23 @@
+# ADR 0503 — Electron shell and the local-folder connector
+
+Status: Accepted for M5 (pending planning review). Relates to: FR-13, NFR-07, source ADR 0009 (Electron, retained), roadmap "A local folder needs backend-assigned ownership and sharing; do not pretend local operating-system permissions map automatically to enterprise ACLs. Specify recursion, symlink handling, file exclusions, size limits, deletes, offline retries and watcher deduplication." Implementation: `apps/desktop/`, `backend/app/connectors/local_folder.py`, `backend/app/api/local_folders.py`, migration 0011.
+
+## Decision
+
+1. **One React app.** The desktop window loads the existing web build (`apps/web/dist`) from the privileged `app://eaios` scheme with a strict Content-Security-Policy. The renderer is sandboxed with context isolation and no Node; `preload.ts` exposes seven calls. Navigation away from the app, new windows, webviews and permission requests are refused. The session token is handed to the main process in memory after sign-in and never persisted (ADR 0101); after a restart, folders keep watching and queue events until the user signs in. The backend must list `app://eaios` in `CORS_ALLOWED_ORIGINS`.
+2. **The backend assigns ownership and sharing.** Registering a folder creates a `local_folder` source owned by the signed-in user: department = the owner's department, classification `internal`, no department restriction, any country. Readers are derived at authorization time: the owner, plus groups in `source_grants`. Only the owner can share, and only with groups the owner belongs to. Unsharing applies at the next authorization point (policy epoch). Admins see local folders and may pause or delete them, but cannot change their attributes. No operating-system permission is read or mapped.
+3. **Rules (client and server).** Recursion up to 20 levels; symbolic links and Windows junctions are never followed (they could leave the folder or loop); hidden files and folders, dependency/build folders, temporary, lock and minified files are excluded; only the M3 and code formats are uploaded; files over 10 MB are skipped. The backend re-applies every rule and also rejects absolute paths, `..`, backslashes and control characters, and bytes whose size or SHA-256 differ from the declaration, so a modified client cannot widen ingestion.
+4. **Events are idempotent and ordered.** Each event carries a UUID and a per-folder sequence number. The backend records every event id (`local_folder_events`): a replay returns the first result and changes nothing. Events for one source are serialised on the source row; an event whose sequence is not newer than the last applied one for that path is `stale`, so a late retry cannot resurrect a deleted file or roll a file back. An upsert with the current SHA-256 is `unchanged`.
+5. **Watcher deduplication.** The client hashes a file only when its size or nanosecond mtime changed, or when it was modified in the last two seconds (racy timestamps), and queues an event only when the SHA-256 changed. A newer event replaces an unsent older one for the same path. Content is re-read and re-hashed at send time; if it changed again the event is dropped and the path re-hashed on the next scan.
+6. **Offline retries.** The outbox and per-file state are written atomically to the user's application-data folder (no token). Network errors, timeouts, 429 and 5xx keep events queued with exponential backoff (1 s doubling to 5 min); 401 pauses until sign-in; 404 marks the folder gone. A lost reply is re-sent with the same event ids. Deletes made while the app was closed are found by the first scan; a periodic rescan (60 s) covers dropped watcher events.
+7. **Deletes.** A delete event tombstones the document (M3). Removing the folder from the organisation tombstones every document in it.
+
+## Consequences
+
+- Local-folder content has no external permission source, so the Drive/GitHub freshness bound does not apply; the source must be active and the connector enabled.
+- Recursive `fs.watch` is used where the platform supports it (Windows, macOS, Linux on Node 20+); otherwise the periodic rescan alone applies.
+- Packaging and code signing of installers are outside M5.
+
+## Evidence
+
+`backend/tests/integration/test_m5_local_folder.py` (server rules, ownership, sharing, idempotency, ordering, deletes), `apps/desktop/test/engine.test.ts` (scan, dedup, offline backoff, lost replies, sign-in pause, watcher; CI on Ubuntu and Windows), `scripts/m5_desktop_smoke.py` + `apps/desktop/src/smoke.ts` (real Electron against a real backend; Debian run in `docs/evidence/m5/`).
