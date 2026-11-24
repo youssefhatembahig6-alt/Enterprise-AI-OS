@@ -105,7 +105,7 @@ Exit code 0 and `desktop smoke passed` close the item. The script uses only the 
 
 Closes row G7 (real model). Needs: a Colab runtime with a **T4 GPU** (Colab Pro), about 40 minutes. Everything runs over loopback inside the runtime as in the M2/M3 runs, so no tunnel is opened (the Colab usage gate in the roadmap does not arise). GitHub is the in-memory double holding the same fixture files; the run proves the real model's code answers and their line citations, not live GitHub (that is section 1).
 
-Ready-to-run notebook: [`ml/colab-m5/m5_acceptance.ipynb`](../../../../ml/colab-m5/m5_acceptance.ipynb).
+Ready-to-run notebook: [`ml/colab-m5/m5_acceptance.ipynb`](../../../ml/colab-m5/m5_acceptance.ipynb).
 
 Cells:
 
