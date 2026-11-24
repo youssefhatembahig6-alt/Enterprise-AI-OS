@@ -1,10 +1,10 @@
 # M5 open items: exact setup and commands
 
-Three M5 acceptance items need accounts or platforms that the implementation environment does not have. Everything else is done (see [README.md](README.md)). Each section ends with the evidence file to add and the matrix row it closes. Never paste a token or password into a chat, an issue, a commit or an evidence file; the runners never print or record them.
+Real-model code answers remain open. Live GitHub acceptance (22 checks, fake model) and the Windows real-backend smoke (13 checks) passed on 24 November 2026; sections 1 and 2 remain as reproduction instructions. See the evidence README for the recorded commit and working-tree provenance. Everything else is done (see [README.md](README.md)). Each section ends with the evidence file to add and the matrix row it closes. Never paste a token or password into a chat, an issue, a commit or an evidence file; the runners never print or record them.
 
 ## 1. Dedicated private GitHub test repository
 
-Closes rows G0–G3 and G4 live in [README.md](README.md). Needs: your GitHub account (owner), a **second** GitHub account you control, about 20 minutes.
+Completed by `2026-11-24-github-acceptance-live-fake-model.json` (22/22 checks). Reproduction closes rows G0–G3 and G4 live in [README.md](README.md). Needs: your GitHub account (owner), a **second** GitHub account you control, about 20 minutes.
 
 ### 1.1 Create the repository with the fixture files
 
@@ -81,7 +81,7 @@ python3 scripts/m5_github_acceptance.py --repo <owner>/eaios-m5-acceptance --log
 
 ## 2. Windows smoke against the real backend
 
-Closes row D8 live. Needs: a Windows 10/11 machine with **Docker Desktop** (WSL 2 engine), **Git for Windows**, **Node.js 22 LTS** (22.19 or later, below 23; CI uses 22.19.0) and **Python 3.11+** from python.org. The backend runs in Docker Desktop (the backend's hash-locked dependencies include `uvloop`, which has no Windows build); Electron runs natively on Windows. Optional: Settings → System → For developers → **Developer Mode** on, so the smoke can create a symlink and prove it is skipped (without it, that sub-check is recorded as "symlink not created").
+Completed: `2026-11-24-desktop-smoke-windows-live.json` closes row D8 live (10 Electron steps and 3 backend checks passed on `27c38f5`; fake embeddings, simulated outage, no symlink created). To reproduce, needs: a Windows 10/11 machine with **Docker Desktop** (WSL 2 engine), **Git for Windows**, **Node.js 22 LTS** (22.19 or later, below 23; CI uses 22.19.0) and **Python 3.11+** from python.org. The backend runs in Docker Desktop (the backend's hash-locked dependencies include `uvloop`, which has no Windows build); Electron runs natively on Windows. Optional: Settings → System → For developers → **Developer Mode** on, so the smoke can create a symlink and prove it is skipped (without it, that sub-check is recorded as "symlink not created").
 
 In PowerShell:
 
@@ -104,6 +104,8 @@ Exit code 0 and `desktop smoke passed` close the item. The script uses only the 
 ## 3. Real-model code answers (Colab)
 
 Closes row G7 (real model). Needs: a Colab runtime with a **T4 GPU** (Colab Pro), about 40 minutes. Everything runs over loopback inside the runtime as in the M2/M3 runs, so no tunnel is opened (the Colab usage gate in the roadmap does not arise). GitHub is the in-memory double holding the same fixture files; the run proves the real model's code answers and their line citations, not live GitHub (that is section 1).
+
+Ready-to-run notebook: [`ml/colab-m5/m5_acceptance.ipynb`](../../../../ml/colab-m5/m5_acceptance.ipynb).
 
 Cells:
 
