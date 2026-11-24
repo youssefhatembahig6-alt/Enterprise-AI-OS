@@ -18,9 +18,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
 import { MAX_FILE_BYTES } from "./rules";
-import { OutsideFolder, readInside, rootIdentity, sameRoot, type RootIdentity } from "./boundary";
+import { ApprovedRootError, assertApprovedRoot, OutsideFolder, readInside, rootIdentity, sameRoot, type RootIdentity } from "./boundary";
 import { isGone, scanFolder, under, type ScanResult } from "./scan";
-import { loadState, saveState, type FolderState, type OutboxEvent } from "./state";
+import { loadState, saveState, type FileRecord, type FolderState, type OutboxEvent } from "./state";
 import type { SendOutcome, Transport, WireEvent } from "./transport";
 
 export type SyncPhase = "idle" | "syncing" | "offline" | "signed_out" | "folder_gone" | "error";
@@ -49,7 +49,7 @@ export interface EngineOptions {
   batchBytes?: number;
   onStatus?: (status: SyncStatus) => void;
   /** Test seam: replaces the file-system scan. */
-  scan?: (rootReal: string) => Promise<ScanResult>;
+  scan?: (root: RootIdentity) => Promise<ScanResult>;
 }
 
 const BACKOFF_BASE_MS = 1000;
@@ -75,6 +75,7 @@ export class FolderSync {
   private watcher: FSWatcher | null = null;
   private debounce: NodeJS.Timeout | null = null;
   private timer: NodeJS.Timeout | null = null;
+  private stopped = false;
   readonly watcherMode: { recursive: boolean } = { recursive: false };
 
   constructor(private readonly opts: EngineOptions) {
@@ -142,7 +143,7 @@ export class FolderSync {
       current = await rootIdentity(this.opts.root);
     } catch (err) {
       this.phase = "error";
-      this.detail = isGone(err) ? "folder_unavailable" : "folder_unreadable";
+      this.detail = err instanceof OutsideFolder ? "folder_changed" : isGone(err) ? "folder_unavailable" : "folder_unreadable";
       return null;
     }
     if (!this.state.root) {
@@ -156,6 +157,13 @@ export class FolderSync {
     return current;
   }
 
+  private reportRootError(error: unknown): void {
+    if (!(error instanceof ApprovedRootError)) throw error;
+    this.phase = "error";
+    this.detail = error.reason;
+    this.emit();
+  }
+
   reconcile(): Promise<{ upserts: number; deletes: number }> {
     return this.serial(async () => {
       const root = await this.checkedRoot();
@@ -163,43 +171,55 @@ export class FolderSync {
         this.emit();
         return { upserts: 0, deletes: 0 };
       }
-      const scan = await (this.opts.scan ?? scanFolder)(root.real);
-      this.skipped = scan.skipped.length;
-      const unreadable = [...scan.unreadable];
-      let upserts = 0;
-      let deletes = 0;
-      const outside = new Set<string>();
+      let scan: ScanResult;
+      const updates = new Map<string, { record: FileRecord; changed: boolean }>();
+      const missing = new Set<string>();
+      const unreadable: string[] = [];
       const wall = Date.now();
-      for (const [rel, stat] of scan.files) {
-        const known = this.state.files[rel];
-        const racy = stat.mtimeMs > wall - RACY_WINDOW_MS;
-        if (known && !racy && known.size === stat.size && known.mtime === stat.mtime) continue;
-        let sha: string;
-        try {
-          const data = await readInside(root.real, rel, MAX_FILE_BYTES);
-          sha = createHash("sha256").update(data).digest("hex");
-        } catch (err) {
-          if (err instanceof OutsideFolder) outside.add(rel); // now a link, or swapped: not ours
-          else if (!isGone(err)) unreadable.push(rel); // locked or denied: keep, retry
-          continue; // gone mid-scan: the delete below handles it
+      try {
+        scan = await (this.opts.scan ?? scanFolder)(root);
+        unreadable.push(...scan.unreadable);
+        for (const [rel, stat] of scan.files) {
+          const known = this.state.files[rel];
+          const racy = stat.mtimeMs > wall - RACY_WINDOW_MS;
+          if (known && !racy && known.size === stat.size && known.mtime === stat.mtime) continue;
+          try {
+            const data = await readInside(root, rel, MAX_FILE_BYTES);
+            const sha = createHash("sha256").update(data).digest("hex");
+            updates.set(rel, {
+              record: { sha256: sha, size: data.length, mtime: racy ? "" : stat.mtime },
+              changed: known?.sha256 !== sha,
+            });
+          } catch (err) {
+            if (err instanceof ApprovedRootError) throw err;
+            if (err instanceof OutsideFolder || isGone(err)) missing.add(rel);
+            else unreadable.push(rel);
+          }
         }
-        if (known && known.sha256 === sha) {
-          this.state.files[rel] = { ...known, mtime: racy ? "" : stat.mtime }; // touch only
-          continue;
+        // Commit a scan as one unit. A changed root invalidates provisional file records
+        // and absence decisions, including scans that have no files to open for hashing.
+        await assertApprovedRoot(root);
+      } catch (err) {
+        this.reportRootError(err);
+        return { upserts: 0, deletes: 0 };
+      }
+      this.skipped = scan.skipped.length;
+      let upserts = 0;
+      for (const [rel, { record, changed }] of updates) {
+        this.state.files[rel] = record;
+        if (changed) {
+          this.enqueue({ op: "upsert", path: rel, sha256: record.sha256, size: record.size });
+          upserts += 1;
         }
-        this.state.files[rel] = { sha256: sha, size: stat.size, mtime: racy ? "" : stat.mtime };
-        this.enqueue({ op: "upsert", path: rel, sha256: sha, size: stat.size });
-        upserts += 1;
       }
       // A file is deleted only when the scan confirmed it is gone (or is no longer
       // inside the folder); anything under an unreadable directory keeps its record.
       const kept = (rel: string) =>
-        (scan.files.has(rel) && !outside.has(rel)) || unreadable.some((u) => under(rel, u));
+        (scan.files.has(rel) && !missing.has(rel)) || unreadable.some((u) => under(rel, u));
       const gone = Object.keys(this.state.files).filter((rel) => !kept(rel));
       this.state.files = Object.fromEntries(Object.entries(this.state.files).filter(([rel]) => kept(rel)));
       for (const rel of gone) {
         this.enqueue({ op: "delete", path: rel });
-        deletes += 1;
       }
       this.unreadable = unreadable.length;
       if (unreadable.length) {
@@ -211,7 +231,7 @@ export class FolderSync {
       }
       await this.persist();
       this.emit();
-      return { upserts, deletes };
+      return { upserts, deletes: gone.length };
     });
   }
 
@@ -231,7 +251,16 @@ export class FolderSync {
           if (this.state.outbox.length) last = "waiting";
           break;
         }
-        const { wire, sent, dropped, deferred } = await this.batch(due, root.real);
+        let batch;
+        try {
+          batch = await this.batch(due, root);
+          await assertApprovedRoot(root);
+        } catch (err) {
+          this.reportRootError(err);
+          return "waiting";
+        }
+        if (this.stopped) return "waiting";
+        const { wire, sent, dropped, deferred } = batch;
         for (const event of deferred) {
           event.attempts += 1; // unreadable right now (locked, denied): keep and retry
           event.next_at = this.now() + backoff(event.attempts);
@@ -309,7 +338,7 @@ export class FolderSync {
    * deleted, and the next reconcile enqueues its current state). */
   private async batch(
     due: OutboxEvent[],
-    rootReal: string,
+    root: RootIdentity,
   ): Promise<{ wire: WireEvent[]; sent: OutboxEvent[]; dropped: OutboxEvent[]; deferred: OutboxEvent[] }> {
     const max = this.opts.batchEvents ?? 20;
     const budget = this.opts.batchBytes ?? 8 * 1024 * 1024;
@@ -327,8 +356,9 @@ export class FolderSync {
       }
       let data: Buffer;
       try {
-        data = await readInside(rootReal, event.path, MAX_FILE_BYTES); // boundary checked at read time
+        data = await readInside(root, event.path, MAX_FILE_BYTES);
       } catch (err) {
+        if (err instanceof ApprovedRootError) throw err;
         if (err instanceof OutsideFolder || isGone(err)) dropped.push(event);
         else deferred.push(event);
         continue;
@@ -364,11 +394,13 @@ export class FolderSync {
 
   /** Reconcile then flush. */
   async sync(): Promise<void> {
+    if (this.stopped) return;
     await this.reconcile();
-    await this.flush();
+    if (!this.stopped) await this.flush();
   }
 
   start(options: { retryNow?: boolean } = {}): void {
+    this.stopped = false;
     if (options.retryNow) void this.retryNow();
     const trigger = () => {
       if (this.debounce) clearTimeout(this.debounce);
@@ -388,6 +420,7 @@ export class FolderSync {
   }
 
   async stop(): Promise<void> {
+    this.stopped = true;
     this.watcher?.close();
     this.watcher = null;
     if (this.debounce) clearTimeout(this.debounce);

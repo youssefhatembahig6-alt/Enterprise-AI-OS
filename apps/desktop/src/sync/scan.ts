@@ -14,6 +14,7 @@
 
 import { lstat, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
+import { assertApprovedRoot, OutsideFolder, resolveInside, type RootIdentity } from "./boundary";
 import {
   MAX_DEPTH,
   MAX_FILE_BYTES,
@@ -59,30 +60,31 @@ async function realIsExpected(full: string): Promise<boolean> {
   return caseless ? real.toLowerCase() === full.toLowerCase() : real === full;
 }
 
-export async function scanFolder(root: string): Promise<ScanResult> {
+export async function scanFolder(approved: RootIdentity): Promise<ScanResult> {
   const files = new Map<string, FileStat>();
   const skipped: ScanResult["skipped"] = [];
   const unreadable: string[] = [];
-  let rootReal: string;
-  try {
-    // Compare real paths with real paths (Windows short names, macOS /private, ...).
-    rootReal = await realpath(root);
-  } catch {
-    // A missing or unreadable root (unplugged drive, revoked access) never means "every
-    // file was deleted": keep all records and retry.
-    return { files, skipped, unreadable: [""] };
-  }
+  const rootReal = approved.real;
   const queue: { dir: string; depth: number }[] = [{ dir: rootReal, depth: 0 }];
   while (queue.length) {
     const { dir, depth } = queue.shift() as { dir: string; depth: number };
+    const relDir = toRelative(rootReal, dir);
+    await assertApprovedRoot(approved);
     let entries;
     try {
+      if (relDir) await resolveInside(rootReal, relDir);
       entries = await readdir(dir, { withFileTypes: true });
+      if (relDir) await resolveInside(rootReal, relDir);
     } catch (err) {
+      if (err instanceof OutsideFolder) {
+        skipped.push({ path: relDir, reason: "symlink_not_followed" });
+        continue;
+      }
       // Gone mid-scan: its files are gone too. Unreadable: keep what we know and retry.
-      if (!isGone(err)) unreadable.push(toRelative(rootReal, dir));
+      if (!isGone(err)) unreadable.push(relDir);
       continue;
     }
+    await assertApprovedRoot(approved);
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
@@ -150,5 +152,6 @@ export async function scanFolder(root: string): Promise<ScanResult> {
       });
     }
   }
+  await assertApprovedRoot(approved);
   return { files, skipped, unreadable };
 }

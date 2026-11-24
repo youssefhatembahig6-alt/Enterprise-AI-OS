@@ -62,6 +62,8 @@ export class FolderManager {
   private owner: Owner | null = null;
   private token: string | null = null;
   private loaded = false;
+  private sessionRevision = 0;
+  private operations: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly opts: ManagerOptions) {}
 
@@ -88,6 +90,18 @@ export class FolderManager {
     return entry;
   }
 
+  private serial<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.operations.then(operation);
+    this.operations = next.catch(() => undefined);
+    return next;
+  }
+
+  private invalidateSession(): number {
+    this.owner = null;
+    this.token = null;
+    return ++this.sessionRevision;
+  }
+
   async load(): Promise<void> {
     try {
       this.entries = JSON.parse(await readFile(this.listFile, "utf8")) as FolderEntry[];
@@ -106,52 +120,59 @@ export class FolderManager {
   }
 
   /** Sign in (or refresh the token of) an account; start only its folders. */
-  async signIn(token: string): Promise<Owner> {
-    if (!this.loaded) await this.load();
-    const owner = await this.opts.makeTransport(() => token).identity();
-    if (this.owner && key(this.owner) === key(owner)) {
-      this.token = token; // token refresh for the same account
-      await this.retryRemovals();
-      await this.syncAll();
-      return owner;
-    }
-    await this.stopEngines(); // the previous owner's queue stays on disk for later
-    this.owner = owner;
-    this.token = token;
-    await this.claimLegacy(token);
-    for (const entry of this.entries.filter((e) => this.mine(e) && !e.pendingRemoval)) {
-      await this.startEngine(entry);
-    }
-    await this.retryRemovals();
-    return owner;
+  async signIn(token: string): Promise<void> {
+    const revision = this.invalidateSession();
+    await this.serial(async () => {
+      await this.stopEngines();
+      if (!this.loaded) await this.load();
+    });
+    if (revision !== this.sessionRevision) return;
+    // A slow identity lookup must not delay a newer session or restore an older one.
+    const owner = await this.opts.makeTransport(() => token).identity().catch((error: unknown) => {
+      if (revision === this.sessionRevision) throw error;
+      return null;
+    });
+    if (!owner) return;
+    await this.serial(async () => {
+      if (revision !== this.sessionRevision) return;
+      await this.claimLegacy(owner, token, revision);
+      if (revision !== this.sessionRevision) return;
+      this.owner = owner;
+      this.token = token;
+      for (const entry of this.entries.filter((e) => this.mine(e) && !e.pendingRemoval)) {
+        if (revision !== this.sessionRevision) return;
+        await this.startEngine(entry, revision);
+      }
+      await this.retryRemovals(revision);
+    });
   }
 
   async signOut(): Promise<void> {
-    await this.stopEngines();
-    this.owner = null;
-    this.token = null;
+    this.invalidateSession();
+    await this.serial(() => this.stopEngines());
   }
 
-  private async claimLegacy(token: string): Promise<void> {
+  private async claimLegacy(owner: Owner, token: string, revision: number): Promise<void> {
     const legacy = this.entries.filter((e) => !e.owner && e.sourceId);
-    if (!legacy.length || !this.owner) return;
+    if (!legacy.length) return;
     let owned: Set<string>;
     try {
       owned = new Set(await this.opts.makeTransport(() => token).ownedSources());
     } catch {
       return; // try again at the next sign-in
     }
+    if (revision !== this.sessionRevision) return;
     let changed = false;
     for (const entry of legacy) {
       if (entry.sourceId && owned.has(entry.sourceId)) {
-        entry.owner = { ...this.owner };
+        entry.owner = { ...owner };
         changed = true;
       }
     }
     if (changed) await this.save();
   }
 
-  private async startEngine(entry: FolderEntry): Promise<FolderSync> {
+  private async startEngine(entry: FolderEntry, revision: number): Promise<void> {
     const owner = entry.owner;
     const engine = new FolderSync({
       folderId: entry.folderId,
@@ -160,7 +181,7 @@ export class FolderManager {
       transport: this.opts.makeTransport(() => this.tokenFor(owner)),
       onStatus: (s) => {
         this.status.set(entry.folderId, s);
-        if (this.mine(entry)) this.opts.onStatus(s); // never show another account's status
+        if (revision === this.sessionRevision && this.mine(entry)) this.opts.onStatus(s);
       },
       ...this.opts.engineOptions,
     });
@@ -168,9 +189,9 @@ export class FolderManager {
     if (entry.sourceId && engine.snapshot.sourceId !== entry.sourceId) {
       await engine.setSource(entry.sourceId);
     }
+    if (revision !== this.sessionRevision || !this.mine(entry)) return;
     engine.start({ retryNow: true }); // the owner is signed in: resume its queue at once
     this.engines.set(entry.folderId, engine);
-    return engine;
   }
 
   private async stopEngines(): Promise<void> {
@@ -195,9 +216,14 @@ export class FolderManager {
   }
 
   /** Register with the backend (which assigns ownership and sharing), then watch. */
-  async add(root: string): Promise<ListedFolder> {
+  add(root: string): Promise<ListedFolder> {
+    const revision = this.sessionRevision;
+    return this.serial(() => this.addForSession(root, revision));
+  }
+
+  private async addForSession(root: string, revision: number): Promise<ListedFolder> {
     const owner = this.owner;
-    if (!owner) throw new Error("signed_out");
+    if (!owner || revision !== this.sessionRevision) throw new Error("signed_out");
     const resolved = path.resolve(root);
     const existing = this.entries.find((e) => this.mine(e) && e.root === resolved && !e.pendingRemoval);
     if (existing) return this.list().find((e) => e.folderId === existing.folderId) as ListedFolder;
@@ -208,15 +234,23 @@ export class FolderManager {
     await saveState(this.stateFile(folderId), { ...emptyState(folderId), sourceId: info.source_id });
     this.entries.push(entry);
     await this.save();
-    await this.startEngine(entry);
-    return this.list().find((e) => e.folderId === folderId) as ListedFolder;
+    await this.startEngine(entry, revision);
+    const listed = this.list().find((e) => e.folderId === folderId);
+    if (!listed) throw new FolderNotFound();
+    return listed;
   }
 
   /**
    * Stop syncing a folder. ``fromServer``: also remove it from the organization; the
    * entry is kept (marked pending, on disk) until the server confirms, and retried.
    */
-  async remove(folderId: string, fromServer = false): Promise<ListedFolder | null> {
+  remove(folderId: string, fromServer = false): Promise<ListedFolder | null> {
+    const revision = this.sessionRevision;
+    return this.serial(() => this.removeForSession(folderId, fromServer, revision));
+  }
+
+  private async removeForSession(folderId: string, fromServer: boolean, revision: number): Promise<ListedFolder | null> {
+    if (revision !== this.sessionRevision) throw new FolderNotFound();
     const entry = this.find(folderId);
     await this.engines.get(folderId)?.stop();
     this.engines.delete(folderId);
@@ -243,8 +277,9 @@ export class FolderManager {
     return this.list().find((e) => e.folderId === entry.folderId) ?? null;
   }
 
-  private async retryRemovals(): Promise<void> {
+  private async retryRemovals(revision: number): Promise<void> {
     for (const entry of this.entries.filter((e) => this.mine(e) && e.pendingRemoval)) {
+      if (revision !== this.sessionRevision) return;
       await this.tryRemoval(entry);
     }
   }
@@ -256,13 +291,13 @@ export class FolderManager {
     await rm(this.stateFile(entry.folderId), { force: true });
   }
 
-  async syncAll(): Promise<void> {
-    await Promise.all([...this.engines.values()].map((e) => e.sync().catch(() => undefined)));
-  }
-
-  async syncNow(folderId: string): Promise<void> {
-    this.find(folderId);
-    await this.engines.get(folderId)?.sync();
+  syncNow(folderId: string): Promise<void> {
+    const revision = this.sessionRevision;
+    return this.serial(async () => {
+      if (revision !== this.sessionRevision) throw new FolderNotFound();
+      this.find(folderId);
+      await this.engines.get(folderId)?.sync();
+    });
   }
 
   /** The signed-in account's engine for a folder (tests and the smoke run). */
@@ -272,6 +307,6 @@ export class FolderManager {
   }
 
   async stopAll(): Promise<void> {
-    await this.stopEngines();
+    await this.signOut();
   }
 }

@@ -18,6 +18,7 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import { FolderSync, backoff } from "../src/sync/engine";
 import { excludedFile, validRelative } from "../src/sync/rules";
 import { scanFolder } from "../src/sync/scan";
+import { rootIdentity } from "../src/sync/boundary";
 import { loadState } from "../src/sync/state";
 import { HttpTransport, type WireEvent } from "../src/sync/transport";
 
@@ -160,7 +161,7 @@ describe("rules and scan", () => {
     await mkdir(deep, { recursive: true });
     await writeFile(path.join(deep, "too-deep.md"), "x");
 
-    const scan = await scanFolder(root);
+    const scan = await scanFolder(await rootIdentity(root));
     assert.deepEqual([...scan.files.keys()].sort(), ["a/b/deep.md", "top.txt"]);
     const reasons = Object.fromEntries(scan.skipped.map((s) => [s.path, s.reason]));
     assert.equal(reasons[".git"], "hidden_folder");

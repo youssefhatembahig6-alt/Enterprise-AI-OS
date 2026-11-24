@@ -31,6 +31,12 @@ export interface RootIdentity {
   ino: string;
 }
 
+export class ApprovedRootError extends Error {
+  constructor(readonly reason: "folder_changed" | "folder_unavailable" | "folder_unreadable") {
+    super(reason);
+  }
+}
+
 const caseless = process.platform === "win32" || process.platform === "darwin";
 
 function same(a: string, b: string): boolean {
@@ -55,6 +61,19 @@ export function sameRoot(a: RootIdentity, b: RootIdentity): boolean {
   return same(a.real, b.real) && a.dev === b.dev && a.ino === b.ino;
 }
 
+export async function assertApprovedRoot(approved: RootIdentity): Promise<void> {
+  let current: RootIdentity;
+  try {
+    current = await rootIdentity(approved.real);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | null)?.code;
+    if (err instanceof OutsideFolder) throw new ApprovedRootError("folder_changed");
+    const unavailable = code === "ENOENT" || code === "ENOTDIR";
+    throw new ApprovedRootError(unavailable ? "folder_unavailable" : "folder_unreadable");
+  }
+  if (!sameRoot(approved, current)) throw new ApprovedRootError("folder_changed");
+}
+
 /** The real absolute path of `rel` under `rootReal`, refusing links in any component. */
 export async function resolveInside(rootReal: string, rel: string): Promise<string> {
   const parts = rel.split("/");
@@ -76,8 +95,9 @@ export async function resolveInside(rootReal: string, rel: string): Promise<stri
  * the file system's (missing, permission denied, locked) and leave the decision to the
  * caller.
  */
-export async function readInside(rootReal: string, rel: string, maxBytes: number): Promise<Buffer> {
-  const full = await resolveInside(rootReal, rel);
+export async function readInside(approved: RootIdentity, rel: string, maxBytes: number): Promise<Buffer> {
+  await assertApprovedRoot(approved);
+  const full = await resolveInside(approved.real, rel);
   const nofollow = (constants as Record<string, number>).O_NOFOLLOW ?? 0;
   const handle = await open(full, constants.O_RDONLY | nofollow);
   try {
@@ -86,10 +106,13 @@ export async function readInside(rootReal: string, rel: string, maxBytes: number
     if (opened.size > BigInt(maxBytes)) throw new OutsideFolder("too_large");
     const real = await realpath(full);
     const now = await lstat(real, { bigint: true });
-    if (!same(real, full) || !inside(rootReal, real) || now.ino !== opened.ino || now.dev !== opened.dev) {
+    if (!same(real, full) || !inside(approved.real, real) || now.ino !== opened.ino || now.dev !== opened.dev) {
       throw new OutsideFolder("changed");
     }
-    return await handle.readFile();
+    await assertApprovedRoot(approved);
+    const data = await handle.readFile();
+    await assertApprovedRoot(approved);
+    return data;
   } finally {
     await handle.close();
   }

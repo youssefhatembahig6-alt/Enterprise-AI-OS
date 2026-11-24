@@ -33,14 +33,15 @@ export function LocalFoldersPanel({ token, groups }: { token: string; groups: st
   const refresh = useCallback(async () => {
     if (!bridge) return;
     try {
-      const [local, remote] = await Promise.all([bridge.listFolders(), localFolders.list(token)]);
+      const local = await bridge.listFolders();
       setFolders(local);
-      setServer(Object.fromEntries(remote.map((f) => [f.source_id, f])));
       setStatus((prev) => {
         const next = { ...prev };
         for (const f of local) if (f.status) next[f.folderId] = f.status;
         return next;
       });
+      const remote = await localFolders.list(token);
+      setServer(Object.fromEntries(remote.map((f) => [f.source_id, f])));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not load folders.");
     }

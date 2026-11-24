@@ -11,12 +11,12 @@
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { FolderManager, FolderNotFound } from "../src/folders";
-import { OutsideFolder, readInside } from "../src/sync/boundary";
+import { ApprovedRootError, OutsideFolder, readInside, rootIdentity, type RootIdentity } from "../src/sync/boundary";
 import { FolderSync } from "../src/sync/engine";
 import { scanFolder, type ScanResult } from "../src/sync/scan";
 import type { DeleteOutcome, Owner, SendOutcome, Transport, WireEvent } from "../src/sync/transport";
@@ -31,6 +31,7 @@ class Server {
   sends: { token: string | null; sourceId: string; events: WireEvent[] }[] = [];
   down = false;
   deleteFails = 0;
+  identityGate = new Map<string, () => Promise<void>>();
 
   account(name: string): string {
     const token = `token-${name}-${randomUUID()}`;
@@ -66,6 +67,8 @@ class Server {
         return { source_id, folder_id: folderId, name, shared_groups: [] };
       },
       identity: async () => {
+        const pending = this.identityGate.get(token() ?? "");
+        if (pending) await pending();
         const who = owner();
         if (!who) throw new Error("auth");
         return who;
@@ -151,7 +154,7 @@ describe("P1 folder boundary", () => {
     await engine.sync();
     const files = [...(server.folders.get(sourceId)?.files.keys() ?? [])];
     assert.deepEqual(files, ["inside.md"]);
-    const scan = await scanFolder(root);
+    const scan = await scanFolder(await rootIdentity(root));
     assert.ok(scan.skipped.some((s) => s.path === "linked" && s.reason === "symlink_not_followed"));
   });
 
@@ -196,12 +199,42 @@ describe("P1 folder boundary", () => {
     await mkdir(outside);
     await writeFile(path.join(outside, "x.md"), "X");
     await symlink(outside, path.join(root, "dir"), "junction");
-    const rootReal = await realpath(root);
-    await assert.rejects(readInside(rootReal, "dir/x.md", 1024), OutsideFolder);
+    const approved = await rootIdentity(root);
+    await assert.rejects(readInside(approved, "dir/x.md", 1024), OutsideFolder);
     if (process.platform !== "win32") {
       await symlink(path.join(outside, "x.md"), path.join(root, "file-link.md"));
-      await assert.rejects(readInside(rootReal, "file-link.md", 1024), OutsideFolder);
+      await assert.rejects(readInside(approved, "file-link.md", 1024), OutsideFolder);
     }
+  });
+
+  it("requires the pinned directory identity for both listing and reading", async () => {
+    await writeFile(path.join(root, "a.md"), "A");
+    const approved = await rootIdentity(root);
+    const unrelated = path.join(work, "unrelated");
+    await mkdir(unrelated);
+    const otherIdentity = await rootIdentity(unrelated);
+    const stale = { ...otherIdentity, real: approved.real };
+    assert.equal((await scanFolder(approved)).files.size, 1);
+    assert.equal((await readInside(approved, "a.md", 1024)).toString(), "A");
+    await assert.rejects(scanFolder(stale), ApprovedRootError);
+    await assert.rejects(readInside(stale, "a.md", 1024), ApprovedRootError);
+  });
+
+  it("keeps the last snapshot if a scan loses its approved directory", async () => {
+    await writeFile(path.join(root, "a.md"), "A");
+    let abortScan = false;
+    const { engine, sourceId } = await readyEngine({
+      scan: async (approved) => {
+        if (abortScan) throw new ApprovedRootError("folder_changed");
+        return scanFolder(approved);
+      },
+    });
+    await engine.sync();
+    const previous = structuredClone(engine.snapshot);
+    abortScan = true;
+    assert.deepEqual(await engine.reconcile(), { upserts: 0, deletes: 0 });
+    assert.deepEqual(engine.snapshot, previous);
+    assert.ok(server.folders.get(sourceId)?.files.has("a.md"));
   });
 });
 
@@ -213,7 +246,7 @@ describe("P2 unreadable folders keep their records", () => {
     await writeFile(path.join(root, "sub", "a.md"), "A");
     await writeFile(path.join(root, "top.md"), "T");
     let fail = false;
-    const scan = async (r: string): Promise<ScanResult> => {
+    const scan = async (r: RootIdentity): Promise<ScanResult> => {
       const real = await scanFolder(r);
       if (!fail) return real;
       // The subtree could not be listed this time (EACCES/EBUSY on any platform).
@@ -289,6 +322,43 @@ function manager(statuses: unknown[] = []) {
 }
 
 describe("P1 account isolation", () => {
+  it("ignores earlier identity responses after a new sign-in or sign-out", async () => {
+    const tA = server.account("a");
+    const tB = server.account("b");
+    const m = manager();
+    await m.signIn(tA);
+    const firstFolder = await m.add(root);
+    const delayA = async () => {
+      let release!: () => void;
+      const pending = new Promise<void>((resolve) => { release = resolve; });
+      const started = new Promise<void>((resolve) => {
+        server.identityGate.set(tA, () => {
+          resolve();
+          return pending;
+        });
+      });
+      const earlier = m.signIn(tA);
+      await started;
+      assert.deepEqual(m.list(), [], "the old view is cleared while identity is pending");
+      return { earlier, release };
+    };
+
+    const switching = await delayA();
+    await m.signIn(tB);
+    const secondFolder = await m.add(root);
+    switching.release();
+    await switching.earlier;
+    assert.deepEqual(m.list().map((f) => f.folderId), [secondFolder.folderId]);
+    assert.notEqual(secondFolder.folderId, firstFolder.folderId);
+
+    const signingOut = await delayA();
+    await m.signOut();
+    signingOut.release();
+    await signingOut.earlier;
+    assert.deepEqual(m.list(), []);
+    await assert.rejects(m.add(root), /signed_out/);
+  });
+
   it("shows and manages folders only for the owning account, and resumes its queue", async () => {
     const tA = server.account("a");
     const tB = server.account("b");
