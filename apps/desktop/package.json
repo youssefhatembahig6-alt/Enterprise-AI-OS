@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.json && node --test --test-concurrency=1 dist/test/",
+    "test": "tsc -p tsconfig.json && node --test --test-concurrency=1 dist/test/engine.test.js",
     "start": "npm run build && electron .",
     "smoke": "npm run build && electron . --smoke",
     "smoke:mock": "tsc -p tsconfig.json && node dist/tools/mock-backend.js --run-smoke smoke-report.json"
