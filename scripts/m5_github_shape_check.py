@@ -18,6 +18,7 @@ records counts and field presence only (no logins, emails or file contents).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -84,8 +85,6 @@ def main() -> int:
     parsed_commit = client.resolve_commit(repo, branch)
     parsed_tree = client.get_tree(repo, parsed_commit)
     data = client.get_blob(repo, blob_entry["sha"])
-    import hashlib
-
     git_id = hashlib.sha1(b"blob %d\x00" % len(data) + data).hexdigest()  # noqa: S324 - git id
     evidence = {
         "kind": "m5_github_shape_check",

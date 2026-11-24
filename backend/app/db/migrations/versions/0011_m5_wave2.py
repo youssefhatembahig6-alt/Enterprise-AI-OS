@@ -20,6 +20,8 @@ Invariants (docs/adr/0501..0503):
   keep a row and their document keeps its tombstone.
 * ``local_folder_events`` makes desktop event batches idempotent: a replayed event id
   (offline retry, duplicate watcher event) is recognised and not applied twice.
+* A deleted connector source keeps its row, and the same root can be added again
+  (uniqueness applies to non-deleted sources only).
 * ``document_versions.source_revision`` records, immutably, where a version came from:
   repository, commit, path and blob for GitHub; relative path and content hash for a
   local folder. Code citations read it.
@@ -88,6 +90,12 @@ ALTER TABLE connector_sources ADD COLUMN visibility text
 ALTER TABLE connector_sources ADD COLUMN external_revision text
     CHECK (external_revision IS NULL OR external_revision ~ '^[0-9a-f]{40}$');
 ALTER TABLE connector_sources ADD COLUMN unresolved_principals jsonb NOT NULL DEFAULT '[]'::jsonb;
+
+-- A deleted source keeps its row (audit trail, tombstoned documents); the same folder or
+-- repository can be added again as a new source.
+ALTER TABLE connector_sources DROP CONSTRAINT connector_sources_tenant_id_kind_external_root_key;
+CREATE UNIQUE INDEX connector_sources_live_root_idx
+    ON connector_sources (tenant_id, kind, external_root) WHERE status <> 'deleted';
 
 CREATE TABLE connector_items (
     tenant_id       uuid NOT NULL,
@@ -255,6 +263,9 @@ def downgrade() -> None:
         UPDATE documents SET deleted_at = coalesce(deleted_at, now())
          WHERE source IN ('github', 'local_folder');
         DELETE FROM connector_sources WHERE kind IN ('github', 'local_folder');
+        DROP INDEX IF EXISTS connector_sources_live_root_idx;
+        ALTER TABLE connector_sources ADD CONSTRAINT connector_sources_tenant_id_kind_external_root_key
+            UNIQUE (tenant_id, kind, external_root);
         ALTER TABLE connector_sources DROP CONSTRAINT IF EXISTS connector_sources_owner_check;
         ALTER TABLE connector_sources DROP CONSTRAINT IF EXISTS connector_sources_owner_fk;
         ALTER TABLE connector_sources DROP COLUMN IF EXISTS unresolved_principals,

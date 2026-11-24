@@ -310,6 +310,9 @@ def test_deleting_a_repository_source_tombstones_its_documents(m5: M5) -> None:
     assert m5.sync(ADMIN, source["source_id"])["status"] == "succeeded"
     doc = m5.item(source["source_id"], "svc/main.py").document_id
     m5.wait_ready(doc)
+    question = "What does the handler function return?"
+    before = code(m5, FINANCE, question)  # the reader is still a collaborator throughout
+    (cited,) = [f.data for f in before.of("citation") if f.data["document_id"] == str(doc)]
     response = m5.client.patch(
         f"/api/v1/admin/sources/{source['source_id']}",
         json={"status": "deleted"},
@@ -324,6 +327,24 @@ def test_deleting_a_repository_source_tombstones_its_documents(m5: M5) -> None:
     ).one()
     assert row.deleted_at is not None and row.status == "deleted"
     assert m5.item(source["source_id"], "svc/main.py").state == "removed"
+    # Removed content cannot contribute, and the earlier citation no longer opens.
+    after = code(m5, FINANCE, question)
+    assert str(doc) not in {f.data["document_id"] for f in after.of("citation")}
+    assert "return 'ok'" not in after.raw
+    reopened = m5.client.get(
+        f"/api/v1/runs/{before.run_id}/citations/{cited['citation_id']}",
+        headers=auth(m5.token(FINANCE)),
+    )
+    assert reopened.status_code == 404
+    # The same repository can be added again as a new source with new documents.
+    again = m5.create_repo_source(ADMIN, "niletech/other-service")
+    assert again["source_id"] != source["source_id"]
+    assert m5.sync(ADMIN, again["source_id"])["status"] == "succeeded"
+    new_doc = m5.item(again["source_id"], "svc/main.py").document_id
+    assert new_doc != doc
+    m5.wait_ready(new_doc)
+    restored = code(m5, FINANCE, question)
+    assert str(new_doc) in {f.data["document_id"] for f in restored.of("citation")}
 
 
 def test_repository_sources_need_the_operator_allowlist_and_connector(m5: M5) -> None:

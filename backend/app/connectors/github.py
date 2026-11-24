@@ -13,11 +13,12 @@ A tenant administrator can add only a repository the operator listed for that te
 The file is re-read on every use, so removing a repository fails that source's next
 sync before any GitHub request, and its content is then denied.
 
-The token needs read access to the repository's **contents and metadata**, and must
-be able to list collaborators (``GET /repos/{o}/{r}/collaborators``), which GitHub only
-allows with push access or the fine-grained "Administration: read" permission. A token
-that cannot list collaborators makes every sync fail (``collaborators_unavailable``):
-without the principal list the application cannot know who may read the code.
+A fine-grained token needs the repository permissions Contents: read and Metadata:
+read. Listing collaborators (``GET /repos/{o}/{r}/collaborators``, a Metadata permission)
+additionally requires the token's owner to have write, maintain or admin access to the
+repository. A token that cannot list collaborators makes every sync fail
+(``collaborators_unavailable``): without the principal list the application cannot know
+who may read the code.
 
 The client never guesses. 401 -> ``GitHubAuthError``; 403/404 on the repository ->
 ``RepositoryNotAccessible`` (deleted, made private to this token, or access revoked:

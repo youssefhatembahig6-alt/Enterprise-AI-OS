@@ -48,7 +48,12 @@ from tests.integration.document_support import auth
 LEGAL = Path(__file__).resolve().parents[2] / "fixtures" / "legal"
 LEGAL_MANIFEST = tomllib.loads((LEGAL / "legal.toml").read_text())
 REPO = "niletech/inventory-service"
-ALLOWED_REPOS = [REPO, "niletech/other-service", "niletech/renamed-service"]
+ALLOWED_REPOS = [
+    REPO,
+    "niletech/other-service",
+    "niletech/renamed-service",
+    "niletech/acceptance-fixture",
+]
 
 
 def blob_sha(data: bytes) -> str:
