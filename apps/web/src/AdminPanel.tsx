@@ -84,12 +84,25 @@ function Table({ head, children }: { head: string[]; children: ReactNode }) {
 
 // -- sources -------------------------------------------------------------------------
 
+const KIND_LABEL: Record<string, string> = {
+  google_drive: "Google Drive",
+  github: "GitHub",
+  local_folder: "Local folder",
+};
+
 function SourcesTab({ token }: { token: string }) {
   const load = useCallback(() => admin.sources(token), [token]);
   const [sources, error, refresh] = useLoad(load);
   const [open, setOpen] = useState<AdminSource | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", root: "", department: "finance", classification: "internal" });
+  const [form, setForm] = useState({
+    kind: "google_drive",
+    name: "",
+    root: "",
+    ref: "",
+    department: "finance",
+    classification: "internal",
+  });
 
   const sync = async (id: string) => {
     setNotice("Syncing…");
@@ -111,13 +124,15 @@ function SourcesTab({ token }: { token: string }) {
     event.preventDefault();
     try {
       await admin.createSource(token, {
+        kind: form.kind,
         name: form.name,
         external_root: form.root.trim(),
+        ...(form.kind === "github" && form.ref.trim() ? { external_ref: form.ref.trim() } : {}),
         department: form.department,
         classification: form.classification,
         allowed_countries: ["*"],
       });
-      setForm({ ...form, name: "", root: "" });
+      setForm({ ...form, name: "", root: "", ref: "" });
       setNotice("Source added. Run a sync to import it.");
       await refresh();
     } catch (err) {
@@ -128,13 +143,14 @@ function SourcesTab({ token }: { token: string }) {
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-fg">
-        Drive content is served only while the last verified sync read every file&apos;s sharing and
-        is recent enough. Sharing removed in Drive takes effect after the next sync.
+        Drive and GitHub content is served only while the last verified sync read every
+        permission and is recent enough; removals take effect after the next sync. Local folders
+        are pushed by the desktop app and shared only as their owner chose.
       </p>
       {error ? <Alert>{error}</Alert> : null}
       {notice ? <p className="text-sm">{notice}</p> : null}
       {(sources ?? []).length === 0 ? (
-        <p className="text-sm text-muted-fg">No Google Drive sources in your scope.</p>
+        <p className="text-sm text-muted-fg">No sources in your scope.</p>
       ) : (
         <ul className="divide-y divide-border text-sm">
           {(sources ?? []).map((s) => (
@@ -143,7 +159,10 @@ function SourcesTab({ token }: { token: string }) {
                 <span className="font-medium">{s.name}</span>
                 <StatusPill tone={ACCESS[s.access].tone}>{ACCESS[s.access].label}</StatusPill>
                 <span className="text-xs text-muted-fg">
-                  {s.department} · {s.classification} · {s.item_count} files
+                  {KIND_LABEL[s.kind] ?? s.kind} · {s.department} · {s.classification} · {s.item_count} files
+                  {s.kind === "github" && s.visibility ? ` · ${s.visibility}` : ""}
+                  {s.kind === "github" && s.external_revision ? ` · ${s.external_revision.slice(0, 12)}` : ""}
+                  {s.owner ? ` · owner ${s.owner}` : ""}
                 </span>
               </div>
               <div className="text-xs text-muted-fg">
@@ -151,10 +170,17 @@ function SourcesTab({ token }: { token: string }) {
                 {s.sync_mode === "demo" ? "every 15 minutes (demo)" : "nightly"}
                 {s.last_error_code ? ` · last error: ${s.last_error_code}` : ""}
               </div>
+              {s.unresolved_principals?.length ? (
+                <div className="text-xs text-muted-fg">
+                  Not linked to a user: {s.unresolved_principals.map((p) => p.login ?? p.type).join(", ")}
+                </div>
+              ) : null}
               <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" onClick={() => void sync(s.source_id)}>
-                  Sync now
-                </Button>
+                {s.kind !== "local_folder" ? (
+                  <Button variant="secondary" onClick={() => void sync(s.source_id)}>
+                    Sync now
+                  </Button>
+                ) : null}
                 <Button
                   variant="secondary"
                   onClick={async () => {
@@ -195,8 +221,28 @@ function SourcesTab({ token }: { token: string }) {
         </ul>
       )}
       <form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={(e) => void create(e)}>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="src-kind" className="text-sm font-medium">Connector</label>
+          <select
+            id="src-kind"
+            className="h-10 rounded-md border border-border bg-bg px-2 text-sm"
+            value={form.kind}
+            onChange={(e) => setForm({ ...form, kind: e.target.value })}
+          >
+            <option value="google_drive">Google Drive folder</option>
+            <option value="github">GitHub repository</option>
+          </select>
+        </div>
         <Field id="src-name" label="Source name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <Field id="src-root" label="Drive folder id" value={form.root} onChange={(e) => setForm({ ...form, root: e.target.value })} />
+        <Field
+          id="src-root"
+          label={form.kind === "github" ? "Repository (owner/name)" : "Drive folder id"}
+          value={form.root}
+          onChange={(e) => setForm({ ...form, root: e.target.value })}
+        />
+        {form.kind === "github" ? (
+          <Field id="src-ref" label="Branch (optional)" value={form.ref} onChange={(e) => setForm({ ...form, ref: e.target.value })} />
+        ) : null}
         <Field id="src-dept" label="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
         <div className="flex flex-col gap-1.5">
           <label htmlFor="src-class" className="text-sm font-medium">Classification</label>
@@ -212,7 +258,9 @@ function SourcesTab({ token }: { token: string }) {
           </select>
         </div>
         <div className="sm:col-span-2">
-          <Button type="submit" disabled={!form.name || !form.root}>Add Google Drive folder</Button>
+          <Button type="submit" disabled={!form.name || !form.root}>
+            {form.kind === "github" ? "Add GitHub repository" : "Add Google Drive folder"}
+          </Button>
         </div>
       </form>
     </div>
@@ -392,6 +440,55 @@ function UsersTab({ token, canGroups, identity }: { token: string; canGroups: bo
   );
 }
 
+function GithubLogins({ token }: { token: string }) {
+  const load = useCallback(() => admin.users(token), [token]);
+  const [users, error, refresh] = useLoad(load);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState<string | null>(null);
+  const save = async (id: string, value: string) => {
+    try {
+      await admin.setGithubLogin(token, id, value.trim() || null);
+      setNotice(value.trim() ? "GitHub login linked." : "GitHub login removed.");
+      await refresh();
+    } catch (err) {
+      setNotice(message(err));
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm text-muted-fg">
+        A repository collaborator reads synced code only through a linked GitHub login. Removing a
+        link applies at once (tenant-wide identity administrators only).
+      </p>
+      {error ? <Alert>{error}</Alert> : null}
+      {notice ? <p className="text-sm">{notice}</p> : null}
+      <Table head={["User", "GitHub login", ""]}>
+        {(users ?? []).map((u) => {
+          const value = drafts[u.user_id] ?? u.external_accounts?.github ?? "";
+          return (
+            <tr key={u.user_id}>
+              <td className="py-2 pr-3">{u.email}</td>
+              <td className="py-2 pr-3">
+                <input
+                  aria-label={`GitHub login for ${u.email}`}
+                  className="h-9 w-full rounded-md border border-border bg-bg px-2 text-sm"
+                  value={value}
+                  onChange={(e) => setDrafts({ ...drafts, [u.user_id]: e.target.value })}
+                />
+              </td>
+              <td className="py-2 pr-3">
+                <Button variant="secondary" onClick={() => void save(u.user_id, value)}>
+                  Save
+                </Button>
+              </td>
+            </tr>
+          );
+        })}
+      </Table>
+    </div>
+  );
+}
+
 function RolesTab({ token }: { token: string }) {
   const loadRoles = useCallback(() => admin.roles(token), [token]);
   const loadGroups = useCallback(() => admin.groups(token), [token]);
@@ -399,6 +496,7 @@ function RolesTab({ token }: { token: string }) {
   const [groups] = useLoad(loadGroups);
   return (
     <div className="flex flex-col gap-4">
+      <GithubLogins token={token} />
       {error ? <Alert>{error}</Alert> : null}
       <Table head={["Role", "Capabilities"]}>
         {(roles ?? []).map((r) => (

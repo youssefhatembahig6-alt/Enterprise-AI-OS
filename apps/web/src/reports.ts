@@ -49,6 +49,13 @@ export interface Citation {
   page?: number | null;
   heading_path?: string[];
   quote?: string;
+  // M5 code citations: repository, file, revision and exact lines.
+  repository?: string;
+  path?: string;
+  commit?: string;
+  line_start?: number;
+  line_end?: number;
+  url?: string;
 }
 
 export interface DocumentCitation {
@@ -67,9 +74,15 @@ export interface DocumentCitation {
   quote: string;
   after: string;
   integrity: "verified" | "mismatch";
+  repository?: string | null;
+  path?: string | null;
+  commit?: string | null;
+  line_start?: number | null;
+  line_end?: number | null;
+  url?: string | null;
 }
 
-export type AskMode = "auto" | "documents" | "report";
+export type AskMode = "auto" | "documents" | "report" | "legal" | "code";
 
 export interface Verification {
   label: string;

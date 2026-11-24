@@ -25,6 +25,7 @@ export interface AdminUser {
   country: string | null;
   department: string | null;
   roles: { role: string; scope_department: string | null }[];
+  external_accounts?: { github?: string };
   groups: string[];
 }
 
@@ -84,6 +85,7 @@ export interface AdminSource {
   allowed_countries: string[];
   status: "active" | "paused";
   access: SourceAccess;
+  department_restricted?: boolean;
   last_verified_sync_at: string | null;
   last_sync_started_at: string | null;
   last_sync_status: string | null;
@@ -92,6 +94,11 @@ export interface AdminSource {
   sync_interval_seconds: number;
   max_staleness_seconds: number;
   item_count: number;
+  external_ref?: string | null;
+  visibility?: string | null;
+  external_revision?: string | null;
+  unresolved_principals?: { type: string; login?: string; reason: string }[];
+  owner?: string | null;
   items?: SourceItem[];
   recent_runs?: { run_id: string; status: string; started_at: string; error_code: string | null; stats: Record<string, number> }[];
 }
@@ -142,6 +149,8 @@ export const admin = {
     call<AdminUser>(t, `/admin/users/${id}`, json("PATCH", body)),
   setRoles: (t: string, id: string, assignments: { role: string; scope_department: string | null }[]) =>
     call<AdminUser>(t, `/admin/users/${id}/roles`, json("PUT", { assignments })),
+  setGithubLogin: (t: string, id: string, github: string | null) =>
+    call<AdminUser>(t, `/admin/users/${id}/external-accounts`, json("PUT", { github })),
   setGroups: (t: string, id: string, groups: string[]) =>
     call<AdminUser>(t, `/admin/users/${id}/groups`, json("PUT", { groups })),
   roles: (t: string) => call<AdminRole[]>(t, "/admin/roles"),

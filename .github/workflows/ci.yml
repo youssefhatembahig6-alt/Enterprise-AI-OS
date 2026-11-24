@@ -63,6 +63,8 @@ jobs:
 
   frontend:
     runs-on: ubuntu-24.04
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"  # lint/typecheck only need Electron's types
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -73,6 +75,43 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
+
+  desktop:
+    # M5 local-folder connector: engine tests on the real filesystem and watcher, then
+    # the real Electron app's smoke run against the MOCK backend
+    # (apps/desktop/tools/mock-backend.ts), on Linux and Windows. The live smoke against
+    # the real backend is scripts/m5_desktop_smoke.py (docs/evidence/m5/README.md).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build -w @eaios/web
+      - name: Engine tests (real filesystem and recursive watcher)
+        run: npm test -w @eaios/desktop
+      - name: Allow Chromium's sandbox (Ubuntu 24.04 restricts user namespaces)
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Electron smoke, mock backend (Linux, virtual display)
+        if: runner.os == 'Linux'
+        working-directory: apps/desktop
+        run: xvfb-run -a node dist/tools/mock-backend.js --run-smoke smoke-report-${{ runner.os }}.json
+      - name: Electron smoke, mock backend (Windows)
+        if: runner.os == 'Windows'
+        working-directory: apps/desktop
+        run: node dist/tools/mock-backend.js --run-smoke smoke-report-${{ runner.os }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-smoke-${{ runner.os }}
+          path: apps/desktop/smoke-report-*.json
 
   gpu-feasibility-notebook:
     runs-on: ubuntu-24.04

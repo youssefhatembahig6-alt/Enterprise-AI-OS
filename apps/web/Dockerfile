@@ -5,6 +5,9 @@ WORKDIR /repo
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY apps/web/package.json apps/web/
 COPY packages/ui/package.json packages/ui/
+COPY apps/desktop/package.json apps/desktop/
+# The desktop workspace's Electron binary is not needed to build the web app.
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 RUN npm ci --no-audit --no-fund
 COPY packages/ui packages/ui
 COPY apps/web apps/web

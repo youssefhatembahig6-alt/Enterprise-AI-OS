@@ -1,0 +1,20 @@
+{
+  "name": "@eaios/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Enterprise AI OS desktop shell: the shared React app plus a local-folder connector",
+  "main": "dist/src/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test --test-concurrency=1 dist/test/",
+    "start": "npm run build && electron .",
+    "smoke": "npm run build && electron . --smoke",
+    "smoke:mock": "tsc -p tsconfig.json && node dist/tools/mock-backend.js --run-smoke smoke-report.json"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "electron": "39.8.10"
+  }
+}

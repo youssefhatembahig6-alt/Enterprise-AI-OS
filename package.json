@@ -3,14 +3,21 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "workspaces": ["apps/web", "packages/ui"],
-  "engines": { "node": ">=20.19.0 <23" },
+  "workspaces": [
+    "apps/web",
+    "packages/ui",
+    "apps/desktop"
+  ],
+  "engines": {
+    "node": ">=20.19.0 <23"
+  },
   "scripts": {
     "dev": "npm run dev -w @eaios/web",
     "build": "npm run build -w @eaios/web",
     "lint": "eslint .",
-    "typecheck": "tsc -p packages/ui --noEmit && tsc -p apps/web --noEmit",
-    "check": "npm run lint && npm run typecheck && npm run build"
+    "typecheck": "tsc -p packages/ui --noEmit && tsc -p apps/web --noEmit && tsc -p apps/desktop --noEmit",
+    "check": "npm run lint && npm run typecheck && npm run build",
+    "test:desktop": "npm test -w @eaios/desktop"
   },
   "devDependencies": {
     "@eslint/js": "9.35.0",

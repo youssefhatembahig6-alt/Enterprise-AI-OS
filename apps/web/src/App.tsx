@@ -3,7 +3,9 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { admin, type TenantSettings } from "./admin";
 import { AdminPanel } from "./AdminPanel";
 import { api, ApiError, type Identity } from "./api";
+import { desktop } from "./desktop";
 import { DocumentsPanel } from "./DocumentsPanel";
+import { LocalFoldersPanel } from "./LocalFoldersPanel";
 import { ReportPanel } from "./ReportPanel";
 import { useApiStatus, type ApiStatus } from "./useApiStatus";
 
@@ -179,6 +181,8 @@ export function App() {
   const [settings, setSettings] = useState<TenantSettings | null>(null);
 
   useEffect(() => {
+    // Desktop shell: hand the session to the folder watchers (memory only).
+    void desktop()?.setSession(session?.token ?? null);
     if (!session) {
       setSettings(null);
       return;
@@ -217,6 +221,9 @@ export function App() {
               Boolean(settings?.enabled_connectors.includes("upload"))
             }
           />
+          {desktop() && settings?.enabled_connectors.includes("local_folder") ? (
+            <LocalFoldersPanel token={session.token} groups={session.identity.groups} />
+          ) : null}
           <AdminPanel
             token={session.token}
             identity={session.identity}
