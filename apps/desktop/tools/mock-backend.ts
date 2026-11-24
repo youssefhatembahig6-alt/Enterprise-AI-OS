@@ -24,31 +24,59 @@ interface Item {
   last_seq: number;
 }
 
-export function startMock(): Promise<{ server: Server; url: string; password: string }> {
-  const password = randomUUID();
-  const token = randomUUID();
-  const folders = new Map<string, { source_id: string; items: Map<string, Item>; seen: Map<string, string> }>();
+export interface MockUser {
+  email: string;
+  password: string;
+  token: string;
+  userId: string;
+}
+
+export function startMock(): Promise<{ server: Server; url: string; users: MockUser[] }> {
+  const users: MockUser[] = ["smoke@mock.example", "other@mock.example"].map((email) => ({
+    email,
+    password: randomUUID(),
+    token: randomUUID(),
+    userId: randomUUID(),
+  }));
+  const tenantId = randomUUID();
+  const folders = new Map<
+    string,
+    { source_id: string; owner: string; items: Map<string, Item>; seen: Map<string, string> }
+  >();
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body));
+      const send = (status: number, body?: unknown) => {
+        if (status === 204) return void res.writeHead(204).end();
+        res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body ?? {}));
       };
       const body = chunks.length ? (JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>) : {};
       const url = new URL(req.url ?? "/", "http://mock");
       if (req.method === "POST" && url.pathname === "/api/v1/auth/login") {
-        return body.password === password ? send(200, { access_token: token }) : send(401, {});
+        const user = users.find((u) => u.email === body.email && u.password === body.password);
+        return user ? send(200, { access_token: user.token }) : send(401);
       }
-      if (req.headers.authorization !== `Bearer ${token}`) return send(401, {});
-      if (req.method === "POST" && url.pathname === "/api/v1/local-folders") {
+      const user = users.find((u) => req.headers.authorization === `Bearer ${u.token}`);
+      if (!user) return send(401);
+      if (req.method === "GET" && url.pathname === "/api/v1/me") {
+        return send(200, { user_id: user.userId, tenant: { id: tenantId } });
+      }
+      if (url.pathname === "/api/v1/local-folders") {
+        if (req.method === "GET") {
+          return send(200, [...folders.values()].filter((f) => f.owner === user.userId).map((f) => ({ source_id: f.source_id })));
+        }
         const source_id = randomUUID();
-        folders.set(source_id, { source_id, items: new Map(), seen: new Map() });
+        folders.set(source_id, { source_id, owner: user.userId, items: new Map(), seen: new Map() });
         return send(201, { source_id, folder_id: body.folder_id, name: body.name, shared_groups: [] });
       }
-      const match = /^\/api\/v1\/local-folders\/([^/]+)\/(events|items)$/.exec(url.pathname);
+      const match = /^\/api\/v1\/local-folders\/([^/]+)(?:\/(events|items))?$/.exec(url.pathname);
       const folder = match ? folders.get(match[1] ?? "") : undefined;
-      if (!match || !folder) return send(404, {});
+      if (!match || !folder || folder.owner !== user.userId) return send(404); // not yours: not found
+      if (req.method === "DELETE" && !match[2]) {
+        folders.delete(folder.source_id);
+        return send(204);
+      }
       if (match[2] === "items") return send(200, [...folder.items.values()]);
       const events = (body.events ?? []) as {
         event_id: string;
@@ -85,13 +113,14 @@ export function startMock(): Promise<{ server: Server; url: string; password: st
   });
   return new Promise((resolve) =>
     server.listen(0, "127.0.0.1", () =>
-      resolve({ server, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, password }),
+      resolve({ server, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, users }),
     ),
   );
 }
 
 async function runSmoke(reportPath: string): Promise<number> {
-  const { server, url, password } = await startMock();
+  const { server, url, users } = await startMock();
+  const [owner, other] = users as [MockUser, MockUser];
   // In plain Node, require("electron") returns the path of the Electron binary.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const electron = require("electron") as unknown as string;
@@ -104,8 +133,10 @@ async function runSmoke(reportPath: string): Promise<number> {
         ...process.env,
         EAIOS_API_BASE_URL: url,
         EAIOS_SMOKE_TENANT: "mock",
-        EAIOS_SMOKE_EMAIL: "smoke@mock.example",
-        EAIOS_SMOKE_PASSWORD: password,
+        EAIOS_SMOKE_EMAIL: owner.email,
+        EAIOS_SMOKE_PASSWORD: owner.password,
+        EAIOS_SMOKE_EMAIL2: other.email,
+        EAIOS_SMOKE_PASSWORD2: other.password,
         EAIOS_SMOKE_REPORT: electronReport,
       },
     });

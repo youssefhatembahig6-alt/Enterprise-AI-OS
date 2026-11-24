@@ -78,13 +78,20 @@ export function LocalFoldersPanel({ token, groups }: { token: string; groups: st
     }
   };
 
+  // Removal from the organization is done by the desktop main process, which keeps the
+  // folder (on disk) as "removal pending" until the server confirms, and retries it at
+  // the next sign-in or app start. The folder never disappears on a failed request.
   const remove = async (folder: DesktopFolder, fromServer: boolean) => {
+    setError(null);
     try {
-      await bridge.removeFolder(folder.folderId);
-      if (fromServer && folder.sourceId) await localFolders.remove(token, folder.sourceId);
-      await refresh();
+      const pending = await bridge.removeFolder(folder.folderId, fromServer);
+      if (pending?.pendingRemoval) {
+        setError("The folder could not be removed from the organization yet. It stays listed; retry when online.");
+      }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not remove the folder.");
+      setError(err instanceof Error ? err.message : "Could not remove the folder.");
+    } finally {
+      await refresh();
     }
   };
 
@@ -101,7 +108,11 @@ export function LocalFoldersPanel({ token, groups }: { token: string; groups: st
           {folders.map((f) => {
             const s = status[f.folderId];
             const remote = f.sourceId ? server[f.sourceId] : undefined;
-            const phase = s ? PHASE[s.phase] : { tone: "unknown" as StatusTone, label: "Starting" };
+            const phase = f.pendingRemoval
+              ? { tone: "warn" as StatusTone, label: "Removal pending" }
+              : s
+                ? PHASE[s.phase]
+                : { tone: "unknown" as StatusTone, label: "Starting" };
             return (
               <li key={f.folderId} className="flex flex-col gap-2 py-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -112,6 +123,10 @@ export function LocalFoldersPanel({ token, groups }: { token: string; groups: st
                 <div className="text-xs text-muted-fg">
                   {remote ? `${remote.active_items} files on the server · ` : ""}
                   {s ? `${s.pending} waiting · ${s.skipped} skipped locally` : ""}
+                  {s?.unreadable ? ` · ${s.unreadable} unreadable (kept, retrying)` : ""}
+                  {f.pendingRemoval
+                    ? ` · removal from the organization pending${f.removalError ? ` (${f.removalError.replace(/_/g, " ")})` : ""}`
+                    : ""}
                   {s?.lastSyncAt ? ` · last sync ${new Date(s.lastSyncAt).toLocaleTimeString()}` : ""}
                   {s?.detail ? ` · ${s.detail}` : ""}
                 </div>
@@ -131,17 +146,25 @@ export function LocalFoldersPanel({ token, groups }: { token: string; groups: st
                     ))}
                   </div>
                 ) : null}
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" onClick={() => void bridge.syncNow(f.folderId)}>
-                    Sync now
-                  </Button>
-                  <Button variant="secondary" onClick={() => void remove(f, false)}>
-                    Stop syncing
-                  </Button>
-                  <Button variant="secondary" onClick={() => void remove(f, true)}>
-                    Remove from organization
-                  </Button>
-                </div>
+                {f.pendingRemoval ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="secondary" onClick={() => void remove(f, true)}>
+                      Retry removal
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="secondary" onClick={() => void bridge.syncNow(f.folderId)}>
+                      Sync now
+                    </Button>
+                    <Button variant="secondary" onClick={() => void remove(f, false)}>
+                      Stop syncing
+                    </Button>
+                    <Button variant="secondary" onClick={() => void remove(f, true)}>
+                      Remove from organization
+                    </Button>
+                  </div>
+                )}
               </li>
             );
           })}

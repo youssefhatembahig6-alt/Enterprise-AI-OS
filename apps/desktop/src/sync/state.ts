@@ -8,6 +8,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { RootIdentity } from "./boundary";
 
 export interface FileRecord {
   sha256: string;
@@ -29,6 +30,8 @@ export interface OutboxEvent {
 export interface FolderState {
   version: 1;
   folderId: string;
+  /** The approved root as first synced (real path, device, inode); see boundary.ts. */
+  root?: RootIdentity;
   sourceId: string | null;
   seq: number;
   files: Record<string, FileRecord>;

@@ -5,8 +5,10 @@
  * privileged ``app://eaios`` scheme with a strict Content-Security-Policy. The renderer
  * is sandboxed with context isolation; ``preload.ts`` exposes a handful of calls.
  * The main process owns the local-folder watchers (``FolderManager``). The session
- * token comes from the renderer after sign-in and is kept in memory only, so after a
- * restart the folders keep watching and queue events until the user signs in again.
+ * token comes from the renderer after sign-in and is kept in memory only. Folders are
+ * bound to the account that added them: only that account's watchers run while it is
+ * signed in; after a restart or an account switch, a catch-up scan on its next sign-in
+ * finds what changed meanwhile and its queued events resume.
  *
  * ``--smoke`` runs a scripted end-to-end check against a real backend and writes a
  * JSON report (see ``smoke.ts``).
@@ -30,7 +32,6 @@ protocol.registerSchemesAsPrivileged([
   { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
-let token: string | null = null;
 let manager: FolderManager | null = null;
 let window: BrowserWindow | null = null;
 
@@ -91,9 +92,12 @@ function broadcast(status: unknown): void {
 }
 
 function registerIpc(folders: FolderManager): void {
+  // Folders belong to the signed-in account (tenant and user): sign-in starts only its
+  // watchers and resumes its queue; sign-out or another account stops them.
   ipcMain.handle("eaios:session", async (_e, value: unknown) => {
-    token = typeof value === "string" && value.length < 4096 ? value : null;
-    if (token) await folders.syncAll(); // resume queued events after sign-in
+    const token = typeof value === "string" && value.length < 4096 ? value : null;
+    if (token) await folders.signIn(token);
+    else await folders.signOut();
   });
   ipcMain.handle("eaios:choose-folder", async () => {
     const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
@@ -103,8 +107,9 @@ function registerIpc(folders: FolderManager): void {
     if (typeof root !== "string" || !path.isAbsolute(root)) throw new Error("invalid_folder");
     return folders.add(root);
   });
-  ipcMain.handle("eaios:remove-folder", async (_e, folderId: unknown) => {
-    if (typeof folderId === "string") await folders.remove(folderId);
+  ipcMain.handle("eaios:remove-folder", async (_e, folderId: unknown, fromServer: unknown) => {
+    if (typeof folderId !== "string") throw new Error("invalid_folder");
+    return folders.remove(folderId, fromServer === true);
   });
   ipcMain.handle("eaios:list-folders", async () => folders.list());
   ipcMain.handle("eaios:sync-now", async (_e, folderId: unknown) => {
@@ -126,8 +131,11 @@ void app.whenReady().then(async () => {
     app.exit(code);
     return;
   }
-  const transport = new HttpTransport(API_BASE, () => token);
-  manager = new FolderManager(path.join(app.getPath("userData"), "local-folders"), transport, broadcast);
+  manager = new FolderManager({
+    dataDir: path.join(app.getPath("userData"), "local-folders"),
+    makeTransport: (token) => new HttpTransport(API_BASE, token),
+    onStatus: broadcast,
+  });
   registerIpc(manager);
   await manager.load();
   window = createWindow(true);

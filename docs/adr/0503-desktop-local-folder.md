@@ -12,6 +12,11 @@ Status: Accepted for M5 (pending planning review). Relates to: FR-13, NFR-07, so
 6. **Offline retries.** The outbox and per-file state are written atomically to the user's application-data folder (no token). Network errors, timeouts, 429 and 5xx keep events queued with exponential backoff (1 s doubling to 5 min); 401 pauses until sign-in; 404 marks the folder gone. A lost reply is re-sent with the same event ids. Deletes made while the app was closed are found by the first scan; a periodic rescan (60 s) covers dropped watcher events.
 7. **Deletes.** A delete event tombstones the document (M3). Removing the folder from the organisation tombstones every document in it.
 
+8. **Folder boundary (review fix).** The approved root is pinned to its real path, device and inode at the first sync. If it later resolves elsewhere (replaced by a link or junction, or moved), syncing stops with `folder_changed` and nothing is read or deleted. Below the root, no path component may be a symbolic link or a Windows junction. Directories are descended into only when their real path is where the scan expects it, which also catches reparse points a directory entry does not report as links. Hashing and upload read through `boundary.readInside`. It refuses link components, opens with `O_NOFOLLOW` where available, and requires the opened handle's identity to equal the file at the expected real path, so a directory swapped after the scan cannot redirect a read outside the folder.
+9. **Folders belong to accounts (review fix).** Each folder records its owner (tenant id and user id from `/api/v1/me`). Only the signed-in owner's folders are listed, watched, synced or removed. Another account's folder ids are refused. Each engine presents a session token only while its own owner is signed in, so one account's queue is never sent with another account's session. On an account switch the previous owner's watchers stop and its outbox and file records stay on disk. On that owner's next sign-in a catch-up scan runs and the queue is retried at once. Folders saved before owners were recorded are assigned only to the account the server lists as owning their source.
+10. **Unreadable is not deleted (review fix).** A directory or file that exists but cannot be read (permission denied, locked, I/O error), or a root that is missing, keeps its records and is reported (`unreadable`) and retried. A delete is queued only when the scan confirms the path is gone (`ENOENT`/`ENOTDIR`) or no longer inside the folder. An upload whose file is temporarily unreadable is deferred with backoff, not dropped.
+11. **Durable removal (review fix).** "Remove from organization" is done by the main process. The folder is marked `pendingRemoval` on disk and its watcher stops, but it stays listed until the server confirms the deletion (204, or 404 for already gone). A failed request leaves it visible with a "Retry removal" action, and it is retried at every sign-in, including after an app restart.
+
 ## Consequences
 
 - Local-folder content has no external permission source, so the Drive/GitHub freshness bound does not apply; the source must be active and the connector enabled.
@@ -19,5 +24,8 @@ Status: Accepted for M5 (pending planning review). Relates to: FR-13, NFR-07, so
 - Packaging and code signing of installers are outside M5.
 
 ## Evidence
+
+Review fixes: `apps/desktop/test/review-fixes.test.ts` (13 tests: junction and link boundary, swap after scan, replaced root, unreadable subtree and file, missing root, account isolation and queue resume, legacy ownership claim, durable removal across a restart), and smoke steps `boundary_links_and_junctions_not_followed`, `account_switch_isolation`, `unreadable_subtree_kept`, `removal_retried_after_failure_and_restart`.
+
 
 `backend/tests/integration/test_m5_local_folder.py` (server rules, ownership, sharing, idempotency, ordering, deletes), `apps/desktop/test/engine.test.ts` (scan, dedup, offline backoff, lost replies, sign-in pause, watcher; CI on Ubuntu and Windows), `scripts/m5_desktop_smoke.py` + `apps/desktop/src/smoke.ts` (real Electron against a real backend; Debian run in `docs/evidence/m5/`).

@@ -11,6 +11,8 @@ export interface DesktopFolder {
   sourceId: string | null;
   name: string;
   root: string;
+  pendingRemoval?: boolean;
+  removalError?: string | null;
   status: unknown;
 }
 
@@ -19,7 +21,8 @@ const bridge = {
   setSession: (token: string | null): Promise<void> => ipcRenderer.invoke("eaios:session", token),
   chooseFolder: (): Promise<string | null> => ipcRenderer.invoke("eaios:choose-folder"),
   addFolder: (root: string): Promise<DesktopFolder> => ipcRenderer.invoke("eaios:add-folder", root),
-  removeFolder: (folderId: string): Promise<void> => ipcRenderer.invoke("eaios:remove-folder", folderId),
+  removeFolder: (folderId: string, fromServer = false): Promise<DesktopFolder | null> =>
+    ipcRenderer.invoke("eaios:remove-folder", folderId, fromServer),
   listFolders: (): Promise<DesktopFolder[]> => ipcRenderer.invoke("eaios:list-folders"),
   syncNow: (folderId: string): Promise<void> => ipcRenderer.invoke("eaios:sync-now", folderId),
   onStatus: (listener: (status: unknown) => void): (() => void) => {

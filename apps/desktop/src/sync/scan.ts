@@ -1,12 +1,18 @@
 /**
- * Recursive folder scan. Symbolic links (and Windows junctions, which Node reports
- * as symbolic links) are never followed: a link could leave the folder the user
- * chose or create a cycle. Excluded and dependency folders are not descended into.
+ * Recursive folder scan inside the approved root (``boundary.ts``). Symbolic links and
+ * Windows junctions are never followed: a link could leave the folder the user chose
+ * or create a cycle. A directory is descended into only if it is not a link and its
+ * real path is exactly where the scan expects it, which also catches reparse points a
+ * directory entry does not report as links. Excluded and dependency folders are not
+ * descended into.
+ *
+ * A directory or file that exists but cannot be read (permission denied, locked, I/O
+ * error) is reported in ``unreadable``; the engine then keeps the records under it and
+ * retries, instead of treating its files as deleted. Only ``ENOENT``/``ENOTDIR`` mean a
+ * path is gone.
  */
 
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { lstat, readdir } from "node:fs/promises";
+import { lstat, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import {
   MAX_DEPTH,
@@ -27,37 +33,85 @@ export interface FileStat {
 export interface ScanResult {
   files: Map<string, FileStat>;
   skipped: { path: string; reason: SkipReason }[];
+  /** Relative paths ("" = the root) whose contents could not be listed or stat'ed. */
+  unreadable: string[];
 }
 
 export function toRelative(root: string, full: string): string {
   return path.relative(root, full).split(path.sep).join("/");
 }
 
+/** A missing path is gone; anything else (EACCES, EPERM, EBUSY, EIO, ...) is unreadable. */
+export function isGone(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+/** Whether ``rel`` is ``prefix`` or below it ("" covers everything). */
+export function under(rel: string, prefix: string): boolean {
+  return prefix === "" || rel === prefix || rel.startsWith(`${prefix}/`);
+}
+
+const caseless = process.platform === "win32" || process.platform === "darwin";
+
+async function realIsExpected(full: string): Promise<boolean> {
+  const real = await realpath(full);
+  return caseless ? real.toLowerCase() === full.toLowerCase() : real === full;
+}
+
 export async function scanFolder(root: string): Promise<ScanResult> {
   const files = new Map<string, FileStat>();
   const skipped: ScanResult["skipped"] = [];
-  const queue: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }];
+  const unreadable: string[] = [];
+  let rootReal: string;
+  try {
+    // Compare real paths with real paths (Windows short names, macOS /private, ...).
+    rootReal = await realpath(root);
+  } catch {
+    // A missing or unreadable root (unplugged drive, revoked access) never means "every
+    // file was deleted": keep all records and retry.
+    return { files, skipped, unreadable: [""] };
+  }
+  const queue: { dir: string; depth: number }[] = [{ dir: rootReal, depth: 0 }];
   while (queue.length) {
     const { dir, depth } = queue.shift() as { dir: string; depth: number };
     let entries;
     try {
       entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      continue; // vanished or unreadable while scanning; the next scan retries
+    } catch (err) {
+      // Gone mid-scan: its files are gone too. Unreadable: keep what we know and retry.
+      if (!isGone(err)) unreadable.push(toRelative(rootReal, dir));
+      continue;
     }
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
-      const rel = toRelative(root, full);
+      const rel = toRelative(rootReal, full);
       if (entry.isSymbolicLink()) {
         skipped.push({ path: rel, reason: "symlink_not_followed" });
         continue;
       }
       if (entry.isDirectory()) {
         const reason = excludedDirectory(entry.name);
-        if (reason) skipped.push({ path: rel, reason });
-        else if (depth + 1 >= MAX_DEPTH) skipped.push({ path: rel, reason: "too_deep" });
-        else queue.push({ dir: full, depth: depth + 1 });
+        if (reason) {
+          skipped.push({ path: rel, reason });
+          continue;
+        }
+        if (depth + 1 >= MAX_DEPTH) {
+          skipped.push({ path: rel, reason: "too_deep" });
+          continue;
+        }
+        try {
+          const info = await lstat(full);
+          if (info.isSymbolicLink() || !(await realIsExpected(full))) {
+            skipped.push({ path: rel, reason: "symlink_not_followed" }); // junction / reparse point
+            continue;
+          }
+        } catch (err) {
+          if (!isGone(err)) unreadable.push(rel);
+          continue;
+        }
+        queue.push({ dir: full, depth: depth + 1 });
         continue;
       }
       if (!entry.isFile()) continue;
@@ -73,7 +127,12 @@ export async function scanFolder(root: string): Promise<ScanResult> {
       let info;
       try {
         info = await lstat(full, { bigint: true });
-      } catch {
+      } catch (err) {
+        if (!isGone(err)) unreadable.push(rel);
+        continue;
+      }
+      if (info.isSymbolicLink()) {
+        skipped.push({ path: rel, reason: "symlink_not_followed" });
         continue;
       }
       if (info.size > BigInt(MAX_FILE_BYTES)) {
@@ -91,16 +150,5 @@ export async function scanFolder(root: string): Promise<ScanResult> {
       });
     }
   }
-  return { files, skipped };
-}
-
-export async function sha256File(full: string): Promise<string> {
-  const hash = createHash("sha256");
-  await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(full);
-    stream.on("data", (chunk) => hash.update(chunk));
-    stream.on("error", reject);
-    stream.on("end", () => resolve());
-  });
-  return hash.digest("hex");
+  return { files, skipped, unreadable };
 }

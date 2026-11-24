@@ -11,6 +11,7 @@ export interface DesktopSyncStatus {
   phase: "idle" | "syncing" | "offline" | "signed_out" | "folder_gone" | "error";
   pending: number;
   skipped: number;
+  unreadable?: number;
   rejected: number;
   lastSyncAt: number | null;
   detail: string | null;
@@ -21,6 +22,9 @@ export interface DesktopFolder {
   sourceId: string | null;
   name: string;
   root: string;
+  /** Removal from the organization was requested and awaits server confirmation. */
+  pendingRemoval?: boolean;
+  removalError?: string | null;
   status: DesktopSyncStatus | null;
 }
 
@@ -29,7 +33,9 @@ export interface DesktopBridge {
   setSession(token: string | null): Promise<void>;
   chooseFolder(): Promise<string | null>;
   addFolder(root: string): Promise<DesktopFolder>;
-  removeFolder(folderId: string): Promise<void>;
+  /** Stop syncing; with ``fromServer`` also remove it from the organization (durable,
+   * retried until the server confirms; returns the still-pending folder or null). */
+  removeFolder(folderId: string, fromServer?: boolean): Promise<DesktopFolder | null>;
   listFolders(): Promise<DesktopFolder[]>;
   syncNow(folderId: string): Promise<void>;
   onStatus(listener: (status: DesktopSyncStatus) => void): () => void;
@@ -81,5 +87,4 @@ export const localFolders = {
   list: (t: string) => call<ServerFolder[]>(t, ""),
   share: (t: string, id: string, groups: string[]) =>
     call<ServerFolder>(t, `/${id}/sharing`, { method: "PUT", body: JSON.stringify({ groups }) }),
-  remove: (t: string, id: string) => call<undefined>(t, `/${id}`, { method: "DELETE" }),
 };

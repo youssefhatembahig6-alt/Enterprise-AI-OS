@@ -17,10 +17,9 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { MAX_FILE_BYTES } from "./rules";
-import { scanFolder, sha256File } from "./scan";
+import { OutsideFolder, readInside, rootIdentity, sameRoot, type RootIdentity } from "./boundary";
+import { isGone, scanFolder, under, type ScanResult } from "./scan";
 import { loadState, saveState, type FolderState, type OutboxEvent } from "./state";
 import type { SendOutcome, Transport, WireEvent } from "./transport";
 
@@ -31,6 +30,8 @@ export interface SyncStatus {
   phase: SyncPhase;
   pending: number;
   skipped: number;
+  /** Directories or files that exist but could not be read in the last scan (retried). */
+  unreadable: number;
   rejected: number;
   lastSyncAt: number | null;
   detail: string | null;
@@ -47,6 +48,8 @@ export interface EngineOptions {
   batchEvents?: number;
   batchBytes?: number;
   onStatus?: (status: SyncStatus) => void;
+  /** Test seam: replaces the file-system scan. */
+  scan?: (rootReal: string) => Promise<ScanResult>;
 }
 
 const BACKOFF_BASE_MS = 1000;
@@ -64,6 +67,7 @@ export class FolderSync {
   private state!: FolderState;
   private readonly now: () => number;
   private skipped = 0;
+  private unreadable = 0;
   private phase: SyncPhase = "idle";
   private detail: string | null = null;
   private lastSyncAt: number | null = null;
@@ -109,6 +113,7 @@ export class FolderSync {
       phase: this.phase,
       pending: this.state?.outbox.length ?? 0,
       skipped: this.skipped,
+      unreadable: this.unreadable,
       rejected: this.state?.rejected.length ?? 0,
       lastSyncAt: this.lastSyncAt,
       detail: this.detail,
@@ -128,12 +133,42 @@ export class FolderSync {
     });
   }
 
+  /** The approved root, if it still resolves to the folder first synced. Sets the
+   * phase and returns null when it is unavailable or has changed (nothing is read or
+   * deleted then). */
+  private async checkedRoot(): Promise<RootIdentity | null> {
+    let current: RootIdentity;
+    try {
+      current = await rootIdentity(this.opts.root);
+    } catch (err) {
+      this.phase = "error";
+      this.detail = isGone(err) ? "folder_unavailable" : "folder_unreadable";
+      return null;
+    }
+    if (!this.state.root) {
+      this.state.root = current;
+      await this.persist();
+    } else if (!sameRoot(this.state.root, current)) {
+      this.phase = "error";
+      this.detail = "folder_changed"; // replaced by a link/junction or moved: never followed
+      return null;
+    }
+    return current;
+  }
+
   reconcile(): Promise<{ upserts: number; deletes: number }> {
     return this.serial(async () => {
-      const scan = await scanFolder(this.opts.root);
+      const root = await this.checkedRoot();
+      if (!root) {
+        this.emit();
+        return { upserts: 0, deletes: 0 };
+      }
+      const scan = await (this.opts.scan ?? scanFolder)(root.real);
       this.skipped = scan.skipped.length;
+      const unreadable = [...scan.unreadable];
       let upserts = 0;
       let deletes = 0;
+      const outside = new Set<string>();
       const wall = Date.now();
       for (const [rel, stat] of scan.files) {
         const known = this.state.files[rel];
@@ -141,9 +176,12 @@ export class FolderSync {
         if (known && !racy && known.size === stat.size && known.mtime === stat.mtime) continue;
         let sha: string;
         try {
-          sha = await sha256File(path.join(this.opts.root, ...rel.split("/")));
-        } catch {
-          continue; // removed mid-scan; the next scan sees the delete
+          const data = await readInside(root.real, rel, MAX_FILE_BYTES);
+          sha = createHash("sha256").update(data).digest("hex");
+        } catch (err) {
+          if (err instanceof OutsideFolder) outside.add(rel); // now a link, or swapped: not ours
+          else if (!isGone(err)) unreadable.push(rel); // locked or denied: keep, retry
+          continue; // gone mid-scan: the delete below handles it
         }
         if (known && known.sha256 === sha) {
           this.state.files[rel] = { ...known, mtime: racy ? "" : stat.mtime }; // touch only
@@ -153,13 +191,23 @@ export class FolderSync {
         this.enqueue({ op: "upsert", path: rel, sha256: sha, size: stat.size });
         upserts += 1;
       }
-      const gone = Object.keys(this.state.files).filter((rel) => !scan.files.has(rel));
-      this.state.files = Object.fromEntries(
-        Object.entries(this.state.files).filter(([rel]) => scan.files.has(rel)),
-      );
+      // A file is deleted only when the scan confirmed it is gone (or is no longer
+      // inside the folder); anything under an unreadable directory keeps its record.
+      const kept = (rel: string) =>
+        (scan.files.has(rel) && !outside.has(rel)) || unreadable.some((u) => under(rel, u));
+      const gone = Object.keys(this.state.files).filter((rel) => !kept(rel));
+      this.state.files = Object.fromEntries(Object.entries(this.state.files).filter(([rel]) => kept(rel)));
       for (const rel of gone) {
         this.enqueue({ op: "delete", path: rel });
         deletes += 1;
+      }
+      this.unreadable = unreadable.length;
+      if (unreadable.length) {
+        this.phase = "error";
+        this.detail = `unreadable: ${unreadable.slice(0, 5).join(", ")}${unreadable.length > 5 ? ", ..." : ""}`;
+      } else if (this.detail?.startsWith("unreadable") || this.detail?.startsWith("folder_")) {
+        this.phase = "idle";
+        this.detail = null;
       }
       await this.persist();
       this.emit();
@@ -171,6 +219,11 @@ export class FolderSync {
     return this.serial(async () => {
       const sourceId = this.state.sourceId;
       if (!sourceId) return "waiting";
+      const root = await this.checkedRoot();
+      if (!root) {
+        this.emit();
+        return "waiting";
+      }
       let last: SendOutcome["kind"] | "nothing" | "waiting" = "nothing";
       for (;;) {
         const due = this.state.outbox.filter((e) => e.next_at <= this.now());
@@ -178,7 +231,11 @@ export class FolderSync {
           if (this.state.outbox.length) last = "waiting";
           break;
         }
-        const { wire, sent, dropped } = await this.batch(due);
+        const { wire, sent, dropped, deferred } = await this.batch(due, root.real);
+        for (const event of deferred) {
+          event.attempts += 1; // unreadable right now (locked, denied): keep and retry
+          event.next_at = this.now() + backoff(event.attempts);
+        }
         for (const event of dropped) {
           this.state.outbox = this.state.outbox.filter((e) => e.event_id !== event.event_id);
           // The file changed after it was queued: forget its record so the next scan
@@ -188,6 +245,7 @@ export class FolderSync {
         }
         if (!wire.length) {
           await this.persist();
+          if (deferred.length) break;
           continue;
         }
         this.phase = "syncing";
@@ -210,8 +268,9 @@ export class FolderSync {
             await this.persist();
             break;
           }
-          this.phase = "idle";
-          this.detail = null;
+          // An unreadable subtree stays reported (and retried) until a scan reads it.
+          this.phase = this.unreadable ? "error" : "idle";
+          if (!this.unreadable) this.detail = null;
           this.lastSyncAt = this.now();
           await this.persist();
           continue;
@@ -248,16 +307,16 @@ export class FolderSync {
   /** Build one batch from due events. Content is read now and must still match the
    * queued SHA-256; otherwise the event is dropped (the file changed again or was
    * deleted, and the next reconcile enqueues its current state). */
-  private async batch(due: OutboxEvent[]): Promise<{
-    wire: WireEvent[];
-    sent: OutboxEvent[];
-    dropped: OutboxEvent[];
-  }> {
+  private async batch(
+    due: OutboxEvent[],
+    rootReal: string,
+  ): Promise<{ wire: WireEvent[]; sent: OutboxEvent[]; dropped: OutboxEvent[]; deferred: OutboxEvent[] }> {
     const max = this.opts.batchEvents ?? 20;
     const budget = this.opts.batchBytes ?? 8 * 1024 * 1024;
     const wire: WireEvent[] = [];
     const sent: OutboxEvent[] = [];
     const dropped: OutboxEvent[] = [];
+    const deferred: OutboxEvent[] = [];
     let bytes = 0;
     for (const event of due) {
       if (wire.length >= max) break;
@@ -268,12 +327,13 @@ export class FolderSync {
       }
       let data: Buffer;
       try {
-        data = await readFile(path.join(this.opts.root, ...event.path.split("/")));
-      } catch {
-        dropped.push(event);
+        data = await readInside(rootReal, event.path, MAX_FILE_BYTES); // boundary checked at read time
+      } catch (err) {
+        if (err instanceof OutsideFolder || isGone(err)) dropped.push(event);
+        else deferred.push(event);
         continue;
       }
-      if (data.length > MAX_FILE_BYTES || createHash("sha256").update(data).digest("hex") !== event.sha256) {
+      if (createHash("sha256").update(data).digest("hex") !== event.sha256) {
         dropped.push(event);
         continue;
       }
@@ -290,7 +350,16 @@ export class FolderSync {
       });
       sent.push(event);
     }
-    return { wire, sent, dropped };
+    return { wire, sent, dropped, deferred };
+  }
+
+  /** Make every queued event due now (the owner signed in again: retry at once instead
+   * of waiting out a backoff that started while signed out or offline). */
+  retryNow(): Promise<void> {
+    return this.serial(async () => {
+      for (const event of this.state.outbox) event.next_at = 0;
+      await this.persist();
+    });
   }
 
   /** Reconcile then flush. */
@@ -299,7 +368,8 @@ export class FolderSync {
     await this.flush();
   }
 
-  start(): void {
+  start(options: { retryNow?: boolean } = {}): void {
+    if (options.retryNow) void this.retryNow();
     const trigger = () => {
       if (this.debounce) clearTimeout(this.debounce);
       this.debounce = setTimeout(() => void this.sync().catch(() => undefined), this.opts.debounceMs ?? 400);

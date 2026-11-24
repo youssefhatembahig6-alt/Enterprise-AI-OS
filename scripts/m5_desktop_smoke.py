@@ -80,7 +80,9 @@ def call(
     if token:
         headers["Authorization"] = f"Bearer {token}"
     data = json.dumps(body).encode() if body is not None else None
-    request = urllib.request.Request(f"{base}{path}", data=data, headers=headers, method=method)  # noqa: S310
+    request = urllib.request.Request(
+        f"{base}{path}", data=data, headers=headers, method=method
+    )  # noqa: S310
     try:
         with urllib.request.urlopen(request, timeout=300) as response:  # noqa: S310 - local API
             raw, status = response.read().decode(), response.status
@@ -194,6 +196,8 @@ def run_smoke(
         "EAIOS_SMOKE_TENANT": TENANT,
         "EAIOS_SMOKE_EMAIL": OWNER,
         "EAIOS_SMOKE_PASSWORD": passwords[OWNER],
+        "EAIOS_SMOKE_EMAIL2": OTHER,  # account-switch isolation check
+        "EAIOS_SMOKE_PASSWORD2": passwords[OTHER],
         "EAIOS_SMOKE_REPORT": str(report_file),
     }
     proc = subprocess.run(  # noqa: S603 - local Electron binary
@@ -204,7 +208,9 @@ def run_smoke(
         timeout=300,
         check=False,
     )
-    electron: dict[str, Any] = json.loads(report_file.read_text()) if report_file.exists() else {}
+    electron: dict[str, Any] = (
+        json.loads(report_file.read_text()) if report_file.exists() else {}
+    )
     shutil.rmtree(work, ignore_errors=True)
     electron["exit_code"] = proc.returncode
     electron["stderr_tail"] = proc.stderr[-1500:]
@@ -215,7 +221,9 @@ def run_smoke(
     result: dict[str, Any] = {}
     while time.monotonic() < deadline:
         result = ask(base, owner, QUESTION)
-        if result["outcome"] == "published" and any("50 USD" in q for q in result["quotes"]):
+        if result["outcome"] == "published" and any(
+            "50 USD" in q for q in result["quotes"]
+        ):
             break
         time.sleep(2)
     checks.append(
@@ -239,7 +247,9 @@ def run_smoke(
         _, items = call(base, "GET", f"/api/v1/local-folders/{source_id}/items", owner)
         folder_docs = {i["document_id"] for i in items or [] if i.get("document_id")}
     other = ask(base, login(base, OTHER, passwords[OTHER]), QUESTION)
-    leaked = folder_docs & set(other["document_ids"]) or any("50 USD" in q for q in other["quotes"])
+    leaked = folder_docs & set(other["document_ids"]) or any(
+        "50 USD" in q for q in other["quotes"]
+    )
     checks.append(
         {
             "name": "unshared_user_never_receives_folder_content",
@@ -248,7 +258,9 @@ def run_smoke(
                 "folder_documents": len(folder_docs),
                 "other_outcome": other["outcome"],
                 "other_abstention": other["abstention"],
-                "other_cited_folder_documents": sorted(folder_docs & set(other["document_ids"])),
+                "other_cited_folder_documents": sorted(
+                    folder_docs & set(other["document_ids"])
+                ),
             },
         }
     )
@@ -269,7 +281,9 @@ def main() -> int:
         help="in-process backend on a disposable database",
     )
     mode.add_argument("--api", help="URL of a running, seeded stack in MODEL_MODE=fake")
-    parser.add_argument("--credentials", default=str(ROOT / "var" / "dev-credentials.json"))
+    parser.add_argument(
+        "--credentials", default=str(ROOT / "var" / "dev-credentials.json")
+    )
     parser.add_argument(
         "--keep", action="store_true", help="keep the temporary folder source (--api)"
     )
@@ -280,14 +294,14 @@ def main() -> int:
     if args.disposable:
         with disposable_backend() as (base, passwords):
             electron, checks = run_smoke(base, passwords, keep=True)
-        backend = (
-            "disposable: in-process FastAPI, disposable PostgreSQL, Qdrant test service; fake model"
-        )
+        backend = "disposable: in-process FastAPI, disposable PostgreSQL, Qdrant test service; fake model"
     else:
         creds = json.loads(Path(args.credentials).read_text())[TENANT]
         base = args.api.rstrip("/")
         _, ready = call(base, "GET", "/ready")
-        electron, checks = run_smoke(base, {OWNER: creds[OWNER], OTHER: creds[OTHER]}, args.keep)
+        electron, checks = run_smoke(
+            base, {OWNER: creds[OWNER], OTHER: creds[OTHER]}, args.keep
+        )
         mode = (ready or {}).get("model_inference")
         backend = f"running stack at {base}; /ready model_inference={mode}"
     steps = list(electron.get("steps", []))

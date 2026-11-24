@@ -35,9 +35,22 @@ export interface FolderInfo {
   shared_groups: string[];
 }
 
+export interface Owner {
+  tenantId: string;
+  userId: string;
+}
+
+export type DeleteOutcome = "deleted" | "retry" | "auth";
+
 export interface Transport {
   send(sourceId: string, events: WireEvent[]): Promise<SendOutcome>;
   register(folderId: string, name: string, device: string): Promise<FolderInfo>;
+  /** The signed-in account (tenant and user) this transport's session belongs to. */
+  identity(): Promise<Owner>;
+  /** Source ids of the folders the server says this account owns. */
+  ownedSources(): Promise<string[]>;
+  /** Remove the folder source on the server; 404 (already gone) counts as deleted. */
+  deleteFolder(sourceId: string): Promise<DeleteOutcome>;
 }
 
 export class HttpTransport implements Transport {
@@ -98,6 +111,33 @@ export class HttpTransport implements Transport {
     }
     return (await response.json()) as FolderInfo;
   }
+
+  async identity(): Promise<Owner> {
+    const response = await this.call("/api/v1/me", { method: "GET" });
+    if (response.status !== 200) throw new RequestFailed(`identity ${response.status}`);
+    const body = (await response.json()) as { user_id: string; tenant: { id: string } };
+    return { tenantId: body.tenant.id, userId: body.user_id };
+  }
+
+  async ownedSources(): Promise<string[]> {
+    const response = await this.call("/api/v1/local-folders", { method: "GET" });
+    if (response.status !== 200) throw new RequestFailed(`folders ${response.status}`);
+    return ((await response.json()) as { source_id: string }[]).map((f) => f.source_id);
+  }
+
+  async deleteFolder(sourceId: string): Promise<DeleteOutcome> {
+    let response: Response;
+    try {
+      response = await this.call(`/api/v1/local-folders/${sourceId}`, { method: "DELETE" });
+    } catch (err) {
+      return err instanceof AuthMissing ? "auth" : "retry";
+    }
+    if (response.status === 204 || response.status === 404) return "deleted";
+    if (response.status === 401) return "auth";
+    return "retry";
+  }
 }
 
 export class AuthMissing extends Error {}
+
+export class RequestFailed extends Error {}
