@@ -1,0 +1,11 @@
+{
+  "action_due": "2026-05-01",
+  "action_owner": "Site Reliability",
+  "affected_accounts": 140,
+  "cause": "a full disk on the message broker after log rotation stopped",
+  "duration_minutes": 32,
+  "reference": "INC-4104",
+  "service": "document upload service",
+  "severity": 1,
+  "started": "2026-04-24T12:00"
+}

@@ -4,6 +4,8 @@ Status: **foundation and pilot only.** No model was fine-tuned, no threshold was
 
 Revision 2 (2026-11-26) addresses the four PR #10 review findings: blind annotation, evidence and provenance validation, the corrected split inventory, and an enforceable freeze.
 
+**Update (v3):** `split-manifest-v3` is now active. It keeps the nine dev families below unchanged and adds fresh train and held-out families from a new deterministic generator. See [m7-v3-corpus.md](m7-v3-corpus.md). The pilot below is unchanged; only its index now points at v3.
+
 ## 1. Inventory of what existed before M7
 
 | Asset | Location | What it is | Reuse in M7 |

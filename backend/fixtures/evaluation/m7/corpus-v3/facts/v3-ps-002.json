@@ -1,0 +1,11 @@
+{
+  "budget_hours": 2640,
+  "client": "Dahab Dive Resorts",
+  "hours_used_percent": 32,
+  "next_milestone_date": "2026-07-09",
+  "period_end": "2026-05-16",
+  "project": "PRJ-DAH-02",
+  "sector": "hospitality",
+  "status": "red",
+  "workstream": "integration build"
+}

@@ -1,0 +1,14 @@
+{
+  "actual_egp": 10250,
+  "asset": "fire-suppression panel",
+  "closed": "2026-01-23",
+  "estimate_egp": 4750,
+  "labour_hours": 8,
+  "priority": "P1",
+  "raised": "2026-01-16",
+  "reference": "WO-2026-0006",
+  "response_hours": 4,
+  "site": "New Capital Tower 4",
+  "technicians": 2,
+  "vendor": "Pharos Building Care"
+}

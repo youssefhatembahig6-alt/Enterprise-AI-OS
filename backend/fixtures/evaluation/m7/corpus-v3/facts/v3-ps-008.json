@@ -1,0 +1,11 @@
+{
+  "budget_hours": 1600,
+  "client": "Abydos Pharmaceuticals",
+  "hours_used_percent": 40,
+  "next_milestone_date": "2026-05-12",
+  "period_end": "2026-04-20",
+  "project": "PRJ-ABY-08",
+  "sector": "pharmaceutical",
+  "status": "green",
+  "workstream": "training"
+}

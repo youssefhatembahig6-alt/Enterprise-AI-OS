@@ -1,0 +1,14 @@
+{
+  "category": "courier",
+  "city": "Ismailia",
+  "country": "Egypt",
+  "decision": "approved with conditions",
+  "handles_personal_data": false,
+  "indemnity_cover_usd": 2150000,
+  "next_review_months": 12,
+  "reference": "SDR-016",
+  "reviewed": "2026-04-18",
+  "risk_tier": "medium",
+  "supplier": "Ismailia Courier Lines",
+  "supplier_since": 2017
+}

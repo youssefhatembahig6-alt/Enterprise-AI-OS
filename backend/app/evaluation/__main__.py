@@ -4,6 +4,8 @@ python -m app.evaluation freeze split-manifest-vN.toml   lock a NEW manifest; pr
                                                          snapshot entry for review
 python -m app.evaluation check [--base REF] [--git-history]   deterministic CI smoke check
 python -m app.evaluation build-pilot         regenerate the pilot datasets
+python -m app.evaluation build-corpus-v3     regenerate the v3 fresh corpus (deterministic)
+python -m app.evaluation overlap             fresh-vs-dev and cross-family overlap report
 python -m app.evaluation report [--json]     dataset counts and label status
 python -m app.evaluation labels export --annotator ID [--out-dir DIR]
 python -m app.evaluation labels import --sheet A.csv --key A.key.json --sheet B.csv --key B.key.json
@@ -17,7 +19,7 @@ import json
 import sys
 from pathlib import Path
 
-from app.evaluation import freeze, labels
+from app.evaluation import corpus_v3, freeze, labels, overlap
 from app.evaluation import manifest as mf
 from app.evaluation.checks import counts_report, format_report, run_checks
 from app.evaluation.pilot import write_pilot
@@ -62,6 +64,25 @@ def cmd_build_pilot(_: argparse.Namespace) -> int:
     for path, count in write_pilot().items():
         print(f"wrote {path} ({count} records)")
     return 0
+
+
+def cmd_build_corpus_v3(_: argparse.Namespace) -> int:
+    count = corpus_v3.write_corpus()
+    print(
+        f"wrote {count} documents to {corpus_v3.CORPUS_DIR} (seed {corpus_v3.SEED}, "
+        f"generator {corpus_v3.GENERATOR_VERSION} sha256 {corpus_v3.generator_sha256()[:12]}…)"
+    )
+    return 0
+
+
+def cmd_overlap(_: argparse.Namespace) -> int:
+    manifest, problems = freeze.check_snapshot(freeze.disk_reader())
+    if manifest is None:
+        print("\n".join(problems), file=sys.stderr)
+        return 1
+    report = overlap.overlap_report(manifest)
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 1 if overlap.overlap_problems(report) else 0
 
 
 def cmd_report(args: argparse.Namespace) -> int:
@@ -115,6 +136,8 @@ def main(argv: list[str] | None = None) -> int:
     chk.add_argument("--git-history", action="store_true", help="require freeze-before-pilot order")
     chk.set_defaults(func=cmd_check)
     sub.add_parser("build-pilot").set_defaults(func=cmd_build_pilot)
+    sub.add_parser("build-corpus-v3").set_defaults(func=cmd_build_corpus_v3)
+    sub.add_parser("overlap").set_defaults(func=cmd_overlap)
     report = sub.add_parser("report")
     report.add_argument("--json", action="store_true")
     report.set_defaults(func=cmd_report)

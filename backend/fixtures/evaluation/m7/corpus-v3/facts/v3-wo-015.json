@@ -1,0 +1,14 @@
+{
+  "actual_egp": 80000,
+  "asset": "fire-suppression panel",
+  "closed": "2026-03-24",
+  "estimate_egp": 75500,
+  "labour_hours": 11,
+  "priority": "P3",
+  "raised": "2026-03-20",
+  "reference": "WO-2026-0015",
+  "response_hours": 72,
+  "site": "Sidi Gaber Hub",
+  "technicians": 2,
+  "vendor": "Sphinx Electromech"
+}

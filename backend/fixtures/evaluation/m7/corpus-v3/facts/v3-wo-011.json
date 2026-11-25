@@ -1,0 +1,14 @@
+{
+  "actual_egp": 40500,
+  "asset": "UPS battery bank",
+  "closed": "2026-04-16",
+  "estimate_egp": 35250,
+  "labour_hours": 8,
+  "priority": "P3",
+  "raised": "2026-04-09",
+  "reference": "WO-2026-0011",
+  "response_hours": 72,
+  "site": "Sidi Gaber Hub",
+  "technicians": 4,
+  "vendor": "Pharos Building Care"
+}

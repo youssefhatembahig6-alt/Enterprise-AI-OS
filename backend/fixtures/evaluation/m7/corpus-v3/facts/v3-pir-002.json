@@ -1,0 +1,11 @@
+{
+  "action_due": "2026-07-11",
+  "action_owner": "Platform",
+  "affected_accounts": 8,
+  "cause": "a configuration flag enabled in production before its migration ran",
+  "duration_minutes": 226,
+  "reference": "INC-4102",
+  "service": "report scheduler",
+  "severity": 2,
+  "started": "2026-06-20T15:05"
+}

@@ -1,0 +1,26 @@
+{
+  "awarded_to": "Port Said Distributors",
+  "director_approval": false,
+  "item": "conference-room cameras",
+  "quantity": 18,
+  "quotes": [
+    {
+      "delivery_days": 17,
+      "supplier": "Giza Office Supply",
+      "unit_egp": 5250
+    },
+    {
+      "delivery_days": 17,
+      "supplier": "Luxor Tech Trading",
+      "unit_egp": 4230
+    },
+    {
+      "delivery_days": 18,
+      "supplier": "Port Said Distributors",
+      "unit_egp": 2980
+    }
+  ],
+  "raised": "2026-04-30",
+  "reference": "PR-26-010",
+  "total_egp": 53640
+}

@@ -1,0 +1,11 @@
+{
+  "action_due": "2026-02-25",
+  "action_owner": "Identity",
+  "affected_accounts": 40,
+  "cause": "a full disk on the message broker after log rotation stopped",
+  "duration_minutes": 138,
+  "reference": "INC-4111",
+  "service": "document upload service",
+  "severity": 2,
+  "started": "2026-02-04T15:20"
+}

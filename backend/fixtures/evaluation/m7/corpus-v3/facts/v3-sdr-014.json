@@ -1,0 +1,14 @@
+{
+  "category": "printing",
+  "city": "Qena",
+  "country": "Egypt",
+  "decision": "approved",
+  "handles_personal_data": false,
+  "indemnity_cover_usd": 1700000,
+  "next_review_months": 24,
+  "reference": "SDR-014",
+  "reviewed": "2026-02-01",
+  "risk_tier": "low",
+  "supplier": "Qena Print Works",
+  "supplier_since": 2021
+}

@@ -1,0 +1,11 @@
+{
+  "action_due": "2026-05-24",
+  "action_owner": "Data Services",
+  "affected_accounts": 79,
+  "cause": "a configuration flag enabled in production before its migration ran",
+  "duration_minutes": 45,
+  "reference": "INC-4105",
+  "service": "document upload service",
+  "severity": 2,
+  "started": "2026-05-17T02:50"
+}

@@ -1,0 +1,14 @@
+{
+  "actual_egp": 84000,
+  "asset": "chiller unit",
+  "closed": "2026-02-03",
+  "estimate_egp": 84500,
+  "labour_hours": 10,
+  "priority": "P3",
+  "raised": "2026-01-27",
+  "reference": "WO-2026-0002",
+  "response_hours": 72,
+  "site": "Sidi Gaber Hub",
+  "technicians": 2,
+  "vendor": "Sphinx Electromech"
+}

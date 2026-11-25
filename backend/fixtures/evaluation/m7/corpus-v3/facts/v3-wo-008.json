@@ -1,0 +1,14 @@
+{
+  "actual_egp": 92500,
+  "asset": "passenger lift",
+  "closed": "2026-03-07",
+  "estimate_egp": 87000,
+  "labour_hours": 12,
+  "priority": "P3",
+  "raised": "2026-03-06",
+  "reference": "WO-2026-0008",
+  "response_hours": 72,
+  "site": "Maadi Annex",
+  "technicians": 2,
+  "vendor": "Pharos Building Care"
+}

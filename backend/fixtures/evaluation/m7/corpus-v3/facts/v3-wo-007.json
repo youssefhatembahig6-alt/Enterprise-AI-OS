@@ -1,0 +1,14 @@
+{
+  "actual_egp": 38250,
+  "asset": "standby generator",
+  "closed": "2026-02-10",
+  "estimate_egp": 32500,
+  "labour_hours": 9,
+  "priority": "P2",
+  "raised": "2026-02-09",
+  "reference": "WO-2026-0007",
+  "response_hours": 24,
+  "site": "Sidi Gaber Hub",
+  "technicians": 3,
+  "vendor": "Karnak Facility Services"
+}

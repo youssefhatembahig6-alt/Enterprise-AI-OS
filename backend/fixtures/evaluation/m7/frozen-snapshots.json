@@ -1,6 +1,6 @@
 {
   "_review": "Independently reviewed snapshot of frozen split manifests. Written by hand, never by a tool. Reviewers must check each SHA-256 against the manifest and lock in the same commit. Once on main, CI (--base origin/main) rejects any change to an existing entry except active -> superseded.",
-  "active": "m7-split-v2",
+  "active": "m7-split-v3",
   "manifests": {
     "m7-split-v1": {
       "manifest": "split-manifest-v1.toml",
@@ -18,6 +18,17 @@
       "lock": "split-manifest-v2.lock.json",
       "manifest_sha256": "a5a6bbb4526d8ef5d90e9445224ad731574a172cd73bd914ead42231cd7dccb9",
       "lock_sha256": "91fdb1a97276cadb33f48dbe9d1373108c5f51fe7d4bbee790bc199a19e3d0d4",
+      "frozen_at": "2026-11-26",
+      "frozen_commit": "ba6e9c8",
+      "status": "superseded",
+      "superseded_by": "m7-split-v3",
+      "reason": "v3 keeps all nine v2 families in dev unchanged and adds fresh train and held-out families from the deterministic v3 generator. Kept unchanged as an audit record."
+    },
+    "m7-split-v3": {
+      "manifest": "split-manifest-v3.toml",
+      "lock": "split-manifest-v3.lock.json",
+      "manifest_sha256": "be2205dbe8bb909500efc3680e7eb7934c02cbd3bfa267c57a7cedacee6e02a7",
+      "lock_sha256": "39456f467ea6108a32089ca70543ce80f3af2c238d26f4606ed858f63eaa4e5a",
       "frozen_at": "2026-11-26",
       "status": "active"
     }

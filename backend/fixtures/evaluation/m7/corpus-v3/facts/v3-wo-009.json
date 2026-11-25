@@ -1,0 +1,14 @@
+{
+  "actual_egp": 37250,
+  "asset": "passenger lift",
+  "closed": "2026-02-12",
+  "estimate_egp": 34500,
+  "labour_hours": 16,
+  "priority": "P3",
+  "raised": "2026-02-05",
+  "reference": "WO-2026-0009",
+  "response_hours": 72,
+  "site": "New Capital Tower 4",
+  "technicians": 4,
+  "vendor": "Karnak Facility Services"
+}

@@ -1,0 +1,14 @@
+{
+  "actual_egp": 90000,
+  "asset": "chiller unit",
+  "closed": "2026-03-12",
+  "estimate_egp": 89500,
+  "labour_hours": 2,
+  "priority": "P3",
+  "raised": "2026-03-09",
+  "reference": "WO-2026-0016",
+  "response_hours": 72,
+  "site": "Sidi Gaber Hub",
+  "technicians": 3,
+  "vendor": "Karnak Facility Services"
+}

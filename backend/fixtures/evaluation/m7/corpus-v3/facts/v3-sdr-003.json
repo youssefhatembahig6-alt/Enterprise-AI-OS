@@ -1,0 +1,14 @@
+{
+  "category": "translation",
+  "city": "Amman",
+  "country": "Jordan",
+  "decision": "suspended",
+  "handles_personal_data": false,
+  "indemnity_cover_usd": 1750000,
+  "next_review_months": 6,
+  "reference": "SDR-003",
+  "reviewed": "2026-06-15",
+  "risk_tier": "high",
+  "supplier": "Amman Translation House",
+  "supplier_since": 2017
+}

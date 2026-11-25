@@ -1,0 +1,11 @@
+{
+  "action_due": "2026-07-09",
+  "action_owner": "Data Services",
+  "affected_accounts": 133,
+  "cause": "a full disk on the message broker after log rotation stopped",
+  "duration_minutes": 47,
+  "reference": "INC-4103",
+  "service": "document upload service",
+  "severity": 3,
+  "started": "2026-06-18T06:20"
+}

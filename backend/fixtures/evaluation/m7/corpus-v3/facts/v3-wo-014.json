@@ -1,0 +1,14 @@
+{
+  "actual_egp": 42250,
+  "asset": "access-control reader",
+  "closed": "2026-04-25",
+  "estimate_egp": 40250,
+  "labour_hours": 15,
+  "priority": "P1",
+  "raised": "2026-04-23",
+  "reference": "WO-2026-0014",
+  "response_hours": 4,
+  "site": "Sidi Gaber Hub",
+  "technicians": 4,
+  "vendor": "Pharos Building Care"
+}

@@ -1,0 +1,11 @@
+{
+  "action_due": "2026-03-17",
+  "action_owner": "Site Reliability",
+  "affected_accounts": 116,
+  "cause": "an expired TLS certificate on an internal load balancer",
+  "duration_minutes": 222,
+  "reference": "INC-4112",
+  "service": "invoice export API",
+  "severity": 2,
+  "started": "2026-03-10T15:50"
+}

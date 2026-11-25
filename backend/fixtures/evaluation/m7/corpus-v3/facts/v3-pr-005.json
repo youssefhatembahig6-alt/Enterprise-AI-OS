@@ -1,0 +1,26 @@
+{
+  "awarded_to": "Giza Office Supply",
+  "director_approval": false,
+  "item": "27-inch monitors",
+  "quantity": 32,
+  "quotes": [
+    {
+      "delivery_days": 30,
+      "supplier": "Giza Office Supply",
+      "unit_egp": 2500
+    },
+    {
+      "delivery_days": 3,
+      "supplier": "Luxor Tech Trading",
+      "unit_egp": 5690
+    },
+    {
+      "delivery_days": 14,
+      "supplier": "Port Said Distributors",
+      "unit_egp": 5710
+    }
+  ],
+  "raised": "2026-03-13",
+  "reference": "PR-26-005",
+  "total_egp": 80000
+}

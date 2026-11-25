@@ -1,0 +1,11 @@
+{
+  "action_due": "2026-06-11",
+  "action_owner": "Identity",
+  "affected_accounts": 135,
+  "cause": "a database connection pool sized for the previous release",
+  "duration_minutes": 50,
+  "reference": "INC-4101",
+  "service": "report scheduler",
+  "severity": 1,
+  "started": "2026-05-22T07:40"
+}
