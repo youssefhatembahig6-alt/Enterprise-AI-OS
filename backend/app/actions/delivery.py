@@ -9,18 +9,19 @@ State machine of ``email_outbox.status`` (ADR 0601)::
        |                   |  +-- ambiguous after DATA ---> uncertain
        |                   +-- lease expired (crash) -----> uncertain
        |                                                        |
-       +--- absent from Mailpit N times (reconcile) <-----------+--> delivered (found)
-            (only while the receipt-history canary
-             proves Mailpit's history covers the send;
-             otherwise it stays uncertain)
+       +--- never reached SMTP (no SMTP-start record) <---------+--> delivered (found)
+                                                                |
+                         SMTP may have been reached and the receipt is missing:
+                         stays uncertain (never re-sent automatically)
     pending/dispatching --re-check fails at claim or handoff--> blocked
     pending --owner cancels--> cancelled
 
 The claim commits ``dispatching`` *before* any byte goes to SMTP, so a crash at any
 later point leaves a row that recovery can see. The handoff transaction re-checks
 access under the tenant policy-epoch lock and keeps that lock through SMTP, so access
-lost after the claim blocks the send. An ``uncertain`` row is never blindly re-sent: it
-is first looked up in Mailpit by its Message-ID. A retry re-runs every access check and
+lost after the claim blocks the send. An ``uncertain`` row is re-sent only if a durable
+SMTP-start record proves its attempt never reached SMTP; otherwise it must be found in
+Mailpit by its Message-ID (delivered) or it stays uncertain. A retry re-runs every access check and
 reuses the same execution key and Message-ID.
 
 Lock order everywhere: tenant policy epoch (share) -> email_actions -> email_outbox ->
@@ -30,7 +31,6 @@ email_approvals.
 from __future__ import annotations
 
 import logging
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -50,7 +50,7 @@ from app.actions.mail import (
 )
 from app.actions.render import draft_sha256
 from app.config import Settings
-from app.db.engine import contextless_transaction, tenant_transaction
+from app.db.engine import contextless_transaction, create_app_engine, tenant_transaction
 from app.repositories.audit import record_audit_event
 
 logger = logging.getLogger("eaios.actions")
@@ -66,8 +66,26 @@ class EmailDelivery:
     lookup: MailLookup
     # Test-only fault injection points: "claim_locked" (claim holds the action and
     # outbox locks), "before_smtp" (after the claim committed, before the handoff
-    # recheck) and "after_accept" (Mailpit returned 250, confirmation not committed).
+    # recheck), "smtp_started" (SMTP-start record committed, nothing sent yet) and
+    # "after_accept" (Mailpit returned 250, confirmation not committed).
     hooks: dict[str, Hook] = field(default_factory=dict)
+    # SMTP-start records are written while the handoff holds a pooled connection and
+    # row locks. A separate small engine keeps that insert (which never waits on row
+    # locks) from competing with transactions queued behind those locks for the main
+    # pool, which could otherwise exhaust it and stall the handoff.
+    marker_engine: Engine | None = None
+
+    def __post_init__(self) -> None:
+        if self.marker_engine is None:
+            self.marker_engine = create_app_engine(
+                self.engine.url.render_as_string(hide_password=False),
+                pool_size=1,
+                application_name="eaios-smtp-markers",
+            )
+
+    def close(self) -> None:
+        if self.marker_engine is not None:
+            self.marker_engine.dispose()
 
     # Dispatcher protocol (InlineDispatcher / Celery task call this).
     def run_job(self, execution_key: UUID, tenant_id: UUID) -> str:
@@ -115,8 +133,6 @@ class EmailDelivery:
            the handoff releases the locks and rolls back to ``dispatching``.
         """
 
-        if not self.ensure_canary(tenant_id):
-            return "canary_unavailable"  # stays pending; the beat retries
         claimed = self._claim(execution_key, tenant_id)
         if isinstance(claimed, str):
             return claimed
@@ -196,6 +212,12 @@ class EmailDelivery:
             if reason is not None:
                 self._block(conn, row, action, reason)
                 return "blocked"
+            # Durable proof that this attempt may reach SMTP, committed on a separate
+            # connection before the first byte is sent (the handoff transaction itself
+            # rolls back if the worker dies). Without it, recovery knows the attempt
+            # never reached SMTP and may retry; with it, a missing receipt is never
+            # taken as proof of non-delivery.
+            self._record_smtp_start(row)
             message = build_message(
                 sender=self.settings.mail_from,
                 recipient=version.recipient_email,
@@ -320,69 +342,14 @@ class EmailDelivery:
         store.set_action(conn, row.action_id, status="delivered", reason=reason)
         self._audit(conn, row, owner, "allow", reason, mailpit_id=mailpit_id)
 
-    # -- receipt history -------------------------------------------------------------
-
-    def ensure_canary(self, tenant_id: UUID) -> bool:
-        """Make sure the tenant has an active receipt-history canary in Mailpit (sent and
-        recorded before any send it will vouch for)."""
-
-        with tenant_transaction(self.engine, tenant_id) as conn:
-            if store.active_canary(conn) is not None:
-                return True
-        canary_id = uuid.uuid4()
-        domain = self.settings.mail_message_id_domain
-        message_id = f"<canary-{canary_id}@{domain}>"
-        recipient = f"receipt-canary@{domain}"
-        message = build_message(
-            sender=self.settings.mail_from,
-            recipient=recipient,
-            subject="Enterprise AI OS receipt-history canary (do not delete)",
-            body="Kept so the application can tell whether this mail store still holds"
-            " the history of earlier sends. Deleting it makes uncertain sends stay"
-            " uncertain instead of being retried.",
-            message_id=message_id,
-        )
-        message["X-EAIOS-Canary"] = "1"
-        try:
-            self.mailer.send(message, _address(self.settings.mail_from), recipient)
-        except (NotSent, Rejected, Ambiguous):
-            return False
-        with tenant_transaction(self.engine, tenant_id) as conn:
-            created = store.insert_canary(
-                conn,
-                canary_id=canary_id,
-                tenant_id=tenant_id,
-                message_id=message_id,
-                recipient=recipient,
+    def _record_smtp_start(self, row: store.OutboxRow) -> None:
+        assert self.marker_engine is not None  # noqa: S101 - set in __post_init__
+        with tenant_transaction(self.marker_engine, row.tenant_id) as conn:
+            store.record_smtp_attempt(
+                conn, tenant_id=row.tenant_id, execution_key=row.execution_key, attempt=row.attempts
             )
-            record_audit_event(
-                conn,
-                request_id=None,
-                tenant_id=tenant_id,
-                user_id=None,
-                event_type="action.email",
-                action="email.receipt_canary",
-                decision="info",
-                reason="canary_created" if created else "canary_exists",
-                details={"canary_id": str(canary_id)},
-            )
-        return True
-
-    def _history_covers(self, conn: Any, row: store.OutboxRow) -> bool:
-        """True only if Mailpit still holds a canary accepted before this send's claim,
-        i.e. its receipt history covers the send (it was not reset, pruned or replaced
-        by a non-persistent store since)."""
-
-        if row.claimed_at is None:
-            return False
-        canary = store.covering_canary(conn, row.claimed_at)
-        if canary is None:
-            return False
-        found = self.lookup.find(canary.message_id, canary.recipient)  # may raise
-        if found is None:
-            store.mark_canary(conn, canary.id, "missing")
-            return False
-        return True
+        if hook := self.hooks.get("smtp_started"):
+            hook(row)
 
     # -- recovery ------------------------------------------------------------------
 
@@ -421,8 +388,17 @@ class EmailDelivery:
         return "uncertain"
 
     def reconcile(self, execution_key: UUID, tenant_id: UUID) -> str:
-        """Resolve an uncertain send against Mailpit by Message-ID and recipient. Absence
-        counts only while Mailpit's receipt history provably covers the send."""
+        """Resolve an uncertain send.
+
+        * No SMTP-start record for the current attempt: the attempt provably never
+          reached SMTP (it died between the claim and the handoff), so it is re-queued
+          with the same key and Message-ID. The claim and handoff re-check everything.
+        * SMTP may have been reached: look the Message-ID and recipient up in Mailpit.
+          Found -> delivered, no resend. Absent -> it stays ``uncertain``
+          (``receipt_missing_after_smtp``): a missing receipt does not prove the server
+          never accepted it (it may have been deleted or pruned), so it is never re-sent
+          automatically. Mailpit unreachable -> stays uncertain.
+        """
 
         with tenant_transaction(self.engine, tenant_id) as conn:
             locked = store.lock_action_then_outbox(conn, execution_key, skip_locked=True)
@@ -433,11 +409,23 @@ class EmailDelivery:
             action, row = locked
             if row.status != "uncertain":
                 return "not_uncertain"
+            if not store.smtp_attempted(conn, execution_key, row.attempts):
+                store.update_outbox(
+                    conn,
+                    execution_key,
+                    status="pending",
+                    status_reason="never_reached_smtp_retry",
+                    dispatched_at=None,
+                )
+                store.set_action(
+                    conn, action.id, status="queued", reason="never_reached_smtp_retry"
+                )
+                self._audit(conn, row, action.owner_user_id, "info", "never_reached_smtp_retry")
+                return "requeued"
             version = store.load_version(conn, row.action_id, row.version)
             assert version is not None  # noqa: S101
             try:
                 found = self.lookup.find(row.message_id, version.recipient_email)
-                covered = found is not None or self._history_covers(conn, row)
             except MailpitUnavailable as exc:
                 self._audit(
                     conn,
@@ -451,38 +439,12 @@ class EmailDelivery:
             if found is not None:
                 self._mark_delivered(conn, row, action.owner_user_id, found, "reconciled_found")
                 return "delivered"
-            if not covered:
-                store.update_outbox(
-                    conn, execution_key, status_reason="receipt_history_unavailable"
-                )
-                store.set_action(
-                    conn, action.id, status="uncertain", reason="receipt_history_unavailable"
-                )
-                self._audit(conn, row, action.owner_user_id, "info", "receipt_history_unavailable")
-                return "history_unavailable"
-            checks = row.reconcile_checks + 1
-            if checks < self.settings.email_reconcile_absent_checks:
-                store.update_outbox(conn, execution_key, reconcile_checks=checks)
-                self._audit(
-                    conn, row, action.owner_user_id, "info", "reconcile_absent", checks=checks
-                )
-                return "absent"
-            # Confirmed absent from a store whose history covers the send: safe to try
-            # again with the same key and Message-ID. The claim and the handoff re-run
-            # every access check and look Mailpit up once more.
-            store.update_outbox(
-                conn,
-                execution_key,
-                status="pending",
-                reconcile_checks=0,
-                status_reason="reconciled_absent_retry",
-                dispatched_at=None,
-            )
-            store.set_action(conn, action.id, status="queued", reason="reconciled_absent_retry")
-            self._audit(
-                conn, row, action.owner_user_id, "info", "reconciled_absent_retry", checks=checks
-            )
-        return "requeued"
+            reason = "receipt_missing_after_smtp"
+            if row.status_reason != reason:
+                store.update_outbox(conn, execution_key, status_reason=reason)
+                store.set_action(conn, action.id, status="uncertain", reason=reason)
+                self._audit(conn, row, action.owner_user_id, "info", reason)
+        return "receipt_missing"
 
 
 def _address(mail_from: str) -> str:

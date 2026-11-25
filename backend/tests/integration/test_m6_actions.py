@@ -92,7 +92,6 @@ def make_client(
             "SMTP_PORT": port,
             "MAILPIT_API_URL": api,
             "EMAIL_DISPATCH_LEASE_SECONDS": 1,
-            "EMAIL_RECONCILE_ABSENT_CHECKS": 1,
             **overrides,
         }
         app = create_app(
@@ -762,14 +761,17 @@ def test_crash_after_claim_before_dispatch_is_reconciled_and_sent_once(
     worker = state.action_worker
     assert worker.tick()["stale"] == ["uncertain"]
     assert outbox(actions_db, draft["action_id"]).status == "uncertain"
-    assert worker.tick()["reconcile"] == ["requeued"]  # confirmed absent from Mailpit
+    # No SMTP-start record for attempt 1: it provably never reached SMTP.
+    assert smtp_attempts(actions_db, row.execution_key) == []
+    assert worker.tick()["reconcile"] == ["requeued"]
     assert worker.tick()["deliver"] == ["delivered"]
     row = outbox(actions_db, draft["action_id"])
     assert row.status == "delivered" and row.attempts == 2
+    assert smtp_attempts(actions_db, row.execution_key) == [2]
     assert len(mailpit_messages(mailpit[2], row.message_id)) == 1
     trail = audit_reasons(actions_db, draft["action_id"])
     assert "email.deliver:info:dispatch_lease_expired" in trail
-    assert "email.deliver:info:reconciled_absent_retry" in trail
+    assert "email.deliver:info:never_reached_smtp_retry" in trail
 
 
 def test_crash_after_mailpit_acceptance_is_reconciled_without_resending(
@@ -872,17 +874,28 @@ class RevokeDuringSmtp:
         self.inner, self.db = inner, db
         self.thread: threading.Thread | None = None
         self.blocked_during_smtp = False
+        self.membership_during_smtp: int | None = None
 
     def send(self, message: EmailMessage, sender: str, recipient: str) -> Accepted:
-        if message["X-EAIOS-Canary"]:
-            return self.inner.send(message, sender, recipient)
         self.thread = threading.Thread(
             target=_membership, args=(self.db, RECIPIENT, False), daemon=True
         )
         self.thread.start()
         self.thread.join(0.5)
         self.blocked_during_smtp = self.thread.is_alive()
+        self.membership_during_smtp = _membership_count(self.db, RECIPIENT)
         return self.inner.send(message, sender, recipient)
+
+
+def _membership_count(db: DbHarness, ref: str) -> int:
+    tenant = db.foundation.tenants["niletech"]
+    return int(
+        owner_exec(
+            db,
+            "SELECT count(*) FROM group_memberships WHERE group_id = :g AND user_id = :u",
+            {"g": tenant.groups["finance-team"].id, "u": user_id(db, ref)},
+        ).scalar_one()
+    )
 
 
 def test_revocation_during_the_handoff_waits_until_the_outcome_is_recorded(
@@ -895,65 +908,107 @@ def test_revocation_during_the_handoff_waits_until_the_outcome_is_recorded(
     mailer = RevokeDuringSmtp(SmtpMailer(host, port, 5), actions_db)
     client = make_client(mailer=mailer)
     delivery = app_state(client).email_delivery
-    delivery.mailer = SmtpMailer(host, port, 5)
-    assert delivery.ensure_canary(actions_db.foundation.tenants["niletech"].id)
-    delivery.mailer = mailer
     _, _draft, row = queued(client, actions_db, recipient)
+    assert _membership_count(actions_db, RECIPIENT) == 1  # something to revoke
     try:
         assert delivery.deliver(row.execution_key, row.tenant_id) == "delivered"
         assert mailer.thread is not None
         mailer.thread.join(10)
-        assert mailer.blocked_during_smtp and not mailer.thread.is_alive()
+        # While SMTP ran, the revocation had not committed (it waited on the lock)...
+        assert mailer.membership_during_smtp == 1
+        assert mailer.blocked_during_smtp
+        # ...and it committed once the outcome was recorded.
+        assert not mailer.thread.is_alive()
+        assert _membership_count(actions_db, RECIPIENT) == 0
     finally:
         _membership(actions_db, RECIPIENT, present=True)
     assert len(mailpit_messages(api, row.message_id)) == 1
 
 
-def _delete_canary_from_mailpit(db: DbHarness, api: str) -> None:
-    tenant = db.foundation.tenants["niletech"].id
-    message_id = owner_exec(
-        db,
-        "SELECT message_id FROM mail_receipt_canaries WHERE tenant_id = :t AND status = 'active'",
-        {"t": tenant},
-    ).scalar_one()
-    ids = [m["ID"] for m in mailpit_messages(api, message_id)]
-    assert ids
-    httpx.request("DELETE", f"{api}/api/v1/messages", json={"IDs": ids}, timeout=5)
+class CountingMailer:
+    """The real SMTP mailer, counting every SMTP attempt the application makes."""
+
+    def __init__(self, inner: SmtpMailer) -> None:
+        self.inner, self.calls = inner, 0
+
+    def send(self, message: EmailMessage, sender: str, recipient: str) -> Accepted:
+        self.calls += 1
+        return self.inner.send(message, sender, recipient)
 
 
-def test_lost_receipt_history_keeps_the_send_uncertain(
+def smtp_attempts(db: DbHarness, execution_key: Any) -> list[int]:
+    return list(
+        owner_exec(
+            db,
+            "SELECT attempt FROM email_smtp_attempts WHERE execution_key = :k ORDER BY attempt",
+            {"k": execution_key},
+        ).scalars()
+    )
+
+
+def test_receipt_deleted_after_acceptance_stays_uncertain_and_is_never_resent(
     make_client: Callable[..., TestClient],
     actions_db: DbHarness,
     recipient: str,
     mailpit: tuple[str, int, str],
 ) -> None:
-    """Mailpit no longer holds the history that would prove absence (reset, pruned or a
-    non-persistent store): the send must stay uncertain, never be retried."""
+    """Mailpit accepts the email, the worker crashes before recording confirmation, and
+    only that email is deleted from Mailpit (other messages, including older receipts,
+    are untouched). Absence no longer proves the attempt never reached SMTP, so the
+    delivery stays uncertain and no second SMTP attempt is made."""
 
-    client = make_client()
-    _, draft, row = queued(client, actions_db, recipient)
+    host, port, api = mailpit
+    mailer = CountingMailer(SmtpMailer(host, port, 5))
+    client = make_client(mailer=mailer)
+    # An earlier, confirmed delivery whose receipt stays in Mailpit throughout.
+    _, _, earlier = queued(client, actions_db, recipient)
     delivery = app_state(client).email_delivery
-    delivery.hooks["before_smtp"] = _crash
-    with pytest.raises(SimulatedCrash):
-        delivery.deliver(row.execution_key, row.tenant_id)
-    delivery.hooks.clear()
-    _delete_canary_from_mailpit(actions_db, mailpit[2])
-    time.sleep(1.2)
+    assert delivery.deliver(earlier.execution_key, earlier.tenant_id) == "delivered"
+
+    _, draft, row = queued(client, actions_db, recipient)
+    delivery.hooks["after_accept"] = _crash
+    try:
+        with pytest.raises(SimulatedCrash):
+            delivery.deliver(row.execution_key, row.tenant_id)
+    finally:
+        delivery.hooks.clear()
+    assert mailer.calls == 2
+    assert smtp_attempts(actions_db, row.execution_key) == [1]
+    deadline = time.monotonic() + 10
+    while not mailpit_messages(api, row.message_id) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    (accepted,) = mailpit_messages(api, row.message_id)
+    assert outbox(actions_db, draft["action_id"]).confirmed_at is None
+
+    # Delete only that email.
+    deleted = httpx.request(
+        "DELETE", f"{api}/api/v1/messages", json={"IDs": [accepted["ID"]]}, timeout=5
+    )
+    deleted.raise_for_status()
+    assert mailpit_messages(api, row.message_id) == []
+    assert len(mailpit_messages(api, earlier.message_id)) == 1
+
+    time.sleep(1.2)  # lease expires
     worker = app_state(client).action_worker
     try:
         assert worker.tick()["stale"] == ["uncertain"]
         for _ in range(3):
-            assert worker.tick()["reconcile"] == ["history_unavailable"]
+            assert worker.tick()["reconcile"] == ["receipt_missing"]
         final = outbox(actions_db, draft["action_id"])
         assert final.status == "uncertain"
-        assert final.status_reason == "receipt_history_unavailable" and final.attempts == 1
-        assert mailpit_messages(mailpit[2], row.message_id) == []
+        assert final.status_reason == "receipt_missing_after_smtp"
+        assert final.attempts == 1 and final.confirmed_at is None
+        assert mailer.calls == 2  # no second SMTP attempt
+        assert smtp_attempts(actions_db, row.execution_key) == [1]
+        assert mailpit_messages(api, row.message_id) == []
         shown = client.get(
             f"/api/v1/actions/email-drafts/{draft['action_id']}",
             headers=auth(login(client, actions_db, FINANCE)),
         ).json()
         assert shown["status"] == "uncertain"
-        assert shown["status_reason"] == "receipt_history_unavailable"
+        assert shown["status_reason"] == "receipt_missing_after_smtp"
+        trail = audit_reasons(actions_db, draft["action_id"])
+        assert trail.count("email.deliver:info:receipt_missing_after_smtp") == 1
     finally:
         # Operator resolution so later tests' scheduler passes are not affected.
         owner_exec(
@@ -962,8 +1017,6 @@ def test_lost_receipt_history_keeps_the_send_uncertain(
             " WHERE execution_key = :k",
             {"k": row.execution_key},
         )
-    # A fresh canary is established for later sends.
-    assert delivery.ensure_canary(actions_db.foundation.tenants["niletech"].id)
 
 
 def _restart_mailpit(api: str) -> None:
@@ -1121,9 +1174,7 @@ class AcceptThenTimeout:
         self.inner = inner
 
     def send(self, message: EmailMessage, sender: str, recipient: str) -> Accepted:
-        accepted = self.inner.send(message, sender, recipient)
-        if message["X-EAIOS-Canary"]:
-            return accepted  # the receipt-history canary goes through normally
+        self.inner.send(message, sender, recipient)
         raise Ambiguous("TimeoutError after DATA")
 
 
@@ -1189,10 +1240,6 @@ def test_unreachable_smtp_before_data_is_retried_safely(
 ) -> None:
     client = make_client(mailer=SmtpMailer("127.0.0.1", 9, 0.5))
     delivery = app_state(client).email_delivery
-    tenant = actions_db.foundation.tenants["niletech"].id
-    delivery.mailer = SmtpMailer(mailpit[0], mailpit[1], 5)
-    assert delivery.ensure_canary(tenant)  # receipt history exists before the outage
-    delivery.mailer = SmtpMailer("127.0.0.1", 9, 0.5)
     token, draft, approval = flow_to_approval(client, actions_db, recipient)
     assert send(client, token, draft, approval["approval_token"]).status_code == 202
     deadline = time.monotonic() + 5
@@ -1364,7 +1411,7 @@ def test_migration_0012_upgrades_and_downgrades_cleanly() -> None:
         tables = owner_exec(
             db, "SELECT count(*) FROM pg_tables WHERE tablename LIKE 'email_%'"
         ).scalar_one()
-        assert tables == 4
+        assert tables == 5  # actions, versions, approvals, outbox, smtp_attempts
         owner_exec(
             db,
             "UPDATE tenant_settings SET enabled_packs = enabled_packs || ARRAY['actions'],"

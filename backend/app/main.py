@@ -91,6 +91,7 @@ def create_app(  # noqa: PLR0915
         for pool in (dispatcher, ingest_dispatcher, email_dispatcher):
             if isinstance(pool, InlineDispatcher):
                 pool.shutdown()
+        delivery.close()
         if components is not None:
             components.close()
         else:

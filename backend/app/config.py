@@ -184,10 +184,6 @@ class Settings(BaseSettings):
         default=120, alias="EMAIL_DISPATCH_LEASE_SECONDS", ge=1, le=3600
     )
     email_max_attempts: int = Field(default=3, alias="EMAIL_MAX_ATTEMPTS", ge=1, le=10)
-    # Absent-from-Mailpit checks needed before an uncertain send may be retried.
-    email_reconcile_absent_checks: int = Field(
-        default=2, alias="EMAIL_RECONCILE_ABSENT_CHECKS", ge=1, le=10
-    )
 
     sse_poll_interval_seconds: float = Field(
         default=0.5, alias="SSE_POLL_INTERVAL_SECONDS", gt=0, le=5

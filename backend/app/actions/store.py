@@ -579,64 +579,28 @@ def update_occurrence(conn: Connection, occurrence_id: UUID, **values: Any) -> N
     )
 
 
-# -- receipt-history canaries ----------------------------------------------------------
+# -- SMTP-start records -----------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class CanaryRow:
-    id: UUID
-    message_id: str
-    recipient: str
-    accepted_at: datetime
-
-
-def active_canary(conn: Connection) -> CanaryRow | None:
-    row = conn.execute(
+def record_smtp_attempt(
+    conn: Connection, *, tenant_id: UUID, execution_key: UUID, attempt: int
+) -> None:
+    conn.execute(
         text(
-            "SELECT id, message_id, recipient, accepted_at FROM mail_receipt_canaries"
-            " WHERE status = 'active'"
-        )
-    ).one_or_none()
-    return CanaryRow(row.id, row.message_id, row.recipient, row.accepted_at) if row else None
-
-
-def covering_canary(conn: Connection, before: datetime) -> CanaryRow | None:
-    """The newest canary accepted before ``before`` (any status)."""
-
-    row = conn.execute(
-        text(
-            "SELECT id, message_id, recipient, accepted_at, status FROM mail_receipt_canaries"
-            " WHERE accepted_at <= :b ORDER BY accepted_at DESC LIMIT 1"
+            "INSERT INTO email_smtp_attempts (tenant_id, execution_key, attempt)"
+            " VALUES (:t, :k, :a) ON CONFLICT DO NOTHING"
         ),
-        {"b": before},
-    ).one_or_none()
-    if row is None or row.status != "active":
-        return None
-    return CanaryRow(row.id, row.message_id, row.recipient, row.accepted_at)
-
-
-def insert_canary(
-    conn: Connection, *, canary_id: UUID, tenant_id: UUID, message_id: str, recipient: str
-) -> bool:
-    return (
-        conn.execute(
-            text(
-                "INSERT INTO mail_receipt_canaries (id, tenant_id, message_id, recipient)"
-                " VALUES (:id, :t, :m, :r) ON CONFLICT DO NOTHING"
-            ),
-            {"id": canary_id, "t": tenant_id, "m": message_id, "r": recipient},
-        ).rowcount
-        == 1
+        {"t": tenant_id, "k": execution_key, "a": attempt},
     )
 
 
-def mark_canary(conn: Connection, canary_id: UUID, status: str) -> None:
-    conn.execute(
-        text(
-            "UPDATE mail_receipt_canaries SET status = :s, checked_at = clock_timestamp()"
-            " WHERE id = :id"
-        ),
-        {"s": status, "id": canary_id},
+def smtp_attempted(conn: Connection, execution_key: UUID, attempt: int) -> bool:
+    return (
+        conn.execute(
+            text("SELECT 1 FROM email_smtp_attempts WHERE execution_key = :k AND attempt = :a"),
+            {"k": execution_key, "a": attempt},
+        ).first()
+        is not None
     )
 
 
