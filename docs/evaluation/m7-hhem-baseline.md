@@ -4,6 +4,24 @@ Status: **scorer built, pinned and code-reviewed; round trip tested with synthet
 - **No real HHEM run yet.** Real scoring is blocked: no dev pair has human labels, so `--export-inputs` has nothing to export. HHEM also runs only on the Colab GPU (project rule: no models on laptops).
 - **Out of scope:** no fine-tuning; no threshold was chosen.
 
+## Revision 2 (PR #14 review)
+
+1. **The runtime is checked before any download.** The order is now:
+   - the inputs are verified;
+   - the runtime must be **Google Colab, with torch, CUDA and a Tesla T4** (the measured target), otherwise the scorer exits with code 2 **without calling `fetch`**;
+   - the pinned files are downloaded and verified;
+   - the files are staged into load directories.
+
+   `--allow-cpu` is removed. Other GPUs (A100, L4) are refused, so latency is always measured on the target.
+2. **Only hash-verified files are loaded.**
+   - **Clean staging:** after download, only the pinned files are copied into fresh, empty load directories (`<cache>/load/hhem`, `<cache>/load/flan-t5-base`, recreated each run) and re-verified there.
+   - **Exact contents:** the backend refuses any load directory whose contents are not exactly the pinned files.
+   - **Offline:** loading stays offline (`HF_HUB_OFFLINE=1`, `local_files_only=True`).
+   - **Private module cache:** `trust_remote_code` modules are imported from a private, empty `HF_MODULES_CACHE`, so only the verified code can be imported.
+   - **Why it matters:** with the pinned transformers 4.56.2 tokenizer, an extra `added_tokens.json` beside the flan-t5-base files changes the token ids (28 → 30 tokens on the HHEM prompt). A real-tokenizer test shows that staging removes this effect.
+
+**Colab compatibility smoke test: not run.** No Colab GPU was available in this session. Loading under transformers 4.56.2 and reproducing the model card examples are still open (gap 2).
+
 ## What it does
 
 `ml/hhem-baseline/hhem_score.py`:
@@ -69,6 +87,13 @@ The model loads with `trust_remote_code`, so the two Python files run inside our
   - extra `.py` files are refused;
   - a weights hash mismatch is refused.
 * **Decision rule:** 0.5 → unsupported, just above 0.5 → supported; scores outside [0, 1] fail.
+* **Runtime gate (revision 2):** this test machine (not Colab, no torch) exits with code 2 without calling `fetch`. So does each simulated unsupported runtime: not Colab, no torch, no CUDA, A100, L4. A supported T4 runtime is checked after the inputs and before `fetch`. `--allow-cpu` is rejected.
+* **Clean staging (revision 2):**
+  - only pinned files are staged, and a stale extra file in an old load directory is removed;
+  - a tampered source file fails staging;
+  - `main()` hands the backend only the staged directories, not the download directories that hold an extra `added_tokens.json` and `extra.py`;
+  - the backend refuses a load directory with unexpected files, before importing torch.
+* **Real tokenizer (CI job `checker-tokenizer`, `ml/hhem-baseline/tests/test_tokenizer_isolation.py`):** this uses the pinned flan-t5-base files and transformers 4.56.2. An `added_tokens.json` loaded directly changes the ids; after staging the ids equal the clean baseline.
 
 ## Reproduction
 

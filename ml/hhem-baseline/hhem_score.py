@@ -5,6 +5,14 @@ Output: a predictions JSONL that the runner's ``--scorer predictions`` accepts.
 
     python hhem_score.py --inputs inputs.jsonl --out predictions.jsonl --cache-dir /content/hhem
 
+Order of checks: (1) the inputs are verified; (2) the runtime must be the supported
+Colab GPU runtime (Colab, CUDA, a Tesla T4, the project's measured target), otherwise the
+scorer exits with code 2 before downloading anything; (3) the pinned files are downloaded
+and verified; (4) **only** those files are copied into fresh, empty load directories,
+re-verified there, and loaded offline, with a private, empty dynamic-module cache. Nothing
+else in a cache directory (for example an ``added_tokens.json``) can reach the tokenizer
+or the model.
+
 Pins and review (see the HHEM baseline write-up, m7-hhem-baseline.md under docs):
   * ``vectara/hallucination_evaluation_model`` at HHEM_REVISION. Its custom code
     (``configuration_hhem_v2.py``, ``modeling_hhem_v2.py``) was reviewed at that revision.
@@ -27,10 +35,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import platform
+import shutil
 import sys
+import tempfile
 import time
 import urllib.request
 from collections.abc import Sequence
@@ -70,6 +81,14 @@ class InputError(ValueError):
 
 class PinError(RuntimeError):
     """A downloaded or cached file does not match its pinned SHA-256."""
+
+
+class RuntimeUnsupported(RuntimeError):
+    """Not the supported Colab GPU runtime: nothing is downloaded or scored."""
+
+
+SUPPORTED_GPUS = ("Tesla T4",)  # the measured target (ml/gpu-feasibility T4 report)
+EXIT_UNSUPPORTED_RUNTIME = 2
 
 
 # ----------------------------------------------------------- digests (= the runner's)
@@ -125,28 +144,110 @@ def verify_file(path: Path, pinned: str) -> None:
         raise PinError(f"{path.name}: sha256 {digest} != pinned {pinned}")
 
 
+def fetch_repo(cache_dir: Path, repo: str, revision: str, files: dict[str, str]) -> Path:
+    """Download (if absent) and verify one repo's pinned files into the download cache."""
+
+    target = cache_dir / "download" / f"{repo.replace('/', '--')}--{revision}"
+    target.mkdir(parents=True, exist_ok=True)
+    for name, pinned in files.items():
+        path = target / name
+        if not path.is_file():
+            url = f"https://huggingface.co/{repo}/resolve/{revision}/{name}"
+            tmp = path.with_suffix(path.suffix + ".part")
+            with urllib.request.urlopen(url, timeout=600) as resp, tmp.open("wb") as fh:  # noqa: S310
+                while chunk := resp.read(1 << 20):
+                    fh.write(chunk)
+            tmp.replace(path)
+        verify_file(path, pinned)
+    return target
+
+
 def fetch(cache_dir: Path) -> tuple[Path, Path]:
     """Download (if absent) and verify every pinned file. Returns (hhem_dir, flan_dir)."""
 
-    dirs = []
-    for repo, revision, files in (
-        (HHEM_REPO, HHEM_REVISION, HHEM_FILES),
-        (FLAN_REPO, FLAN_REVISION, FLAN_FILES),
-    ):
-        target = cache_dir / f"{repo.replace('/', '--')}--{revision}"
-        target.mkdir(parents=True, exist_ok=True)
-        for name, pinned in files.items():
-            path = target / name
-            if not path.is_file():
-                url = f"https://huggingface.co/{repo}/resolve/{revision}/{name}"
-                tmp = path.with_suffix(path.suffix + ".part")
-                with urllib.request.urlopen(url, timeout=600) as resp, tmp.open("wb") as fh:  # noqa: S310
-                    while chunk := resp.read(1 << 20):
-                        fh.write(chunk)
-                tmp.replace(path)
-            verify_file(path, pinned)
-        dirs.append(target)
-    return dirs[0], dirs[1]
+    return (
+        fetch_repo(cache_dir, HHEM_REPO, HHEM_REVISION, HHEM_FILES),
+        fetch_repo(cache_dir, FLAN_REPO, FLAN_REVISION, FLAN_FILES),
+    )
+
+
+def verify_exact_dir(directory: Path, files: dict[str, str]) -> None:
+    """The directory holds exactly the pinned files, each with its pinned hash."""
+
+    present = sorted(p.name for p in directory.iterdir())
+    if present != sorted(files):
+        unexpected = sorted(set(present) - set(files))
+        missing = sorted(set(files) - set(present))
+        raise PinError(f"{directory}: unexpected {unexpected}, missing {missing}")
+    for name, pinned in files.items():
+        verify_file(directory / name, pinned)
+
+
+def stage(source: Path, files: dict[str, str], load_dir: Path) -> Path:
+    """Copy only the pinned files into a fresh, empty load directory and verify them there."""
+
+    if load_dir.exists():
+        shutil.rmtree(load_dir)
+    load_dir.mkdir(parents=True)
+    for name in files:
+        shutil.copyfile(source / name, load_dir / name)
+    verify_exact_dir(load_dir, files)
+    return load_dir
+
+
+def stage_all(cache_dir: Path, hhem_src: Path, flan_src: Path) -> tuple[Path, Path]:
+    load = cache_dir / "load"
+    return (
+        stage(hhem_src, HHEM_FILES, load / "hhem"),
+        stage(flan_src, FLAN_FILES, load / "flan-t5-base"),
+    )
+
+
+# ------------------------------------------------------------------------ runtime
+def _on_colab() -> bool:
+    if "COLAB_RELEASE_TAG" in os.environ:
+        return True
+    try:
+        return importlib.util.find_spec("google.colab") is not None
+    except ModuleNotFoundError:  # no "google" package at all
+        return False
+
+
+def probe_runtime() -> dict[str, Any]:
+    """What this process runs on. Imports torch only if it is installed."""
+
+    info: dict[str, Any] = {
+        "colab": _on_colab(),
+        "torch": None,
+        "cuda": False,
+        "device_name": None,
+    }
+    if importlib.util.find_spec("torch") is None:
+        return info
+    import torch  # noqa: PLC0415 - GPU environment only
+
+    info["torch"] = torch.__version__
+    info["cuda"] = bool(torch.cuda.is_available())
+    if info["cuda"]:
+        info["device_name"] = torch.cuda.get_device_name(0)
+    return info
+
+
+def check_runtime(info: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Require the supported Colab GPU runtime; raise ``RuntimeUnsupported`` otherwise."""
+
+    info = info if info is not None else probe_runtime()
+    if not info.get("colab"):
+        raise RuntimeUnsupported("not a Google Colab runtime")
+    if info.get("torch") is None:
+        raise RuntimeUnsupported("torch is not installed")
+    if not info.get("cuda"):
+        raise RuntimeUnsupported("no CUDA device (select a GPU runtime)")
+    if info.get("device_name") not in SUPPORTED_GPUS:
+        raise RuntimeUnsupported(
+            f"GPU {info.get('device_name')!r} is not a supported target {SUPPORTED_GPUS}"
+        )
+    return info
 
 
 def verify_reviewed_code(hhem_dir: Path) -> None:
@@ -177,11 +278,16 @@ class HhemBackend:
 
     def __init__(self, hhem_dir: Path, flan_dir: Path, device: str) -> None:
         verify_reviewed_code(hhem_dir)
-        for name, pinned in FLAN_FILES.items():
-            verify_file(flan_dir / name, pinned)
-        verify_file(hhem_dir / "model.safetensors", HHEM_FILES["model.safetensors"])
+        # Load directories must hold exactly the pinned files (see ``stage``).
+        verify_exact_dir(hhem_dir, HHEM_FILES)
+        verify_exact_dir(flan_dir, FLAN_FILES)
         os.environ["HF_HUB_OFFLINE"] = "1"  # nothing unpinned can be fetched from here on
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        # transformers copies trust_remote_code modules into HF_MODULES_CACHE and imports
+        # them from there; a private empty cache means only the verified code is importable.
+        if "transformers" in sys.modules:
+            raise RuntimeUnsupported("transformers was imported before the module cache was set")
+        os.environ["HF_MODULES_CACHE"] = tempfile.mkdtemp(prefix="hhem-modules-")
         import torch  # noqa: PLC0415 - GPU environment only
         import transformers  # noqa: PLC0415
         from transformers import AutoConfig, AutoModelForSequenceClassification  # noqa: PLC0415
@@ -283,23 +389,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--inputs", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--cache-dir", type=Path, default=Path("/content/hhem-pinned"))
-    ap.add_argument("--allow-cpu", action="store_true",
-                    help="permit CPU (not the T4 latency measurement)")  # fmt: skip
     args = ap.parse_args(argv)
-    inputs = read_inputs(args.inputs)  # fail on stale or edited inputs before any download
-    hhem_dir, flan_dir = fetch(args.cache_dir)
-    import torch  # noqa: PLC0415 - GPU environment only
-
-    if torch.cuda.is_available():
-        device = "cuda"
-    elif args.allow_cpu:
-        device = "cpu"
-    else:
-        print("no CUDA device: run on the Colab GPU (or pass --allow-cpu)", file=sys.stderr)
-        return 2
-    text = score_inputs(inputs, HhemBackend(hhem_dir, flan_dir, device))
+    inputs = read_inputs(args.inputs)  # 1. stale or edited inputs fail before anything else
+    try:
+        runtime = check_runtime()  # 2. the supported Colab GPU runtime, before any download
+    except RuntimeUnsupported as exc:
+        print(f"unsupported runtime: {exc}; nothing was downloaded", file=sys.stderr)
+        return EXIT_UNSUPPORTED_RUNTIME
+    hhem_src, flan_src = fetch(args.cache_dir)  # 3. pinned downloads, verified
+    hhem_dir, flan_dir = stage_all(args.cache_dir, hhem_src, flan_src)  # 4. clean load dirs
+    text = score_inputs(inputs, HhemBackend(hhem_dir, flan_dir, "cuda"))
     args.out.write_text(text, "utf-8")
-    print(f"scored {len(inputs.rows)} pairs on {device}; wrote {args.out}")
+    print(f"scored {len(inputs.rows)} pairs on {runtime['device_name']}; wrote {args.out}")
     return 0
 
 

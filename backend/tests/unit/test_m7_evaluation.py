@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import csv
 import datetime as dt
+import hashlib
 import json
 import re
 import shutil
@@ -2037,3 +2038,161 @@ def test_hhem_decision_is_the_models_argmax_and_scores_are_bounded(
     assert [r["predicted"] for r in rows[:3]] == ["unsupported", "supported", "unsupported"]
     with pytest.raises(RuntimeError, match="outside"):
         hhem.score_inputs(inputs, _FixedBackend([1.2] * len(inputs.rows)))
+
+
+# ------------------------------------------- HHEM re-review: runtime gate and staging
+class _Reached(Exception):
+    pass
+
+
+def _no_fetch(*_: Any) -> Any:
+    raise AssertionError("fetch must not be called on an unsupported runtime")
+
+
+def test_unsupported_runtime_exits_without_fetching(
+    agreed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, _, inputs_path = _export(agreed, tmp_path)
+    monkeypatch.setattr(hhem, "fetch", _no_fetch)
+    out = tmp_path / "o.jsonl"
+    # This test machine itself: not Colab, no torch, no GPU.
+    assert hhem.main(["--inputs", str(inputs_path), "--out", str(out)]) == 2
+    assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    ("info", "reason"),
+    [
+        ({"colab": False, "torch": "2.8", "cuda": True, "device_name": "Tesla T4"}, "not a Google Colab"),
+        ({"colab": True, "torch": None, "cuda": False, "device_name": None}, "torch is not installed"),
+        ({"colab": True, "torch": "2.8", "cuda": False, "device_name": None}, "no CUDA device"),
+        ({"colab": True, "torch": "2.8", "cuda": True, "device_name": "NVIDIA A100-SXM4-40GB"}, "not a supported target"),
+        ({"colab": True, "torch": "2.8", "cuda": True, "device_name": "NVIDIA L4"}, "not a supported target"),
+    ],
+)  # fmt: skip
+def test_each_unsupported_runtime_is_refused_before_fetch(
+    agreed: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    info: dict[str, Any],
+    reason: str,
+) -> None:
+    _, _, inputs_path = _export(agreed, tmp_path)
+    monkeypatch.setattr(hhem, "probe_runtime", lambda: info)
+    monkeypatch.setattr(hhem, "fetch", _no_fetch)
+    assert hhem.main(["--inputs", str(inputs_path), "--out", str(tmp_path / "o.jsonl")]) == 2
+    assert reason in capsys.readouterr().err
+
+
+def test_supported_runtime_is_checked_after_inputs_and_before_fetch(
+    agreed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, _, inputs_path = _export(agreed, tmp_path)
+    order: list[str] = []
+    t4 = {"colab": True, "torch": "2.8", "cuda": True, "device_name": "Tesla T4"}
+
+    def probe() -> dict[str, Any]:
+        order.append("runtime")
+        return t4
+
+    monkeypatch.setattr(hhem, "probe_runtime", probe)
+
+    def fetch(_: Path) -> Any:
+        order.append("fetch")
+        raise _Reached
+
+    monkeypatch.setattr(hhem, "fetch", fetch)
+    with pytest.raises(_Reached):
+        hhem.main(["--inputs", str(inputs_path), "--out", str(tmp_path / "o.jsonl")])
+    assert order == ["runtime", "fetch"]
+
+
+def test_allow_cpu_is_gone() -> None:
+    with pytest.raises(SystemExit):
+        hhem.main(["--inputs", "x", "--out", "y", "--allow-cpu"])
+
+
+def _pinned_tree(root: Path, files: dict[str, bytes]) -> dict[str, str]:
+    root.mkdir(parents=True, exist_ok=True)
+    for name, data in files.items():
+        (root / name).write_bytes(data)
+    return {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}
+
+
+def test_staging_copies_only_pinned_files_and_drops_extra_added_tokens(tmp_path: Path) -> None:
+    src = tmp_path / "download" / "flan"
+    pins = _pinned_tree(src, {"tokenizer.json": b'{"model": 1}', "spiece.model": b"spm"})
+    (src / "added_tokens.json").write_text('{"Premise": 32100}')  # not pinned
+    load = tmp_path / "load" / "flan"
+    load.mkdir(parents=True)
+    (load / "added_tokens.json").write_text('{"stale": 1}')  # left over in an old load dir
+    staged = hhem.stage(src, pins, load)
+    assert sorted(p.name for p in staged.iterdir()) == ["spiece.model", "tokenizer.json"]
+    with pytest.raises(hhem.PinError, match=r"unexpected \['added_tokens.json'\]"):
+        hhem.verify_exact_dir(src, pins)
+    (src / "spiece.model").write_bytes(b"tampered")
+    with pytest.raises(hhem.PinError, match=re.escape("spiece.model: sha256")):
+        hhem.stage(src, pins, load)
+
+
+def test_scorer_loads_only_from_the_clean_staged_dirs(
+    agreed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, _, inputs_path = _export(agreed, tmp_path)
+    code = {"configuration_hhem_v2.py": b"# c\n", "modeling_hhem_v2.py": b"# m\n"}
+    hhem_pins = _pinned_tree(
+        tmp_path / "src-hhem", {**code, "config.json": b"{}", "model.safetensors": b"w"}
+    )
+    flan_pins = _pinned_tree(tmp_path / "src-flan", {"tokenizer.json": b"{}", "spiece.model": b"s"})
+    (tmp_path / "src-flan" / "added_tokens.json").write_text('{"Premise": 32100}')
+    (tmp_path / "src-hhem" / "extra.py").write_text("import os\n")
+    monkeypatch.setattr(hhem, "HHEM_FILES", hhem_pins)
+    monkeypatch.setattr(hhem, "FLAN_FILES", flan_pins)
+    t4 = {"colab": True, "torch": "2.8", "cuda": True, "device_name": "Tesla T4"}
+    monkeypatch.setattr(hhem, "probe_runtime", lambda: t4)
+    monkeypatch.setattr(hhem, "fetch", lambda _: (tmp_path / "src-hhem", tmp_path / "src-flan"))
+    seen: dict[str, list[str]] = {}
+
+    class Recorder(hhem.SyntheticBackend):  # type: ignore[misc, name-defined]
+        def __init__(self, hhem_dir: Path, flan_dir: Path, device: str) -> None:
+            hhem.verify_exact_dir(hhem_dir, hhem.HHEM_FILES)
+            hhem.verify_exact_dir(flan_dir, hhem.FLAN_FILES)
+            seen["hhem"] = sorted(p.name for p in hhem_dir.iterdir())
+            seen["flan"] = sorted(p.name for p in flan_dir.iterdir())
+            seen["device"] = [device]
+
+    monkeypatch.setattr(hhem, "HhemBackend", Recorder)
+    out = tmp_path / "o.jsonl"
+    assert (
+        hhem.main(
+            [
+                "--inputs",
+                str(inputs_path),
+                "--out",
+                str(out),
+                "--cache-dir",
+                str(tmp_path / "cache"),
+            ]
+        )
+        == 0
+    )
+    assert seen == {"hhem": ["config.json", "configuration_hhem_v2.py", "model.safetensors",
+                             "modeling_hhem_v2.py"],
+                    "flan": ["spiece.model", "tokenizer.json"], "device": ["cuda"]}  # fmt: skip
+    assert out.exists()
+
+
+def test_backend_refuses_load_dirs_with_unexpected_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code = {"configuration_hhem_v2.py": b"# c\n", "modeling_hhem_v2.py": b"# m\n"}
+    hhem_pins = _pinned_tree(
+        tmp_path / "hhem", {**code, "config.json": b"{}", "model.safetensors": b"w"}
+    )
+    flan_pins = _pinned_tree(tmp_path / "flan", {"tokenizer.json": b"{}"})
+    (tmp_path / "flan" / "added_tokens.json").write_text('{"Premise": 32100}')
+    monkeypatch.setattr(hhem, "HHEM_FILES", hhem_pins)
+    monkeypatch.setattr(hhem, "FLAN_FILES", flan_pins)
+    with pytest.raises(hhem.PinError, match=r"unexpected \['added_tokens.json'\]"):
+        hhem.HhemBackend(tmp_path / "hhem", tmp_path / "flan", "cuda")  # before torch import

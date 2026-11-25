@@ -9,4 +9,5 @@ all pinned by SHA-256. The full write-up, including the code review, is
 ```bash
 pip install -r requirements.txt            # torch comes from the Colab runtime
 python hhem_score.py --inputs inputs.jsonl --out predictions.jsonl --cache-dir /content/hhem-pinned
+# Requires a Colab GPU runtime with a Tesla T4; otherwise it exits (code 2) before downloading.
 ```

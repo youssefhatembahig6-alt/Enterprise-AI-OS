@@ -219,6 +219,9 @@ jobs:
           --pairs backend/fixtures/evaluation/m7/checker/batch-001/pairs.jsonl
           --tokenizer-dir /tmp/deberta-tokenizer
           --check backend/fixtures/evaluation/m7/checker/batch-001/token-lengths.json
+      - name: HHEM staging keeps an extra added_tokens.json out of the tokenizer (required)
+        # Downloads only the five pinned flan-t5-base config/tokenizer files (~3 MB).
+        run: /tmp/tok-env/bin/python -m unittest ml/hhem-baseline/tests/test_tokenizer_isolation.py -v
 
   compose:
     runs-on: ubuntu-24.04
