@@ -1,0 +1,11 @@
+{
+  "budget_hours": 2200,
+  "client": "Fayoum Agritech",
+  "hours_used_percent": 69,
+  "next_milestone_date": "2026-07-22",
+  "period_end": "2026-05-31",
+  "project": "PRJ-FAY-07",
+  "sector": "agriculture",
+  "status": "red",
+  "workstream": "data migration"
+}

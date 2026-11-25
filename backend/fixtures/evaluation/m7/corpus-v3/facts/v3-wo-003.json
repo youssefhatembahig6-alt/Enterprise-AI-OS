@@ -1,0 +1,14 @@
+{
+  "actual_egp": 11000,
+  "asset": "standby generator",
+  "closed": "2026-04-08",
+  "estimate_egp": 11000,
+  "labour_hours": 11,
+  "priority": "P3",
+  "raised": "2026-04-03",
+  "reference": "WO-2026-0003",
+  "response_hours": 72,
+  "site": "New Capital Tower 4",
+  "technicians": 3,
+  "vendor": "Sphinx Electromech"
+}

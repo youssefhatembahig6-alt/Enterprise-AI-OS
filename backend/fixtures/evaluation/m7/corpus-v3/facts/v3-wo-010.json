@@ -1,0 +1,14 @@
+{
+  "actual_egp": 73500,
+  "asset": "standby generator",
+  "closed": "2026-06-15",
+  "estimate_egp": 69250,
+  "labour_hours": 13,
+  "priority": "P2",
+  "raised": "2026-06-09",
+  "reference": "WO-2026-0010",
+  "response_hours": 24,
+  "site": "Sidi Gaber Hub",
+  "technicians": 2,
+  "vendor": "Sphinx Electromech"
+}

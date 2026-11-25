@@ -1,0 +1,11 @@
+{
+  "budget_hours": 5920,
+  "client": "Rosetta Grain Exchange",
+  "hours_used_percent": 45,
+  "next_milestone_date": "2026-04-22",
+  "period_end": "2026-04-11",
+  "project": "PRJ-ROS-11",
+  "sector": "commodity trading",
+  "status": "green",
+  "workstream": "integration build"
+}

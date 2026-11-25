@@ -1,0 +1,11 @@
+{
+  "budget_hours": 3480,
+  "client": "Abydos Pharmaceuticals",
+  "hours_used_percent": 67,
+  "next_milestone_date": "2026-03-23",
+  "period_end": "2026-03-07",
+  "project": "PRJ-ABY-06",
+  "sector": "pharmaceutical",
+  "status": "amber",
+  "workstream": "data migration"
+}

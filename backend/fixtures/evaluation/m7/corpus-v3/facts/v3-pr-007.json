@@ -1,0 +1,26 @@
+{
+  "awarded_to": "Luxor Tech Trading",
+  "director_approval": false,
+  "item": "ergonomic chairs",
+  "quantity": 6,
+  "quotes": [
+    {
+      "delivery_days": 23,
+      "supplier": "Giza Office Supply",
+      "unit_egp": 5510
+    },
+    {
+      "delivery_days": 9,
+      "supplier": "Luxor Tech Trading",
+      "unit_egp": 1990
+    },
+    {
+      "delivery_days": 25,
+      "supplier": "Port Said Distributors",
+      "unit_egp": 3550
+    }
+  ],
+  "raised": "2026-04-03",
+  "reference": "PR-26-007",
+  "total_egp": 11940
+}

@@ -1,0 +1,26 @@
+{
+  "awarded_to": "Port Said Distributors",
+  "director_approval": false,
+  "item": "noise-cancelling headsets",
+  "quantity": 26,
+  "quotes": [
+    {
+      "delivery_days": 13,
+      "supplier": "Giza Office Supply",
+      "unit_egp": 6560
+    },
+    {
+      "delivery_days": 10,
+      "supplier": "Luxor Tech Trading",
+      "unit_egp": 5830
+    },
+    {
+      "delivery_days": 27,
+      "supplier": "Port Said Distributors",
+      "unit_egp": 1730
+    }
+  ],
+  "raised": "2026-06-20",
+  "reference": "PR-26-002",
+  "total_egp": 44980
+}

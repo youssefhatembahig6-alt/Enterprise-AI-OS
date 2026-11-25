@@ -1,0 +1,14 @@
+{
+  "actual_egp": 19000,
+  "asset": "fire-suppression panel",
+  "closed": "2026-05-08",
+  "estimate_egp": 13250,
+  "labour_hours": 4,
+  "priority": "P3",
+  "raised": "2026-04-29",
+  "reference": "WO-2026-0020",
+  "response_hours": 72,
+  "site": "Smart Village Block C",
+  "technicians": 4,
+  "vendor": "Pharos Building Care"
+}

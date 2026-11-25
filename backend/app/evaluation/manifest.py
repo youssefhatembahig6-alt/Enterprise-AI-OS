@@ -22,6 +22,7 @@ from app.evaluation.sources import (
     M7,
     SourceError,
     all_file_refs,
+    fresh_facts_path,
     sha256_file,
     source_path,
     split_ref,
@@ -171,7 +172,11 @@ def member_fingerprints(manifest: Manifest) -> dict[str, str]:
     out: dict[str, str] = {}
     for ref in sorted(manifest.member_family):
         path = source_path(ref)
-        if path is not None:
+        if path is not None and ref.startswith("fresh:"):
+            # A fresh document and its facts sidecar (the later claims' ground truth).
+            both = {"file": sha256_file(path), "facts": sha256_file(fresh_facts_path(ref))}
+            out[ref] = hashlib.sha256(json.dumps(both, sort_keys=True).encode()).hexdigest()
+        elif path is not None:
             out[ref] = sha256_file(path)
         else:
             tpl = manifest.sql_templates[split_ref(ref)[1]]

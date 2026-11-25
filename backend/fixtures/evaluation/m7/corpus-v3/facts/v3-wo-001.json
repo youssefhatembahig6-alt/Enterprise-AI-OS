@@ -1,0 +1,14 @@
+{
+  "actual_egp": 48250,
+  "asset": "UPS battery bank",
+  "closed": "2026-04-02",
+  "estimate_egp": 47250,
+  "labour_hours": 16,
+  "priority": "P3",
+  "raised": "2026-03-22",
+  "reference": "WO-2026-0001",
+  "response_hours": 72,
+  "site": "New Capital Tower 4",
+  "technicians": 2,
+  "vendor": "Sphinx Electromech"
+}

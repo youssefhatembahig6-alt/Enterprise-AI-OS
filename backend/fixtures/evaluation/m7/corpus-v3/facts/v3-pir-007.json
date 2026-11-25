@@ -1,0 +1,11 @@
+{
+  "action_due": "2026-06-16",
+  "action_owner": "Identity",
+  "affected_accounts": 22,
+  "cause": "a database connection pool sized for the previous release",
+  "duration_minutes": 75,
+  "reference": "INC-4107",
+  "service": "invoice export API",
+  "severity": 2,
+  "started": "2026-05-28T01:05"
+}

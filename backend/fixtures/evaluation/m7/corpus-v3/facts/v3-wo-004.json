@@ -1,0 +1,14 @@
+{
+  "actual_egp": 62500,
+  "asset": "standby generator",
+  "closed": "2026-03-18",
+  "estimate_egp": 60500,
+  "labour_hours": 5,
+  "priority": "P2",
+  "raised": "2026-03-08",
+  "reference": "WO-2026-0004",
+  "response_hours": 24,
+  "site": "Smart Village Block C",
+  "technicians": 4,
+  "vendor": "Karnak Facility Services"
+}

@@ -1,0 +1,11 @@
+{
+  "action_due": "2026-05-14",
+  "action_owner": "Site Reliability",
+  "affected_accounts": 15,
+  "cause": "a full disk on the message broker after log rotation stopped",
+  "duration_minutes": 66,
+  "reference": "INC-4118",
+  "service": "single sign-on gateway",
+  "severity": 2,
+  "started": "2026-04-19T14:05"
+}

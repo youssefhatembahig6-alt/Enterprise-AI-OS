@@ -1,0 +1,11 @@
+{
+  "action_due": "2026-06-22",
+  "action_owner": "Platform",
+  "affected_accounts": 110,
+  "cause": "a configuration flag enabled in production before its migration ran",
+  "duration_minutes": 174,
+  "reference": "INC-4110",
+  "service": "invoice export API",
+  "severity": 3,
+  "started": "2026-06-03T00:00"
+}

@@ -1,0 +1,11 @@
+{
+  "action_due": "2026-03-10",
+  "action_owner": "Platform",
+  "affected_accounts": 71,
+  "cause": "a database connection pool sized for the previous release",
+  "duration_minutes": 193,
+  "reference": "INC-4120",
+  "service": "document upload service",
+  "severity": 3,
+  "started": "2026-02-16T00:35"
+}
