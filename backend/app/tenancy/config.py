@@ -21,12 +21,14 @@ PACKS: dict[str, str] = {
     "sales_reports": "Verified sales reports over SQL (M2)",
     "legal": "Contract clause comparison and expiry answers with exact citations (M5)",
     "code": "Code answers over synced repositories with file, revision and line citations (M5)",
+    "actions": "Human-approved email drafts from verified reports and scheduled briefings (M6)",
 }
 CONNECTORS: dict[str, str] = {
     "upload": "Manual upload with explicit sharing",
     "google_drive": "Google Drive folder sync",
     "github": "GitHub repository sync (code)",
     "local_folder": "Desktop local folder with backend-assigned sharing",
+    "mailpit": "Development email delivery through Mailpit (approved sends only)",
 }
 SYNC_MODES: tuple[str, ...] = ("demo", "nightly")
 RUN_KIND_PACK: dict[str, str] = {

@@ -20,8 +20,8 @@ name = "NileTech Solutions"
   # M4 tenant configuration (15-minute demo sync), extended in M5 with the legal and
   # code packs and the GitHub and desktop local-folder connectors.
   [tenants.settings]
-  enabled_packs = ["documents", "sales_reports", "legal", "code"]
-  enabled_connectors = ["upload", "google_drive", "github", "local_folder"]
+  enabled_packs = ["documents", "sales_reports", "legal", "code", "actions"]
+  enabled_connectors = ["upload", "google_drive", "github", "local_folder", "mailpit"]
   sync_mode = "demo"
 
   [[tenants.roles]]

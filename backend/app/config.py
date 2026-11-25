@@ -165,6 +165,26 @@ class Settings(BaseSettings):
     # read-only token and the repositories it may sync (app/connectors/github.py).
     github_connector_config: str | None = Field(default=None, alias="GITHUB_CONNECTOR_CONFIG")
 
+    # M6 email actions: development delivery through Mailpit (SMTP) and reconciliation
+    # through Mailpit's HTTP API. No other mail server is supported in version 1.
+    smtp_host: str = Field(default="mailpit", alias="SMTP_HOST")
+    smtp_port: int = Field(default=1025, alias="SMTP_PORT", ge=1, le=65535)
+    smtp_timeout_seconds: float = Field(default=10.0, alias="SMTP_TIMEOUT_SECONDS", gt=0, le=60)
+    mailpit_api_url: str = Field(default="http://mailpit:8025", alias="MAILPIT_API_URL")
+    mail_from: str = Field(default="Enterprise AI OS <no-reply@eaios.local>", alias="MAIL_FROM")
+    mail_message_id_domain: str = Field(
+        default="eaios.local", alias="MAIL_MESSAGE_ID_DOMAIN", pattern=r"^[a-z0-9.-]{1,100}$"
+    )
+    action_approval_ttl_seconds: int = Field(
+        default=900, alias="ACTION_APPROVAL_TTL_SECONDS", ge=30, le=86400
+    )
+    # A claimed send older than this is treated as a possible crash: it becomes
+    # ``uncertain`` and is reconciled against Mailpit, never blindly retried.
+    email_dispatch_lease_seconds: int = Field(
+        default=120, alias="EMAIL_DISPATCH_LEASE_SECONDS", ge=1, le=3600
+    )
+    email_max_attempts: int = Field(default=3, alias="EMAIL_MAX_ATTEMPTS", ge=1, le=10)
+
     sse_poll_interval_seconds: float = Field(
         default=0.5, alias="SSE_POLL_INTERVAL_SECONDS", gt=0, le=5
     )

@@ -10,8 +10,13 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from redis import Redis
 
+from app.actions.briefings import ActionWorker, BriefingRunner
+from app.actions.delivery import EmailDelivery
+from app.actions.mail import Mailer, MailLookup, MailpitLookup, SmtpMailer
+from app.actions.service import ActionService
+from app.actions.store import mark_outbox_dispatched
 from app.admin.service import AdminService
-from app.api import admin, auth, documents, health, local_folders, reports
+from app.api import actions, admin, auth, documents, health, local_folders, reports
 from app.api.errors import install_error_handlers
 from app.config import Settings, get_settings
 from app.connectors.drive import ConnectorConfig, DriveClientFactory, http_client_factory
@@ -40,9 +45,12 @@ def create_app(  # noqa: PLR0915
     model: ModelClient | None = None,
     drive_clients: DriveClientFactory | None = None,
     github_clients: GitHubClientFactory | None = None,
+    mailer: Mailer | None = None,
+    mail_lookup: MailLookup | None = None,
 ) -> FastAPI:
     """Build the API. ``model``, ``drive_clients`` and ``github_clients`` override the
-    model client and the Google Drive / GitHub client factories (tests inject doubles)."""
+    model client and the Google Drive / GitHub client factories (tests inject doubles).
+    ``mailer`` / ``mail_lookup`` override SMTP delivery and the Mailpit lookup (M6)."""
 
     settings = settings or get_settings()
     configure_logging()
@@ -80,9 +88,10 @@ def create_app(  # noqa: PLR0915
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
-        for pool in (dispatcher, ingest_dispatcher):
+        for pool in (dispatcher, ingest_dispatcher, email_dispatcher):
             if isinstance(pool, InlineDispatcher):
                 pool.shutdown()
+        delivery.close()
         if components is not None:
             components.close()
         else:
@@ -92,13 +101,15 @@ def create_app(  # noqa: PLR0915
 
     app = FastAPI(
         title="Enterprise AI OS API",
-        version="0.5.0-m5",
+        version="0.6.0-m6",
         description=(
             "Identity, tenant isolation and health (M0); verified SQL reports (M2) and "
             "authorized document answers with exact citations (M3), streamed over "
             "Server-Sent Events; Google Drive sync, scoped administration and tenant "
             "configuration (M4); legal clause/expiry answers, GitHub repositories with "
-            "code citations and desktop local folders (M5)."
+            "code citations and desktop local folders (M5); human-approved email drafts from "
+            "verified reports delivered through a durable outbox to Mailpit, and "
+            "review-only scheduled briefings (M6)."
         ),
         lifespan=lifespan,
     )
@@ -124,6 +135,32 @@ def create_app(  # noqa: PLR0915
         reauthenticate=lambda token: identity.authenticate(token, request_id_var.get()),
     )
     app.state.report_runner = runner
+    # M6: email actions. With inline dispatch the API delivers on its own thread pool;
+    # with Celery the worker does and beat runs recovery, reconciliation and briefings.
+    delivery = EmailDelivery(
+        engine,
+        settings,
+        mailer or SmtpMailer(settings.smtp_host, settings.smtp_port, settings.smtp_timeout_seconds),
+        mail_lookup or MailpitLookup(settings.mailpit_api_url),
+    )
+    email_dispatcher = build_dispatcher(
+        settings,
+        delivery,
+        engine,
+        task="app.tasks.actions.deliver_email",
+        mark=mark_outbox_dispatched,
+    )
+    app.state.email_delivery = delivery
+    app.state.actions = ActionService(
+        engine, settings, email_dispatcher.dispatch if email_dispatcher else None
+    )
+    app.state.action_worker = ActionWorker(
+        engine,
+        settings,
+        delivery,
+        BriefingRunner(engine, app.state.reports.create_run_for),
+        None,
+    )
     app.state.ingestion_runner = components.ingestion if components else None
     app.state.documents = DocumentService(
         engine,
@@ -237,4 +274,5 @@ def create_app(  # noqa: PLR0915
     app.include_router(documents.router)
     app.include_router(admin.router)
     app.include_router(local_folders.router)
+    app.include_router(actions.router)
     return app

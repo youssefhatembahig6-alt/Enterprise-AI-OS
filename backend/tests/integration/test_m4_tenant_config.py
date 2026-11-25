@@ -29,8 +29,8 @@ def settings_of(m4: M4, ref: str) -> dict[str, Any]:
 
 
 # M5: the NileTech fixture enables the legal and code packs and two more connectors.
-NILE_PACKS = ["documents", "sales_reports", "legal", "code"]
-NILE_CONNECTORS = ["upload", "google_drive", "github", "local_folder"]
+NILE_PACKS = ["documents", "sales_reports", "legal", "code", "actions"]
+NILE_CONNECTORS = ["upload", "google_drive", "github", "local_folder", "mailpit"]
 
 
 def put_settings(m4: M4, body: dict[str, Any], ref: str = ADMIN) -> Any:
