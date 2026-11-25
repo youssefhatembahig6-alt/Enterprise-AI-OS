@@ -27,7 +27,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.actions.mail import Accepted, Ambiguous, MailpitLookup, SmtpMailer
+from app.actions.mail import Accepted, Ambiguous, MailpitLookup, SmtpMailer, build_message
 from app.db.engine import create_app_engine, tenant_transaction
 from app.main import create_app
 from tests.integration.conftest import (
@@ -1433,3 +1433,128 @@ def test_migration_0012_upgrades_and_downgrades_cleanly() -> None:
         packs = owner_exec(db, "SELECT enabled_packs FROM tenant_settings").scalars().all()
         assert all("actions" not in p for p in packs)
         migrate(db, "head")
+
+
+def test_upgrade_treats_pre_0014_attempts_as_possibly_sent(
+    stub_http_url: str, mailpit: tuple[str, int, str]
+) -> None:
+    """Attempts made by workers older than 0014 left no SMTP-start record. After the
+    upgrade they must count as possibly sent: delivered if Mailpit still has the
+    receipt, otherwise uncertain with no further SMTP call. A send that never had an
+    attempt is still delivered normally."""
+
+    from app.business_data.loader import import_sales_dataset
+    from app.business_data.model import normalize
+    from app.business_data.source import verify_vendored
+    from tests.integration.conftest import migrate
+
+    host, port, api = mailpit
+    with disposable_database(seed=True, revision="0013_mail_receipt_canaries") as db:
+        source = verify_vendored()
+        import_sales_dataset(db.owner_engine, source, normalize(source), environment="test")
+        to = user_id(db, RECIPIENT)
+        owner_exec(db, "UPDATE users SET status = 'active' WHERE id = :u", {"u": to})
+        settings = report_settings(
+            db,
+            stub_http_url,
+            SMTP_HOST=host,
+            SMTP_PORT=port,
+            MAILPIT_API_URL=api,
+            EMAIL_DISPATCH_LEASE_SECONDS=1,
+        )
+
+        # Before the upgrade: real drafts, approvals and queued sends (schema 0013).
+        rows: dict[str, Any] = {}
+        with TestClient(create_app(settings)) as old:
+            for case in (
+                "dispatching",
+                "requeued",
+                "uncertain_received",
+                "uncertain_lost",
+                "fresh",
+            ):
+                _, _, rows[case] = queued(old, db, to)
+
+        # What pre-0014 workers left behind (no email_smtp_attempts rows exist).
+        def leave(case: str, sql: str) -> None:
+            owner_exec(db, sql, {"k": rows[case].execution_key})
+
+        leave(
+            "dispatching",
+            "UPDATE email_outbox SET status = 'dispatching', attempts = 1,"
+            " claimed_at = now() - interval '1 hour' WHERE execution_key = :k",
+        )
+        # The old reconciliation re-queued an ambiguous attempt it could not find.
+        leave(
+            "requeued",
+            "UPDATE email_outbox SET status = 'pending', attempts = 1,"
+            " status_reason = 'reconciled_absent_retry', dispatched_at = NULL,"
+            " claimed_at = now() - interval '1 hour' WHERE execution_key = :k",
+        )
+        for case in ("uncertain_received", "uncertain_lost"):
+            leave(
+                case,
+                "UPDATE email_outbox SET status = 'uncertain', attempts = 1,"
+                " status_reason = 'smtp_ambiguous', uncertain_since = now(),"
+                " claimed_at = now() - interval '1 hour' WHERE execution_key = :k",
+            )
+        # Mailpit accepted that one before the old worker could record it.
+        SmtpMailer(host, port, 5).send(
+            build_message(
+                sender="Enterprise AI OS <no-reply@eaios.local>",
+                recipient=recipient_email(db),
+                subject="pre-0014 attempt",
+                body="accepted by Mailpit, never confirmed by the app",
+                message_id=rows["uncertain_received"].message_id,
+            ),
+            "no-reply@eaios.local",
+            recipient_email(db),
+        )
+        possibly_sent = ("dispatching", "requeued", "uncertain_received", "uncertain_lost")
+        for case in possibly_sent:
+            if case != "uncertain_received":
+                assert mailpit_messages(api, rows[case].message_id) == []
+
+        migrate(db, "head")
+
+        def state(case: str) -> Any:
+            return owner_exec(
+                db,
+                "SELECT status, status_reason, attempts FROM email_outbox WHERE execution_key = :k",
+                {"k": rows[case].execution_key},
+            ).one()
+
+        migrated = {case: state(case) for case in possibly_sent}
+        records = {case: smtp_attempts(db, rows[case].execution_key) for case in rows}
+        assert state("fresh").status == "pending"
+
+        mailer = CountingMailer(SmtpMailer(host, port, 5))
+        with TestClient(create_app(settings, mailer=mailer)) as new:
+            worker = app_state(new).action_worker
+            for _ in range(3):
+                worker.tick()
+        assert mailer.calls == 1  # only the send that never had an attempt
+        assert state("fresh").status == "delivered"
+        assert len(mailpit_messages(api, rows["fresh"].message_id)) == 1
+        received = state("uncertain_received")
+        assert (received.status, received.status_reason) == ("delivered", "reconciled_found")
+        assert len(mailpit_messages(api, rows["uncertain_received"].message_id)) == 1
+        for case in ("dispatching", "requeued", "uncertain_lost"):
+            final = state(case)
+            assert final.status == "uncertain", case
+            assert final.status_reason == "receipt_missing_after_smtp", case
+            assert final.attempts == 1, case  # no new attempt
+            assert mailpit_messages(api, rows[case].message_id) == [], case
+        # What the migration itself did (checked after the behaviour above).
+        for case in possibly_sent:
+            assert records[case] == [1], case
+            assert migrated[case].status == "uncertain", case
+            assert migrated[case].status_reason == "pre_0014_attempt_possibly_sent", case
+        assert records["fresh"] == []
+        actions = owner_exec(
+            db,
+            "SELECT a.status FROM email_actions a JOIN email_outbox o ON o.action_id = a.id"
+            " WHERE o.execution_key = :k",
+            {"k": rows["requeued"].execution_key},
+        ).scalar_one()
+        assert actions == "uncertain"

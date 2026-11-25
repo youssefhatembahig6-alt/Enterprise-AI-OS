@@ -37,11 +37,17 @@ Recorded 25 November 2026 on Debian 13, branch `feature/m6-wave-3-actions`. Sour
 
 The first full-suite run of this round failed 2 M6 tests that passed in isolation (`test_revocation_during_the_handoff_waits_until_the_outcome_is_recorded`, `test_receipt_deleted_after_acceptance_stays_uncertain_and_is_never_resent`). Their tracebacks were not kept. Both tests were hardened: the receipt test now waits for Mailpit to index the accepted message, as the older crash test does, and the revocation test checks its precondition and asserts that the membership row was still present during SMTP. Afterwards, the M6 module passed 3 runs out of 3 and the full suite 2 out of 2. One more full run, before the hardening, also passed.
 
+## Review round 3
+
+| Finding | Fix | Regression check | Result |
+| --- | --- | --- | --- |
+| Migration 0014 starts with no SMTP-start records, so an attempt made by an older M6 worker looked as if it had never reached SMTP and could be re-sent | Migration 0015: every unfinished outbox row with `attempts > 0` (`dispatching`, `uncertain`, and `pending` re-queued attempts) gets records for attempts `1..attempts` and becomes `uncertain` (`pre_0014_attempt_possibly_sent`); rows with no attempt are untouched | `::test_upgrade_treats_pre_0014_attempts_as_possibly_sent`. It builds a database at 0013 and queues five real sends through the API. It then puts them in pre-0014 worker states: claimed (`dispatching`), re-queued by the old reconciliation (`pending`, `reconciled_absent_retry`), uncertain with the message accepted by real Mailpit, uncertain with no receipt, and never attempted. After `upgrade head` and three scheduler passes with a counting mailer: exactly **1** SMTP call (the never-attempted send, delivered). The accepted one is `reconciled_found`. The other three stay `uncertain` (`receipt_missing_after_smtp`) with 1 attempt and nothing in Mailpit | passed. With 0015 turned into a no-op the test sees **4** SMTP calls (3 resends); with re-queued `pending` rows left out it sees **2** |
+
 ## Results
 
 | Check | Result |
 | --- | --- |
-| Backend full suite (host, against Compose PostgreSQL 17.6, Redis, Qdrant, persistent Mailpit v1.27.11; Mailpit restart enabled) | After review round 2: **882 passed, 0 failed, 0 skipped**, twice (314 s, 323 s); 46 of them M6 (38 integration incl. parametrized cases, 8 unit). Round 1: 882 passed. Before review: 874 passed |
+| Backend full suite (host, against Compose PostgreSQL 17.6, Redis, Qdrant, persistent Mailpit v1.27.11; Mailpit restart enabled) | After review round 3: **883 passed, 0 failed, 0 skipped**, twice (326 s, 322 s). After review round 2: **882 passed, 0 failed, 0 skipped**, twice (314 s, 323 s); 46 of them M6 (38 integration incl. parametrized cases, 8 unit). Round 1: 882 passed. Before review: 874 passed |
 | Ruff, Ruff format, Mypy (`app`, `tests`) | clean |
 | Web: ESLint, `tsc`, Vite build | clean |
 | Live demo (`scripts/m6_demo.py`, Compose, Celery worker) | all 6 steps passed before and after review rounds 1 and 2 (round 2 on migration 0014; the worker wrote the SMTP-start record for attempt 1); exactly one Mailpit message for the Message-ID |
