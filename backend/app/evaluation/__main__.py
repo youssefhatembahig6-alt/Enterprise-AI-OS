@@ -7,6 +7,8 @@ python -m app.evaluation build-pilot         regenerate the pilot datasets
 python -m app.evaluation build-corpus-v3     regenerate the v3 fresh corpus (deterministic)
 python -m app.evaluation overlap             fresh-vs-dev and cross-family overlap report
 python -m app.evaluation build-checker-batch silver checker pairs from the train split
+python -m app.evaluation checker-baselines --scorer {deberta,qwen-judge,predictions} [--out F]
+python -m app.evaluation checker-baselines --synthetic-selftest
 python -m app.evaluation report [--json]     dataset counts and label status
 python -m app.evaluation labels export --annotator ID [--out-dir DIR]
 python -m app.evaluation labels import --sheet A.csv --key A.key.json --sheet B.csv --key B.key.json
@@ -17,14 +19,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
+from app.config import Settings
+from app.evaluation import checker_baselines as cb
 from app.evaluation import checker_pairs, corpus_v3, freeze, labels, overlap
 from app.evaluation import manifest as mf
 from app.evaluation.checks import counts_report, format_report, run_checks
 from app.evaluation.pilot import write_pilot
 from app.evaluation.sources import M7
+from app.reporting.model_client import build_model_client
 
 
 def cmd_freeze(args: argparse.Namespace) -> int:
@@ -98,6 +104,64 @@ def cmd_build_checker_batch(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_checker_baselines(args: argparse.Namespace) -> int:
+    if args.synthetic_selftest:
+        report = cb.synthetic_selftest()
+    else:
+        label_dir = Path(args.label_dir) if args.label_dir else labels.LABEL_DIR
+        pairs, dataset = cb.dev_eval_set(label_dir)
+        if args.export_inputs:
+            if not pairs:
+                print("blocked: no human-reviewed dev pairs to export", file=sys.stderr)
+                return cb.EXIT_BLOCKED
+            Path(args.export_inputs).write_text(cb.export_inputs(pairs), "utf-8")
+            print(f"wrote {len(pairs)} inputs, inputs_sha256 {cb.inputs_digest(pairs)}")
+            return 0
+
+        def factory() -> cb.Scorer:
+            if args.scorer == "predictions":
+                if not args.predictions:
+                    raise SystemExit("--predictions FILE is required for --scorer predictions")
+                return cb.PredictionsScorer(Path(args.predictions), pairs)
+            settings = Settings(
+                DATABASE_URL=os.environ.get("DATABASE_URL", "postgresql+psycopg://unused@x/none"),
+                REDIS_URL=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+                QDRANT_URL=os.environ.get("QDRANT_URL", "http://localhost:6333"),
+                S3_ENDPOINT_URL=os.environ.get("S3_ENDPOINT_URL", "http://localhost:8333"),
+                JWT_SECRET=os.environ.get("JWT_SECRET", "checker-baselines-only-not-a-secret-0"),
+            )
+            client = build_model_client(settings)
+            if args.scorer == "deberta":
+                return cb.DebertaGatewayScorer(client, settings.checker_entailment_threshold)
+            return cb.QwenJudgeScorer(client)
+
+        if not args.scorer:
+            raise SystemExit("--scorer is required (or use --synthetic-selftest)")
+        try:
+            report = cb.run(factory, pairs, dataset)
+        except cb.BackendRejected as exc:
+            print(f"rejected: {exc}", file=sys.stderr)
+            return 4
+    text = json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(text, "utf-8")
+    summary = {k: report.get(k) for k in ("status", "reason", "not_a_result")}
+    summary["dataset"] = {
+        k: report["dataset"].get(k) for k in ("candidate_pairs", "human_reviewed_pairs")
+    }
+    if "metrics" in report:
+        m = report["metrics"]
+        summary["metrics"] = {
+            "unsupported": m["unsupported"],
+            "false_support_rate": m["false_support_rate"]["rate"],
+            "ece": m["calibration"]["ece"],
+            "latency_p50_ms": m["latency_per_claim"]["p50_ms"],
+        }
+    print(json.dumps({k: v for k, v in summary.items() if v is not None}, indent=2))
+    return cb.EXIT_BLOCKED if report["status"] == "blocked" else 0
+
+
 def cmd_overlap(_: argparse.Namespace) -> int:
     manifest, problems = freeze.check_snapshot(freeze.disk_reader())
     if manifest is None:
@@ -162,6 +226,18 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("build-corpus-v3").set_defaults(func=cmd_build_corpus_v3)
     sub.add_parser("overlap").set_defaults(func=cmd_overlap)
     sub.add_parser("build-checker-batch").set_defaults(func=cmd_build_checker_batch)
+    base = sub.add_parser("checker-baselines", help="score checker baselines on human dev labels")
+    base.add_argument("--scorer", choices=["deberta", "qwen-judge", "predictions"])
+    base.add_argument("--predictions", help="JSONL scores (e.g. HHEM-2.1-open from Colab)")
+    base.add_argument("--out", help="write the full JSON report here")
+    base.add_argument("--label-dir", help="human label directory (default: the pilot labels)")
+    base.add_argument("--export-inputs", help="write the exact scored inputs (with digests)")
+    base.add_argument(
+        "--synthetic-selftest",
+        action="store_true",
+        help="exercise the runner on synthetic inputs (not a result)",
+    )
+    base.set_defaults(func=cmd_checker_baselines)
     report = sub.add_parser("report")
     report.add_argument("--json", action="store_true")
     report.set_defaults(func=cmd_report)

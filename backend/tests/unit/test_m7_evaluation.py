@@ -1306,3 +1306,551 @@ def test_index_records_the_pinned_manifest_hashes() -> None:
     assert (entry["manifest_sha256"], entry["lock_sha256"]) == (
         cp.PIN.manifest_sha256, cp.PIN.lock_sha256
     )  # fmt: skip
+
+
+# ----------------------------------------------------------- checker baseline runner
+from app.evaluation import checker_baselines as cb  # noqa: E402
+from app.evaluation import checker_metrics as cm  # noqa: E402
+from app.reporting.model_client import ChatResult, CheckResult, FakeModelClient  # noqa: E402
+
+S, U = cm.SUPPORTED, cm.UNSUPPORTED
+
+
+def _synthetic_rows() -> list[cm.Scored]:
+    scorer = cb.SyntheticScorer()
+    out = []
+    for pair in cb.synthetic_pairs():
+        p, label, ms, _ = scorer.score(pair)
+        out.append(cm.Scored(pair.pair_id, pair.gold, p, label, ms, pair.change_type))
+    return out
+
+
+def test_unsupported_precision_recall_f1_and_false_support_rate_by_hand() -> None:
+    rows = _synthetic_rows()
+    assert cm.confusion(rows) == {"tp": 5, "fp": 1, "fn": 2, "tn": 4}
+    prf = cm.unsupported_prf(rows)
+    assert prf["precision"] == pytest.approx(5 / 6)
+    assert prf["recall"] == pytest.approx(5 / 7)
+    assert prf["f1"] == pytest.approx(2 * (5 / 6) * (5 / 7) / (5 / 6 + 5 / 7))
+    fsr = cm.false_support_rate(rows)
+    assert fsr["rate"] == pytest.approx(2 / 7)
+    assert (fsr["passed_wrong_claims"], fsr["gold_unsupported"]) == (2, 7)
+    assert fsr["wilson95"] == pytest.approx([0.0822, 0.6411], abs=1e-4)
+
+
+def test_calibration_by_hand() -> None:
+    cal = cm.calibration(_synthetic_rows())
+    # Ten equal-width bins; gaps .05, 2x.125, .2, .7, .4, .55, .6, .3, .2, 2x.075 over 12.
+    assert cal["ece"] == pytest.approx(3.4 / 12)
+    assert cal["mce"] == pytest.approx(0.7)
+    golds = [1] * 5 + [0] * 7
+    expected_brier = (
+        sum((p - g) ** 2 for p, g in zip(cb.SyntheticScorer.P, golds, strict=True)) / 12
+    )
+    assert cal["brier"] == pytest.approx(expected_brier)
+    assert sum(b["n"] for b in cal["bins"]) == 12 and cal["hard_labels"] is False
+    hard = [cm.Scored("a", S, 1.0, S, 1, "x"), cm.Scored("b", U, 1.0, S, 1, "x")]
+    hard_cal = cm.calibration(hard)
+    assert hard_cal["hard_labels"] is True and hard_cal["ece"] == pytest.approx(0.5)
+
+
+def test_accuracy_per_change_type_and_latency_by_hand() -> None:
+    rows = _synthetic_rows()
+    acc = {k: v["accuracy"] for k, v in cm.accuracy_by_change_type(rows).items()}
+    assert acc == {"entity": 1.0, "number": 0.5, "original": 0.8, "polarity": 0.0,
+                   "scope": 1.0, "wrong_evidence": 1.0}  # fmt: skip
+    lat = cm.latency(rows)
+    assert (lat["p50_ms"], lat["p95_ms"], lat["mean_ms"], lat["max_ms"]) == (11.0, 50.0, 16.0, 50.0)
+    assert cm.nearest_rank([3.0, 1.0, 2.0], 0.5) == 2.0 and cm.nearest_rank([], 0.5) is None
+
+
+def test_undefined_metrics_are_none_never_perfect() -> None:
+    only_supported = [cm.Scored("a", S, 0.9, S, 1, "x"), cm.Scored("b", S, 0.8, S, 1, "x")]
+    prf = cm.unsupported_prf(only_supported)
+    assert prf == {"precision": None, "recall": None, "f1": None}
+    assert cm.false_support_rate(only_supported)["rate"] is None
+    all_wrong = [cm.Scored("a", S, 0.1, U, 1, "x"), cm.Scored("b", U, 0.9, S, 1, "x")]
+    assert cm.unsupported_prf(all_wrong) == {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+    assert cm.wilson(0, 10) == pytest.approx((0.0, 0.2775), abs=1e-4)
+    assert cm.wilson(0, 0) is None
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        cm.Scored("a", "maybe", 0.5, S, 1, "x"),
+        cm.Scored("a", S, 0.5, "maybe", 1, "x"),
+        cm.Scored("a", S, 1.5, S, 1, "x"),
+    ],
+)
+def test_summarize_rejects_invalid_rows(row: cm.Scored) -> None:
+    with pytest.raises(ValueError):
+        cm.summarize([row])
+
+
+def test_scoring_is_blocked_without_human_dev_labels_and_never_creates_a_scorer(
+    tmp_path: Path,
+) -> None:
+    empty = tmp_path / "no-labels"
+    empty.mkdir()
+    pairs, dataset = cb.dev_eval_set(empty)
+    assert pairs == [] and dataset["candidate_pairs"] == 37
+    assert dataset["human_reviewed_pairs"] == 0
+
+    def must_not_be_called() -> cb.Scorer:
+        raise AssertionError("the model gateway must not be contacted when blocked")
+
+    report = cb.run(must_not_be_called, pairs, dataset)
+    assert report["status"] == "blocked" and "0 of 37" in report["reason"]
+    assert "metrics" not in report and "scorer" not in report
+
+
+def test_cli_reports_blocked_with_a_distinct_exit_code(tmp_path: Path) -> None:
+    from app.evaluation.__main__ import main
+
+    empty = tmp_path / "no-labels"
+    empty.mkdir()
+    argv = ["checker-baselines", "--scorer", "deberta", "--label-dir", str(empty)]
+    assert main(argv) == cb.EXIT_BLOCKED
+
+
+def _write_human_labels(label_dir: Path, decide: Callable[[dict[str, Any]], str]) -> None:
+    label_dir.mkdir(parents=True, exist_ok=True)
+    rev = lab.dataset_revision()
+    for name in ("ann-a", "ann-b"):
+        with (label_dir / f"gold-{name}.csv").open("w", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=lab.LABEL_COLUMNS)
+            writer.writeheader()
+            for pair in lab.gold_pairs():
+                writer.writerow({"pair_id": pair["id"], "label": decide(pair), "note": "",
+                                 "dataset_revision": rev})  # fmt: skip
+
+
+def test_eval_set_uses_human_labels_only_never_proposals(tmp_path: Path) -> None:
+    # Test-only synthetic "human" labels: the opposite of every AI proposal.
+    flip = {S: U, U: S}
+    _write_human_labels(tmp_path, lambda p: flip[p["proposed_label"]])
+    pairs, dataset = cb.dev_eval_set(tmp_path)
+    proposals = {p["id"]: p["proposed_label"] for p in lab.gold_pairs()}
+    assert len(pairs) == dataset["human_reviewed_pairs"] == 37
+    assert all(p.gold == flip[proposals[p.pair_id]] for p in pairs)
+    assert dataset["label_files_sha256"].keys() == {"gold-ann-a.csv", "gold-ann-b.csv"}
+
+
+def test_single_labels_and_open_disagreements_are_never_scored(tmp_path: Path) -> None:
+    ids = [p["id"] for p in lab.gold_pairs()]
+    rev = lab.dataset_revision()
+    _write_rows(tmp_path / "gold-ann-a.csv", [
+        {"pair_id": ids[0], "label": "supported", "note": "", "dataset_revision": rev},
+        {"pair_id": ids[1], "label": "supported", "note": "", "dataset_revision": rev},
+        {"pair_id": ids[2], "label": "supported", "note": "", "dataset_revision": rev},
+    ])  # fmt: skip
+    _write_rows(tmp_path / "gold-ann-b.csv", [
+        {"pair_id": ids[0], "label": "supported", "note": "", "dataset_revision": rev},
+        {"pair_id": ids[1], "label": "unsupported", "note": "", "dataset_revision": rev},
+    ])  # fmt: skip
+    pairs, _ = cb.dev_eval_set(tmp_path)
+    assert [p.pair_id for p in pairs] == [ids[0]]  # agreed only; ids[1] pending, ids[2] single
+
+
+@pytest.mark.parametrize(
+    ("split", "sources", "message"),
+    [
+        ("train", None, "not a dev pilot pair"),
+        ("dev", ["fresh:v3-wo-001"], "undeclared evidence|cites non-dev sources"),
+        ("dev", ["fresh:v3-ps-001"], "undeclared evidence|cites non-dev sources"),
+    ],
+)
+def test_eval_set_refuses_non_dev_pairs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, split: str, sources: Any, message: str
+) -> None:
+    real = lab.gold_pairs()
+    tainted = copy.deepcopy(real)
+    tainted[0]["split"] = split
+    if sources:
+        tainted[0]["sources"] = sources
+    monkeypatch.setattr(lab, "gold_pairs", lambda: tainted)
+    with pytest.raises(cb.SplitViolation, match=message):
+        cb.dev_eval_set(tmp_path)
+
+
+def test_eval_set_follows_the_frozen_dev_selection(tmp_path: Path) -> None:
+    m7 = tmp_path / "m7"
+    m7.mkdir()
+    for name in ("frozen-snapshots.json", "split-manifest-v3.toml", "split-manifest-v3.lock.json"):
+        shutil.copy(M7 / name, m7 / name)
+    v4_text = V3_TEXT.replace(
+        'version = 3\nname = "m7-split-v3"', 'version = 4\nname = "m7-split-v4"'
+    ).replace('id = "hr-leave-policy"\nsplit = "dev"', 'id = "hr-leave-policy"\nsplit = "heldout"')
+    v4 = mf.parse_manifest(v4_text)[0]
+    lock_text = mf.lock_text(mf.build_lock(v4, "split-manifest-v4.toml"))
+    (m7 / "split-manifest-v4.toml").write_text(v4_text)
+    (m7 / "split-manifest-v4.lock.json").write_text(lock_text)
+    snaps = json.loads((m7 / "frozen-snapshots.json").read_text())
+    snaps["manifests"]["m7-split-v4"] = {
+        "manifest": "split-manifest-v4.toml", "lock": "split-manifest-v4.lock.json",
+        "manifest_sha256": freeze._sha(v4_text), "lock_sha256": freeze._sha(lock_text),
+        "frozen_at": "2026-12-01", "status": "active",
+    }  # fmt: skip
+    snaps["active"] = "m7-split-v4"
+    (m7 / "frozen-snapshots.json").write_text(json.dumps(snaps))
+    with pytest.raises(cb.SplitViolation, match="doc:hr-leave-policy"):
+        cb.dev_eval_set(tmp_path / "labels", m7)
+
+
+_EVAL_PROBE = r"""
+import json, sys
+events = []
+sys.addaudithook(lambda e, a: events.append(str(a[0])) if e in ("open", "os.listdir", "os.scandir") else None)
+from pathlib import Path
+from app.evaluation import checker_baselines as cb
+pairs, dataset = cb.dev_eval_set(Path(sys.argv[1]))
+report = cb.run(lambda: None, pairs, dataset)
+print(json.dumps({"events": events, "status": report["status"]}))
+"""
+
+
+def test_the_runner_never_opens_train_heldout_or_corpus_files(tmp_path: Path) -> None:
+    done = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", _EVAL_PROBE, str(tmp_path)], cwd=mf.REPO / "backend",
+        capture_output=True,
+        check=True,
+    )  # fmt: skip
+    out = json.loads(done.stdout)
+    assert out["status"] == "blocked"
+    touched = out["events"]
+    assert not [p for p in touched if "corpus-v3" in p or "/checker/" in p]
+    assert not [p for p in touched if any(k in p for k in HELDOUT_KEYS)]
+    assert not [p for p in touched if "blind" in p.lower()]
+
+
+def test_deberta_scorer_uses_the_gateway_check_at_the_configured_threshold() -> None:
+    client = FakeModelClient(checker=lambda premise, claim: CheckResult(0.62, 0.3, 0.08))
+    scorer = cb.DebertaGatewayScorer(client, threshold=0.7)
+    pair = cb.synthetic_pairs()[0]
+    p, label, ms, extra = scorer.score(pair)
+    assert (p, label) == (0.62, U) and ms >= 0 and extra["contradiction"] == 0.08
+    desc = scorer.describe()
+    assert desc["operating_point"]["threshold"] == 0.7
+    assert "not selected" in desc["operating_point"]["provenance"]
+
+
+class _JudgeStub:
+    def __init__(self, answers: list[str]) -> None:
+        self.answers = answers
+
+    def describe(self) -> dict[str, Any]:
+        return {"chat": {"model": "Qwen/Qwen3-8B-AWQ", "revision": "pinned"}}
+
+    def served_models(self) -> Any:
+        return type("S", (), {"summary": lambda self: {"stub": True}})()
+
+    def chat(self, messages: list[dict[str, str]], **_: Any) -> ChatResult:
+        return ChatResult(self.answers.pop(0), "stop", 1, 0.01, 0.02)
+
+
+@pytest.mark.parametrize(
+    ("answer", "label", "unparseable"),
+    [("SUPPORTED", S, False), ("Unsupported.", U, False), ("NOT supported", U, False),
+     ("maybe", U, True), ("", U, True)],
+)  # fmt: skip
+def test_qwen_judge_parses_one_word_answers_and_fails_closed(
+    answer: str, label: str, unparseable: bool
+) -> None:
+    scorer = cb.QwenJudgeScorer(_JudgeStub([answer]))  # type: ignore[arg-type]
+    p, got, _, extra = scorer.score(cb.synthetic_pairs()[0])
+    assert (got, extra["unparseable"], p) == (label, unparseable, 1.0 if label == S else 0.0)
+
+
+def test_synthetic_selftest_is_marked_and_matches_the_hand_computed_metrics() -> None:
+    report = cb.synthetic_selftest()
+    assert (
+        report["status"] == "synthetic-selftest" and "no model was scored" in report["not_a_result"]
+    )
+    m = report["metrics"]
+    assert m["unsupported"]["recall"] == pytest.approx(5 / 7)
+    assert m["false_support_rate"]["rate"] == pytest.approx(2 / 7)
+    assert m["calibration"]["ece"] == pytest.approx(3.4 / 12)
+    assert len(report["predictions"]) == 12 and report["runtime"]["python"]
+
+
+# ------------------------------------------------- baseline runner re-review (PR #13)
+import httpx  # noqa: E402
+
+from app.config import Settings  # noqa: E402
+from app.reporting.model_client import GatewayModelClient  # noqa: E402
+
+_PINNED_HEALTH: dict[str, Any] = {
+    "models": {
+        "chat": {
+            "model": "Qwen/Qwen3-8B-AWQ",
+            "revision": "4da05a8edb55c6046cce958586c33b61da07bb79",
+        },
+        "checker": {
+            "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+            "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb",
+        },
+    },
+    "engine": {"gpu_memory_utilization": 0.75, "max_model_len": 4096},
+}
+
+
+def _gateway_settings() -> Settings:
+    return Settings(
+        DATABASE_URL="postgresql+psycopg://x@localhost/none",
+        REDIS_URL="redis://localhost:6379/0",
+        QDRANT_URL="http://localhost:6333",
+        S3_ENDPOINT_URL="http://localhost:8333",
+        JWT_SECRET="unit-test-secret-unit-test-secret-0000",
+        LLM_BASE_URL="https://gpu-gateway.example.test/eaios",
+        MODEL_GATEWAY_TOKEN="service-token-for-tests-only",
+        MODEL_MODE="gateway",
+    )
+
+
+class _MockGateway:
+    """An in-process gateway (httpx.MockTransport): no network, records every request."""
+
+    def __init__(self, health: dict[str, Any]) -> None:
+        self.health = health
+        self.paths: list[str] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path.removeprefix("/eaios")
+        self.paths.append(path)
+        if path == "/health":
+            return httpx.Response(200, json=self.health)
+        if path == "/check":
+            n = len(json.loads(request.content)["pairs"])
+            return httpx.Response(
+                200,
+                json={"results": [{"entailment": 0.7, "neutral": 0.2, "contradiction": 0.1}] * n},
+            )
+        return httpx.Response(404)
+
+    def client(self) -> GatewayModelClient:
+        return GatewayModelClient(_gateway_settings(), transport=httpx.MockTransport(self))
+
+
+@pytest.fixture
+def agreed(tmp_path: Path) -> Path:
+    """Test-only agreeing labels from two annotators (the AI proposals, copied)."""
+
+    label_dir = tmp_path / "labels"
+    _write_human_labels(label_dir, lambda p: p["proposed_label"])
+    return label_dir
+
+
+# 1. fake inference is rejected before any example is sent
+def test_fake_inference_is_rejected_before_any_example(agreed: Path) -> None:
+    pairs, dataset = cb.dev_eval_set(agreed)
+    calls: list[str] = []
+
+    def checker(premise: str, claim: str) -> CheckResult:
+        calls.append(claim)
+        return CheckResult(0.9, 0.05, 0.05)
+
+    fake = FakeModelClient(checker=checker)
+    with pytest.raises(cb.BackendRejected, match="MODEL_MODE=gateway, got fake"):
+        cb.run(lambda: cb.DebertaGatewayScorer(fake, 0.5), pairs, dataset)
+    with pytest.raises(cb.BackendRejected, match="got fake"):
+        cb.run(lambda: cb.QwenJudgeScorer(fake), pairs, dataset)
+    with pytest.raises(cb.BackendRejected, match="only for --synthetic-selftest"):
+        cb.run(cb.SyntheticScorer, pairs, dataset)
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "health",
+    [
+        {**_PINNED_HEALTH, "models": {"chat": _PINNED_HEALTH["models"]["chat"]}},  # no checker
+        {**_PINNED_HEALTH, "models": {**_PINNED_HEALTH["models"],
+                                      "checker": {"model": "other/nli", "revision": "abc"}}},
+    ],
+)  # fmt: skip
+def test_wrong_or_missing_served_checker_is_rejected_before_any_example(
+    agreed: Path, health: dict[str, Any]
+) -> None:
+    pairs, dataset = cb.dev_eval_set(agreed)
+    gateway = _MockGateway(health)
+    with pytest.raises(cb.BackendRejected):
+        cb.run(lambda: cb.DebertaGatewayScorer(gateway.client(), 0.5), pairs, dataset)
+    assert "/check" not in gateway.paths
+
+
+def test_cli_rejects_fake_mode_with_its_own_exit_code(
+    agreed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.evaluation import __main__ as cli
+
+    monkeypatch.setenv("MODEL_MODE", "fake")
+    assert cli.main(["checker-baselines", "--scorer", "deberta", "--label-dir", str(agreed)]) == 4
+
+
+# 5. agreed labels reach the scoring path, with no real gateway
+def test_agreed_labels_are_scored_through_the_gateway_path_without_a_real_gateway(
+    agreed: Path,
+) -> None:
+    pairs, dataset = cb.dev_eval_set(agreed)
+    assert len(pairs) == 37
+    gateway = _MockGateway(_PINNED_HEALTH)
+    report = cb.run(lambda: cb.DebertaGatewayScorer(gateway.client(), 0.5), pairs, dataset)
+    assert report["status"] == "scored" and report["metrics"]["pairs"] == 37
+    assert gateway.paths[0] == "/health" and gateway.paths.count("/check") == 37
+    assert report["scorer"]["inference"] == "gateway"
+    assert report["scorer"]["served"]["models"]["checker"]["revision"].startswith("6f5cf0a2")
+
+
+def test_cli_scores_agreed_labels_through_a_mock_gateway(
+    agreed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.evaluation import __main__ as cli
+
+    gateway = _MockGateway(_PINNED_HEALTH)
+    monkeypatch.setattr(cli, "build_model_client", lambda settings: gateway.client())
+    out = tmp_path / "report.json"
+    argv = [
+        "checker-baselines",
+        "--scorer",
+        "deberta",
+        "--label-dir",
+        str(agreed),
+        "--out",
+        str(out),
+    ]
+    assert cli.main(argv) == 0
+    report = json.loads(out.read_text())
+    assert report["status"] == "scored" and report["dataset"]["human_reviewed_pairs"] == 37
+    assert gateway.paths.count("/check") == 37
+
+
+# 2. evidence references
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("evidence_source", "fresh:v3-ps-001", "undeclared evidence ['fresh:v3-ps-001']"),
+        ("claim_about", "fresh:v3-wo-001", "undeclared evidence ['fresh:v3-wo-001']"),
+        ("evidence_source", "doc:it-security-handbook", "undeclared evidence"),
+    ],
+)
+def test_eval_set_validates_actual_evidence_references(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str, value: str, message: str
+) -> None:
+    tainted = copy.deepcopy(lab.gold_pairs())
+    tainted[0][field] = value  # `sources` still lists only valid dev documents
+    monkeypatch.setattr(lab, "gold_pairs", lambda: tainted)
+    with pytest.raises(cb.SplitViolation, match=re.escape(message)):
+        cb.dev_eval_set(tmp_path)
+
+
+def test_declared_heldout_evidence_is_still_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tainted = copy.deepcopy(lab.gold_pairs())
+    tainted[0]["evidence_source"] = "fresh:v3-ps-001"
+    tainted[0]["sources"] = sorted({*tainted[0]["sources"], "fresh:v3-ps-001"})
+    monkeypatch.setattr(lab, "gold_pairs", lambda: tainted)
+    with pytest.raises(cb.SplitViolation, match="cites non-dev sources"):
+        cb.dev_eval_set(tmp_path)
+
+
+# 3. predictions bound to exact inputs
+def _predictions(path: Path, export: str, header: dict[str, Any] | None = None) -> Path:
+    lines = [json.loads(x) for x in export.splitlines()]
+    head = {"model": "vectara/hallucination_evaluation_model", "revision": "abc",
+            "runtime": {"gpu": "T4"}, "inputs_sha256": lines[0]["inputs_sha256"], **(header or {})}  # fmt: skip
+    rows = [{"pair_id": r["pair_id"], "input_sha256": r["input_sha256"], "p_supported": 0.4,
+             "predicted": U, "latency_ms": 7} for r in lines[1:]]  # fmt: skip
+    path.write_text("\n".join(json.dumps(x) for x in [head, *rows]))
+    return path
+
+
+def test_predictions_matching_the_exported_inputs_are_accepted(
+    agreed: Path, tmp_path: Path
+) -> None:
+    pairs, dataset = cb.dev_eval_set(agreed)
+    path = _predictions(tmp_path / "p.jsonl", cb.export_inputs(pairs))
+    report = cb.run(lambda: cb.PredictionsScorer(path, pairs), pairs, dataset)
+    assert report["status"] == "scored" and report["scorer"]["inputs_sha256"] == cb.inputs_digest(
+        pairs
+    )
+
+
+def test_stale_predictions_for_changed_inputs_under_the_same_ids_are_rejected(
+    agreed: Path, tmp_path: Path
+) -> None:
+    pairs, _ = cb.dev_eval_set(agreed)
+    path = _predictions(tmp_path / "p.jsonl", cb.export_inputs(pairs))
+    changed = list(pairs)
+    changed[0] = cb.EvalPair(pairs[0].pair_id, pairs[0].claim + " Edited.", pairs[0].premise,
+                             pairs[0].gold, pairs[0].change_type, pairs[0].family)  # fmt: skip
+    with pytest.raises(ValueError, match="inputs_sha256 is stale"):
+        cb.PredictionsScorer(path, changed)
+
+
+@pytest.mark.parametrize(
+    ("header", "message"),
+    [
+        ({"inputs_sha256": "0" * 64}, "inputs_sha256 is stale"),
+        ({"inputs_sha256": ""}, "header lacks"),
+        ({"revision": ""}, "header lacks"),
+    ],
+)
+def test_predictions_header_must_bind_model_and_inputs(
+    agreed: Path, tmp_path: Path, header: dict[str, Any], message: str
+) -> None:
+    pairs, _ = cb.dev_eval_set(agreed)
+    path = _predictions(tmp_path / "p.jsonl", cb.export_inputs(pairs), header)
+    with pytest.raises(ValueError, match=message):
+        cb.PredictionsScorer(path, pairs)
+
+
+def test_per_pair_input_digests_are_required(agreed: Path, tmp_path: Path) -> None:
+    pairs, _ = cb.dev_eval_set(agreed)
+    path = _predictions(tmp_path / "p.jsonl", cb.export_inputs(pairs))
+    lines = path.read_text().splitlines()
+    row = json.loads(lines[1])
+    row["input_sha256"] = cb.input_digest(row["pair_id"], "a different claim", "a premise")
+    path.write_text("\n".join([lines[0], json.dumps(row), *lines[2:]]))
+    with pytest.raises(ValueError, match="stale or missing input_sha256"):
+        cb.PredictionsScorer(path, pairs)
+
+
+def test_predictions_from_fake_inference_are_rejected(agreed: Path, tmp_path: Path) -> None:
+    pairs, _ = cb.dev_eval_set(agreed)
+    path = _predictions(tmp_path / "p.jsonl", cb.export_inputs(pairs), {"inference": "fake"})
+    with pytest.raises(cb.BackendRejected, match="fake inference"):
+        cb.PredictionsScorer(path, pairs)
+
+
+def test_cli_exports_inputs_with_digests(agreed: Path, tmp_path: Path) -> None:
+    from app.evaluation.__main__ import main
+
+    out = tmp_path / "inputs.jsonl"
+    assert main(["checker-baselines", "--export-inputs", str(out), "--label-dir", str(agreed)]) == 0
+    lines = [json.loads(x) for x in out.read_text().splitlines()]
+    assert lines[0]["pairs"] == 37 and len(lines) == 38
+    assert all(r["input_sha256"] == cb.input_digest(r["pair_id"], r["claim"], r["premise"])
+               for r in lines[1:])  # fmt: skip
+
+
+# 4. unsupported-class F1
+def test_f1_is_zero_when_every_unsupported_claim_is_missed() -> None:
+    rows = [cm.Scored("a", U, 0.9, S, 1, "x"), cm.Scored("b", U, 0.8, S, 1, "x"),
+            cm.Scored("c", S, 0.9, S, 1, "x")]  # fmt: skip
+    prf = cm.unsupported_prf(rows)
+    assert prf == {"precision": None, "recall": 0.0, "f1": 0.0}
+
+
+def test_f1_uses_two_tp_over_two_tp_plus_fp_plus_fn() -> None:
+    c = cm.confusion(_synthetic_rows())
+    expected = 2 * c["tp"] / (2 * c["tp"] + c["fp"] + c["fn"])
+    assert (
+        cm.unsupported_prf(_synthetic_rows())["f1"]
+        == pytest.approx(expected)
+        == pytest.approx(10 / 13)
+    )
+    only_supported = [cm.Scored("a", S, 0.9, S, 1, "x")]
+    assert cm.unsupported_prf(only_supported)["f1"] is None  # denominator zero
+    over_flag = [cm.Scored("a", S, 0.1, U, 1, "x")]  # TP = 0, FP = 1: F1 is 0, not None
+    assert cm.unsupported_prf(over_flag)["f1"] == 0.0

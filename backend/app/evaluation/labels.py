@@ -314,7 +314,7 @@ def read_labels(label_dir: Path = LABEL_DIR) -> tuple[dict[str, dict[str, str]],
     return out, problems
 
 
-def status(label_dir: Path = LABEL_DIR) -> dict[str, Any]:
+def _resolve(label_dir: Path) -> tuple[dict[str, Any], dict[str, str]]:
     pairs = gold_pairs()
     by_annotator, problems = read_labels(label_dir)
     names = sorted(by_annotator)[:2]
@@ -366,7 +366,7 @@ def status(label_dir: Path = LABEL_DIR) -> dict[str, Any]:
         if states.get(pid) != "adjudicated":
             problems.append(f"{ADJUDICATIONS}: {pid} is not a recorded disagreement")
     kappa = cohen_kappa(a_labels, b_labels)
-    return {
+    summary = {
         "pairs": len(pairs),
         "dataset_revision": dataset_revision(),
         "annotators": names,
@@ -381,3 +381,16 @@ def status(label_dir: Path = LABEL_DIR) -> dict[str, Any]:
         "gold_labels": len(gold),
         "problems": problems,
     }
+    return summary, gold
+
+
+def status(label_dir: Path = LABEL_DIR) -> dict[str, Any]:
+    return _resolve(label_dir)[0]
+
+
+def human_gold(label_dir: Path = LABEL_DIR) -> tuple[dict[str, str], list[str]]:
+    """pair id -> final human label, for pairs two annotators agreed on or that were
+    adjudicated; plus label-file problems. The AI author's proposals never appear here."""
+
+    summary, gold = _resolve(label_dir)
+    return gold, list(summary["problems"])
