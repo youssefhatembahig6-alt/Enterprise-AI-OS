@@ -14,6 +14,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -821,3 +822,151 @@ def test_pilot_records_cannot_use_a_fresh_heldout_family() -> None:
     )
     problems = check_records(manifest, data)
     assert any("sealed held-out family fresh-heldout-regenerated-a" in p for p in problems)
+
+
+# ------------------------------------------------- split-enforcing loader (re-review)
+from app.evaluation import loader  # noqa: E402
+
+_PROBE = r"""
+import json, sys
+events = []
+def hook(event, args):
+    if event == "open" and isinstance(args[0], (str, bytes)) or event == "open" and hasattr(args[0], "__fspath__"):
+        events.append(("open", str(args[0])))
+    elif event in ("os.listdir", "os.scandir", "glob.glob", "os.walk"):
+        events.append(("list", str(args[0])))
+sys.addaudithook(hook)
+from pathlib import Path
+from app.evaluation import loader
+kw = json.loads(sys.argv[2])
+kw = {k: Path(v) for k, v in kw.items()}
+result = loader.load(sys.argv[1], **kw)
+print(json.dumps({
+    "events": events,
+    "loaded": [[d.ref, d.split] for d in result.documents],
+    "skipped": sorted(result.skipped),
+}))
+"""
+
+HELDOUT_KEYS = {
+    r.partition(":")[2]
+    for r, f in mf.parse_manifest(V3_TEXT)[0].member_family.items()
+    if mf.parse_manifest(V3_TEXT)[0].family_split[f] == "heldout"
+}
+
+
+def _probe(purpose: str, **dirs: Path) -> dict[str, Any]:
+    done = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", _PROBE, purpose, json.dumps({k: str(v) for k, v in dirs.items()})],
+        cwd=mf.REPO / "backend",
+        capture_output=True,
+        check=True,
+    )
+    out: dict[str, Any] = json.loads(done.stdout)
+    return out
+
+
+def _assert_no_heldout_opened(out: dict[str, Any]) -> None:
+    assert len(HELDOUT_KEYS) == 24
+    touched = [path for _, path in out["events"]]
+    leaked = [p for p in touched if any(k in p for k in HELDOUT_KEYS)]
+    assert leaked == [], leaked
+    # The corpus index lists every title, held-out ones included: never read it either.
+    assert not [p for p in touched if p.endswith("corpus-v3/corpus.toml")]
+    assert not [p for kind, p in out["events"] if kind == "list" and "corpus" in p]
+
+
+def test_training_loads_only_train_and_never_opens_heldout() -> None:
+    out = _probe("training")
+    _assert_no_heldout_opened(out)
+    assert {s for _, s in out["loaded"]} == {"train"} and len(out["loaded"]) == 60
+    opened = {p for kind, p in out["events"] if kind == "open"}
+    assert sum(p.endswith(".json") and "/corpus-v3/facts/" in p for p in opened) == 60
+
+
+@pytest.mark.parametrize("purpose", ["tuning", "model-selection"])
+def test_tuning_and_model_selection_load_only_dev(purpose: str) -> None:
+    out = _probe(purpose)
+    _assert_no_heldout_opened(out)
+    assert {s for _, s in out["loaded"]} == {"dev"}
+    assert len(out["loaded"]) == 17  # 18 dev files minus the scan that needs OCR
+    assert "doc:delivery-note-scan" in out["skipped"]
+    assert not [p for kind, p in out["events"] if kind == "open" and "/corpus-v3/" in p]
+
+
+@pytest.mark.parametrize("purpose", ["training", "tuning"])
+def test_no_heldout_file_is_opened_when_all_splits_share_one_directory(
+    tmp_path: Path, purpose: str
+) -> None:
+    shared = tmp_path / "all-splits"
+    shared.mkdir()
+    corpus = M7 / "corpus-v3"
+    for path in [*(corpus / "files").iterdir(), *(corpus / "facts").iterdir()]:
+        shutil.copy(path, shared / path.name)
+    assert len(list(shared.iterdir())) == 168  # 84 documents + 84 sidecars, every split
+    out = _probe(purpose, fresh_files_dir=shared, fresh_facts_dir=shared)
+    _assert_no_heldout_opened(out)
+    opened_shared = {p for kind, p in out["events"] if kind == "open" and str(shared) in p}
+    expected = 120 if purpose == "training" else 0  # 60 documents + 60 sidecars
+    assert len(opened_shared) == expected
+    assert all(Path(p).stem.startswith(("v3-wo-", "v3-sdr-", "v3-pir-")) for p in opened_shared)
+
+
+def test_no_purpose_can_reach_heldout() -> None:
+    assert all("heldout" not in s for s in loader.ALLOWED_SPLITS.values())
+    assert set(loader.Purpose) == set(loader.ALLOWED_SPLITS)
+    with pytest.raises(ValueError):
+        loader.eligible("release-scoring")
+    for purpose in loader.Purpose:
+        assert not [e for e in loader.eligible(purpose) if e.split == "heldout"]
+
+
+def test_loader_rejects_a_document_that_differs_from_the_frozen_lock(tmp_path: Path) -> None:
+    shared = tmp_path / "train"
+    shutil.copytree(M7 / "corpus-v3" / "files", shared)
+    (shared / "v3-wo-001.md").write_text("tampered\n")
+    with pytest.raises(loader.LoaderError, match="fresh:v3-wo-001 does not match"):
+        loader.load("training", fresh_files_dir=shared)
+
+
+def test_loader_rejects_metadata_that_differs_from_the_reviewed_snapshot(tmp_path: Path) -> None:
+    m7 = tmp_path / "m7"
+    m7.mkdir()
+    for name in ("frozen-snapshots.json", "split-manifest-v3.toml", "split-manifest-v3.lock.json"):
+        shutil.copy(M7 / name, m7 / name)
+    text = (m7 / "split-manifest-v3.toml").read_text()
+    (m7 / "split-manifest-v3.toml").write_text(
+        text.replace(
+            'id = "fresh-heldout-regenerated-a"\nsplit = "heldout"',
+            'id = "fresh-heldout-regenerated-a"\nsplit = "train"',
+        )
+    )
+    with pytest.raises(loader.LoaderError, match="does not match the reviewed snapshot"):
+        loader.eligible("training", m7)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "docs = sorted(Path('backend/fixtures/evaluation/m7/corpus-v3/files').glob('*.md'))",
+        "from app.evaluation.sources import canonical_text, all_file_refs",
+        "from app.evaluation import loader, sources",
+        "import app.evaluation.corpus_v3 as gen",
+    ],
+)
+def test_a_bulk_reader_that_bypasses_the_loader_fails_the_audit(
+    monkeypatch: pytest.MonkeyPatch, source: str
+) -> None:
+    real = mf._artifact_texts()
+    monkeypatch.setattr(mf, "_artifact_texts", lambda: (*real, ("ml/train_checker.py", source)))
+    problems = mf.audit_exposure(_parse(V3_TEXT))
+    assert any(p.startswith("ml/train_checker.py reads M7 sources directly") for p in problems), (
+        problems
+    )
+
+
+def test_loader_use_passes_the_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+    real = mf._artifact_texts()
+    code = "from app.evaluation import loader\ndocs = loader.load('training').documents\n"
+    monkeypatch.setattr(mf, "_artifact_texts", lambda: (*real, ("ml/train_checker.py", code)))
+    assert mf.audit_exposure(_parse(V3_TEXT)) == []

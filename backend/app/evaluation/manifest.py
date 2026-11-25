@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tomllib
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -45,6 +46,27 @@ EXPOSURE_EXCLUDE = (
     "backend/tests/unit/test_m7_evaluation.py",
     "backend/fixtures/evaluation/m7/",
 )
+# Direct readers. A development artifact that reads M7 sources other than through
+# app.evaluation.loader could bulk-load held-out documents without naming any of them.
+_DIRECT_READERS = (
+    re.compile(r"corpus[-_]v3"),
+    re.compile(r"evaluation/m7\b"),
+    re.compile(r"\bimport\s+app\.evaluation\.(?!loader\b)\w+"),
+    re.compile(r"\bfrom\s+app\.evaluation\.(?!loader\b)\w+\s+import\b"),
+)
+_FROM_PACKAGE = re.compile(r"\bfrom\s+app\.evaluation\s+import\s+(\([^)]*\)|[^\n]+)")
+
+
+def _package_import_bypasses(text: str) -> str | None:
+    """`from app.evaluation import X, Y`: any name other than `loader` bypasses it."""
+
+    for match in _FROM_PACKAGE.finditer(text):
+        names = match.group(1).strip("()").replace("\\", " ").split(",")
+        if any(n.split()[0] != "loader" for n in names if n.strip()):
+            return match.group(0)
+    return None
+
+
 _SKIP_DIRS = {"__pycache__", ".venv", "node_modules", ".mypy_cache", ".ruff_cache", ".pytest_cache"}
 
 
@@ -269,8 +291,24 @@ def scan_exposure(manifest: Manifest) -> dict[str, set[str]]:
     return found
 
 
+def direct_readers() -> list[tuple[str, str]]:
+    """(artifact, matched text) for development artifacts that bypass the loader."""
+
+    hits: list[tuple[str, str]] = []
+    for rel, text in _artifact_texts():
+        found = next((m.group(0) for p in _DIRECT_READERS if (m := p.search(text))), None)
+        found = found or _package_import_bypasses(text)
+        if found:
+            hits.append((rel, found.strip()))
+    return hits
+
+
 def audit_exposure(manifest: Manifest) -> list[str]:
-    problems: list[str] = []
+    problems: list[str] = [
+        f"{rel} reads M7 sources directly ({what!r}); use app.evaluation.loader, which "
+        "selects train or dev documents before opening any file"
+        for rel, what in direct_readers()
+    ]
     scanned = scan_exposure(manifest)
     for fid, split in sorted(manifest.family_split.items()):
         members = [r for r, f in manifest.member_family.items() if f == fid]

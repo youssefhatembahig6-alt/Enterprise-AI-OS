@@ -1,6 +1,12 @@
-# M7 v3 corpus: fresh train and held-out families (frozen, no derived data yet)
+# M7 v3 corpus: a public benchmark with a held-out split (frozen, no derived data yet)
 
 Status: **corpus prepared and frozen.** `split-manifest-v3` is the active manifest. No claim, question, checker pair, fine-tuning run or threshold exists for the fresh families. Those steps come later, after review of this freeze.
+
+**What v3 is.** v3 is a **public benchmark with a held-out split**:
+- Every v3 document, its facts and its generator are in this repository, readable by anyone with access, including whoever trains or tunes.
+- Its held-out split guards against *accidental* contamination. ML code can only read data through the split-enforcing loader (section 6), and the CI audits fail on direct readers.
+- It is **not** a blind test. A determined reader can open the held-out files, and the AI author who wrote the generator has seen them.
+- Results on v3 held-out are therefore reported as *public-benchmark* results. The release claim rests on **blind release data**, which a coordinator keeps outside the training workspace (section 7).
 
 ## 1. The original NileTech generator
 
@@ -58,12 +64,71 @@ Regression tests show that the check catches dev text copied into a fresh family
 
 CI enforces the order: `check --git-history` requires the active lock's commit to precede the pilot-index commit. `check --base origin/main` requires v1, v2 and their snapshot entries to be unchanged from `main`; only v2's `active` → `superseded` is allowed.
 
-## 6. Keeping held-out material out of tuning and model selection
+## 6. Keeping held-out material out of training, tuning and model selection
 
-* Held-out families are **sealed**: no pilot or derived record may use them (`check_records`, tested with a fresh held-out document).
-* The **exposure scan** fails CI if any test, app module, script, `ml/` file, evaluation fixture or `docs/evidence` capture mentions a train or held-out member (tested with a simulated threshold-tuning script that loads a held-out document).
-* Only M7's own files may reference them: `app/evaluation`, `fixtures/evaluation/m7`, `tests/unit/test_m7_evaluation.py`, and `docs/evaluation` (which is not scanned).
-* **Disclosure:** an AI assistant wrote the generator and its templates, and therefore saw the held-out documents. Nobody has tuned or selected a model on them. Rule for later work: thresholds are selected on dev only, and the held-out families are read once, for the final release run.
+**The split-enforcing loader** (`backend/app/evaluation/loader.py`) is the only supported way for ML code to read M7 sources:
+
+```python
+from app.evaluation import loader
+train_docs = loader.load("training").documents        # train split only (60 documents)
+dev_docs = loader.load("model-selection").documents    # dev split only (17 documents; the OCR scan is skipped)
+```
+
+| Purpose | Splits it may read |
+| --- | --- |
+| `training` | train |
+| `tuning`, `model-selection` | dev |
+| *(none)* | held-out: no purpose can read it |
+
+How a call works:
+1. It reads only the reviewed snapshot, the active manifest and its lock, and checks their hashes. It does **not** read `corpus-v3/corpus.toml`, which lists every title, held-out ones included.
+2. It selects eligible references from the manifest's family-to-split table.
+3. Only then does it open each eligible `<key>.md` and `<key>.json`, at paths built from the key. It never lists or globs a directory.
+4. It verifies each loaded document and sidecar against the frozen lock before returning it.
+
+Held-out files sitting in the same directory are therefore never opened.
+
+**Regression tests** run the loader in a subprocess under a Python audit hook that records every `open` and directory listing:
+- `training` opens only train documents and sidecars, 60 of each;
+- `tuning` and `model-selection` open only dev sources, and none of `corpus-v3`;
+- neither mode opens any of the 24 held-out documents or sidecars, the corpus index, or a directory listing, **including when all 84 documents and 84 sidecars share one directory**;
+- the same hook, applied to a naive `glob('*.md')` reader, records all 24 held-out opens. So the tests do detect a leak when one exists.
+
+**CI audits** (tripwires; the loader is the control):
+- **Direct readers:** CI fails if any test, app module, script, `ml/` file, evaluation fixture or `docs/evidence` capture refers to `corpus-v3` / `corpus_v3` or `evaluation/m7` paths, or imports any `app.evaluation` module other than `loader`. A bulk reader therefore cannot load all 84 documents without tripping it, even though it never names a held-out file. Code that builds paths dynamically from fragments could evade the text scan, so reviews must also check that ML code reads data only through the loader.
+- **Named members:** CI also fails if such an artifact names a train or held-out member.
+- **Sealed:** no pilot or derived record may use a held-out family.
+
+Only M7's own files may reference fresh members directly: `app/evaluation` (integrity checks hash and compare every member and never return content to ML code), `fixtures/evaluation/m7`, `tests/unit/test_m7_evaluation.py`, and `docs/evaluation` (not scanned).
+
+**Disclosure:** an AI assistant wrote the generator and templates and therefore saw the held-out documents. Nobody has tuned or selected a model on them. Thresholds are selected on dev only.
+
+## 7. Blind release data (coordinator procedure; not built yet)
+
+The release evaluation needs data that nobody training, tuning or selecting has had any access to. One person, the **coordinator**, who does not train, tune or select models, will:
+
+1. **Create it outside the training workspace:**
+   - Generate new release families on the coordinator's own machine, or in a private repository that training contributors and their agents cannot read. Never in this repository, a shared drive or a CI artifact.
+   - Use templates of their own, not this repository's generators: v3's templates are public, so data from them is not blind.
+2. **Freeze it there** with the same discipline:
+   - a manifest of release families (one template each, whole families in one split);
+   - a lock with SHA-256 per document and per facts file;
+   - the overlap check against this repository's dev, train and v3 held-out text.
+3. **Publish only freeze metadata** to this repository, as a reviewed snapshot entry, for example `fixtures/evaluation/m7/blind-release-v1.json`, containing:
+   - the manifest's and the lock's SHA-256;
+   - the number of families and documents per split;
+   - the generator version and the SHA-256 of the coordinator's generator source;
+   - a **commitment** to the seed (`SHA-256(seed ‖ salt)`), never the seed itself;
+   - the freeze date.
+
+   It must contain no documents, facts, titles, keys, family names that reveal topics, seeds or generator code. CI will compare the entry with `main` like any snapshot entry, so it cannot be rewritten after the fact.
+4. **Fix the system under test first.** Before scoring, the team freezes the checker and model artifacts and the dev-selected thresholds, and records their SHA-256 in the repository.
+5. **Score in the coordinator's workspace.**
+   - The coordinator runs the frozen artifacts on the blind data and publishes per-metric results.
+   - The coordinator then reveals the data, generator, seed and salt. Anyone can check them against the committed hashes and commitment.
+   - After the reveal, the blind set becomes a public benchmark like v3, and the next release needs new blind data.
+
+Nothing in this procedure has been carried out yet. This PR only documents it.
 
 ## 7. Reproduction
 
@@ -77,6 +142,7 @@ git fetch origin main && .venv/bin/python -m app.evaluation check --base origin/
 
 ## 8. Gaps
 
+0. **Blind release data does not exist yet:** v3 held-out is a public benchmark split (section 7). A coordinator still has to be chosen, and must create, freeze and publish metadata for blind data before release scoring.
 1. **No derived data for the fresh families yet:** QA cases, retrieval pairs, checker training pairs and gold pairs are the next, separately reviewed step.
 2. **Scale.** 60 train documents (about 6–10 facts each) will not reach 3,000–5,000 checker pairs without many perturbations per fact. 24 held-out documents can support roughly 200–250 gold claims, below the 300–500 target. Reaching the targets needs a v4 manifest with more documents or families, frozen the same way. Growing v3 in place is not allowed.
 3. **Format coverage.** Fresh documents are Markdown only: no PDF, scan, spreadsheet or CSV in train or held-out. Parser-dependent evaluation stays dev-only until those formats are added.
