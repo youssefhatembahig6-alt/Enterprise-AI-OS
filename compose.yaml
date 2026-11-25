@@ -118,9 +118,14 @@ services:
   mailpit:
     image: axllent/mailpit:v1.27.11
     environment:
+      # Persistent store: accepted messages (the receipts reconciliation relies on)
+      # survive Mailpit restarts. Without it Mailpit keeps a temporary database.
+      MP_DATABASE: /data/mailpit.db
       MP_MAX_MESSAGES: "5000"
       MP_SMTP_AUTH_ACCEPT_ANY: "false"
       MP_SMTP_REQUIRE_TLS: "false"
+    volumes:
+      - mailpit-data:/data
     ports:
       - "127.0.0.1:8025:8025"
     healthcheck:
@@ -263,6 +268,7 @@ services:
     restart: "no"
 
 volumes:
+  mailpit-data:
   postgres-data:
   redis-data:
   qdrant-data:

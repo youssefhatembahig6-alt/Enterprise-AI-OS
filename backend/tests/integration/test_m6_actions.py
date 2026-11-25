@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import os
 import secrets
+import shlex
+import subprocess
+import threading
 import time
 import uuid
 from collections.abc import Callable, Iterator
@@ -344,6 +347,42 @@ def test_expired_approval_is_rejected(
     r = send(client, token, draft, approval["approval_token"])
     assert r.status_code == 409 and "expired" in r.json()["error"]["message"]
     assert outbox(actions_db, draft["action_id"]) is None
+
+
+def test_same_version_can_be_approved_again_after_expiry(
+    make_client: Callable[..., TestClient],
+    actions_db: DbHarness,
+    recipient: str,
+    mailpit: tuple[str, int, str],
+) -> None:
+    client = make_client()
+    token, draft, first = flow_to_approval(client, actions_db, recipient)
+    owner_exec(
+        actions_db,
+        "UPDATE email_approvals SET created_at = now() - interval '2 hours',"
+        " expires_at = now() - interval '1 hour' WHERE action_id = :a",
+        {"a": draft["action_id"]},
+    )
+    shown = client.get(f"/api/v1/actions/email-drafts/{draft['action_id']}", headers=auth(token))
+    assert shown.json()["approval_expires_at"] is None  # the UI offers "Approve" again
+    assert send(client, token, draft, first["approval_token"]).status_code == 409
+    second = approve(client, token, draft)  # same version, same hash
+    assert second["version"] == draft["version"] == 1
+    assert second["approval_token"] != first["approval_token"]
+    assert send(client, token, draft, first["approval_token"]).status_code == 409
+    assert send(client, token, draft, second["approval_token"]).status_code == 202
+    row = wait_outbox(actions_db, draft["action_id"], {"delivered"})
+    assert len(mailpit_messages(mailpit[2], row.message_id)) == 1
+    statuses = (
+        owner_exec(
+            actions_db,
+            "SELECT status FROM email_approvals WHERE action_id = :a ORDER BY created_at",
+            {"a": draft["action_id"]},
+        )
+        .scalars()
+        .all()
+    )
+    assert statuses == ["invalidated", "consumed"]
 
 
 def test_reused_approval_is_rejected(
@@ -766,6 +805,314 @@ def test_crash_after_mailpit_acceptance_is_reconciled_without_resending(
     assert final.json()["status"] == "delivered"
 
 
+# -- review round 1: access lost after the claim, receipts, lock order ---------------------
+
+
+def _membership(db: DbHarness, ref: str, present: bool) -> None:
+    tenant = db.foundation.tenants["niletech"]
+    params = {"t": tenant.id, "g": tenant.groups["finance-team"].id, "u": user_id(db, ref)}
+    if present:
+        owner_exec(
+            db,
+            "INSERT INTO group_memberships (tenant_id, group_id, user_id) VALUES (:t, :g, :u)"
+            " ON CONFLICT DO NOTHING",
+            params,
+        )
+    else:
+        owner_exec(db, "DELETE FROM group_memberships WHERE group_id = :g AND user_id = :u", params)
+
+
+def queued(client: TestClient, db: DbHarness, to: str) -> tuple[str, dict[str, Any], Any]:
+    """A send queued in the outbox but not dispatched (the test drives the worker)."""
+
+    app_state(client).actions.dispatch = None
+    token, draft, approval = flow_to_approval(client, db, to)
+    assert send(client, token, draft, approval["approval_token"]).status_code == 202
+    return token, draft, outbox(db, draft["action_id"])
+
+
+@pytest.mark.parametrize("who", [FINANCE, RECIPIENT])
+def test_access_lost_after_claim_blocks_the_smtp_handoff(
+    make_client: Callable[..., TestClient],
+    actions_db: DbHarness,
+    recipient: str,
+    mailpit: tuple[str, int, str],
+    who: str,
+) -> None:
+    client = make_client()
+    _, draft, row = queued(client, actions_db, recipient)
+    delivery = app_state(client).email_delivery
+    claimed: list[Any] = []
+
+    def revoke(claimed_row: Any) -> None:
+        claimed.append(claimed_row)
+        assert outbox(actions_db, draft["action_id"]).status == "dispatching"
+        _membership(actions_db, who, present=False)
+
+    delivery.hooks["before_smtp"] = revoke
+    try:
+        assert delivery.deliver(row.execution_key, row.tenant_id) == "blocked"
+    finally:
+        delivery.hooks.clear()
+        _membership(actions_db, who, present=True)
+    assert claimed  # the claim really committed first
+    final = outbox(actions_db, draft["action_id"])
+    expected = "source_access_revoked" if who == FINANCE else "recipient_not_authorized"
+    assert final.status == "blocked" and final.status_reason == expected
+    assert final.attempts == 1 and final.smtp_accepted_at is None
+    assert mailpit_messages(mailpit[2], row.message_id) == []  # Mailpit received nothing
+    assert f"email.deliver:deny:{expected}" in audit_reasons(actions_db, draft["action_id"])
+
+
+class RevokeDuringSmtp:
+    """Starts a revocation while the handoff is talking SMTP and checks it is held back
+    by the handoff's policy-epoch lock until the outcome is recorded."""
+
+    def __init__(self, inner: SmtpMailer, db: DbHarness) -> None:
+        self.inner, self.db = inner, db
+        self.thread: threading.Thread | None = None
+        self.blocked_during_smtp = False
+
+    def send(self, message: EmailMessage, sender: str, recipient: str) -> Accepted:
+        if message["X-EAIOS-Canary"]:
+            return self.inner.send(message, sender, recipient)
+        self.thread = threading.Thread(
+            target=_membership, args=(self.db, RECIPIENT, False), daemon=True
+        )
+        self.thread.start()
+        self.thread.join(0.5)
+        self.blocked_during_smtp = self.thread.is_alive()
+        return self.inner.send(message, sender, recipient)
+
+
+def test_revocation_during_the_handoff_waits_until_the_outcome_is_recorded(
+    make_client: Callable[..., TestClient],
+    actions_db: DbHarness,
+    recipient: str,
+    mailpit: tuple[str, int, str],
+) -> None:
+    host, port, api = mailpit
+    mailer = RevokeDuringSmtp(SmtpMailer(host, port, 5), actions_db)
+    client = make_client(mailer=mailer)
+    delivery = app_state(client).email_delivery
+    delivery.mailer = SmtpMailer(host, port, 5)
+    assert delivery.ensure_canary(actions_db.foundation.tenants["niletech"].id)
+    delivery.mailer = mailer
+    _, _draft, row = queued(client, actions_db, recipient)
+    try:
+        assert delivery.deliver(row.execution_key, row.tenant_id) == "delivered"
+        assert mailer.thread is not None
+        mailer.thread.join(10)
+        assert mailer.blocked_during_smtp and not mailer.thread.is_alive()
+    finally:
+        _membership(actions_db, RECIPIENT, present=True)
+    assert len(mailpit_messages(api, row.message_id)) == 1
+
+
+def _delete_canary_from_mailpit(db: DbHarness, api: str) -> None:
+    tenant = db.foundation.tenants["niletech"].id
+    message_id = owner_exec(
+        db,
+        "SELECT message_id FROM mail_receipt_canaries WHERE tenant_id = :t AND status = 'active'",
+        {"t": tenant},
+    ).scalar_one()
+    ids = [m["ID"] for m in mailpit_messages(api, message_id)]
+    assert ids
+    httpx.request("DELETE", f"{api}/api/v1/messages", json={"IDs": ids}, timeout=5)
+
+
+def test_lost_receipt_history_keeps_the_send_uncertain(
+    make_client: Callable[..., TestClient],
+    actions_db: DbHarness,
+    recipient: str,
+    mailpit: tuple[str, int, str],
+) -> None:
+    """Mailpit no longer holds the history that would prove absence (reset, pruned or a
+    non-persistent store): the send must stay uncertain, never be retried."""
+
+    client = make_client()
+    _, draft, row = queued(client, actions_db, recipient)
+    delivery = app_state(client).email_delivery
+    delivery.hooks["before_smtp"] = _crash
+    with pytest.raises(SimulatedCrash):
+        delivery.deliver(row.execution_key, row.tenant_id)
+    delivery.hooks.clear()
+    _delete_canary_from_mailpit(actions_db, mailpit[2])
+    time.sleep(1.2)
+    worker = app_state(client).action_worker
+    try:
+        assert worker.tick()["stale"] == ["uncertain"]
+        for _ in range(3):
+            assert worker.tick()["reconcile"] == ["history_unavailable"]
+        final = outbox(actions_db, draft["action_id"])
+        assert final.status == "uncertain"
+        assert final.status_reason == "receipt_history_unavailable" and final.attempts == 1
+        assert mailpit_messages(mailpit[2], row.message_id) == []
+        shown = client.get(
+            f"/api/v1/actions/email-drafts/{draft['action_id']}",
+            headers=auth(login(client, actions_db, FINANCE)),
+        ).json()
+        assert shown["status"] == "uncertain"
+        assert shown["status_reason"] == "receipt_history_unavailable"
+    finally:
+        # Operator resolution so later tests' scheduler passes are not affected.
+        owner_exec(
+            actions_db,
+            "UPDATE email_outbox SET status = 'failed', status_reason = 'test_cleanup'"
+            " WHERE execution_key = :k",
+            {"k": row.execution_key},
+        )
+    # A fresh canary is established for later sends.
+    assert delivery.ensure_canary(actions_db.foundation.tenants["niletech"].id)
+
+
+def _restart_mailpit(api: str) -> None:
+    command = os.environ.get("TEST_MAILPIT_RESTART_CMD")
+    if not command:
+        message = "TEST_MAILPIT_RESTART_CMD is required for the Mailpit restart test"
+        if os.environ.get("EAIOS_REQUIRE_MAILPIT_RESTART") == "1":
+            pytest.fail(message)
+        pytest.skip(message)
+    subprocess.run(shlex.split(command), check=True, capture_output=True, timeout=60)  # noqa: S603
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        try:
+            if httpx.get(f"{api}/api/v1/info", timeout=2).status_code == 200:
+                return
+        except httpx.HTTPError:
+            pass
+        time.sleep(0.5)
+    raise AssertionError("Mailpit did not come back")
+
+
+def test_mailpit_restart_after_acceptance_keeps_the_receipt(
+    make_client: Callable[..., TestClient],
+    actions_db: DbHarness,
+    recipient: str,
+    mailpit: tuple[str, int, str],
+) -> None:
+    """Mailpit accepts the message, the worker dies before recording it, Mailpit and the
+    application both restart: the persisted receipt is found and nothing is re-sent."""
+
+    client = make_client()
+    _, draft, row = queued(client, actions_db, recipient)
+    delivery = app_state(client).email_delivery
+    delivery.hooks["after_accept"] = _crash
+    with pytest.raises(SimulatedCrash):
+        delivery.deliver(row.execution_key, row.tenant_id)
+    assert len(mailpit_messages(mailpit[2], row.message_id)) == 1
+    assert outbox(actions_db, draft["action_id"]).status == "dispatching"
+
+    _restart_mailpit(mailpit[2])
+    restarted = make_client()  # a new application process
+    time.sleep(1.2)
+    worker = app_state(restarted).action_worker
+    assert worker.tick()["stale"] == ["uncertain"]
+    assert worker.tick()["reconcile"] == ["delivered"]
+    final = outbox(actions_db, draft["action_id"])
+    assert final.status == "delivered" and final.status_reason == "reconciled_found"
+    assert final.attempts == 1
+    assert len(mailpit_messages(mailpit[2], row.message_id)) == 1
+
+
+def test_cancel_waits_for_the_claim_instead_of_deadlocking(
+    make_client: Callable[..., TestClient],
+    actions_db: DbHarness,
+    recipient: str,
+    mailpit: tuple[str, int, str],
+) -> None:
+    """Deterministic interleaving: the claim holds the action and outbox locks while a
+    cancel starts. The cancel waits on the action lock (same order), then reports that
+    it is too late; nothing deadlocks and exactly one email is sent."""
+
+    client = make_client()
+    token, draft, row = queued(client, actions_db, recipient)
+    state = app_state(client)
+    ctx = state.identity.authenticate(token, None)
+    results: list[Any] = []
+
+    def cancel() -> None:
+        try:
+            results.append(state.actions.cancel(ctx, uuid.UUID(draft["action_id"])))
+        except Exception as exc:
+            results.append(exc)
+
+    canceller = threading.Thread(target=cancel)
+
+    def during_claim(_: Any) -> None:
+        canceller.start()
+        canceller.join(0.5)
+        assert canceller.is_alive()  # waiting for the action lock, not deadlocked
+
+    state.email_delivery.hooks["claim_locked"] = during_claim
+    try:
+        outcome = state.email_delivery.deliver(row.execution_key, row.tenant_id)
+    finally:
+        state.email_delivery.hooks.clear()
+    canceller.join(10)
+    assert outcome == "delivered"
+    (result,) = results
+    assert getattr(result, "code", None) in ("action_locked", "too_late"), result
+    assert len(mailpit_messages(mailpit[2], row.message_id)) == 1
+
+
+def test_cancel_racing_dispatch_is_consistent(
+    make_client: Callable[..., TestClient],
+    actions_db: DbHarness,
+    recipient: str,
+    mailpit: tuple[str, int, str],
+) -> None:
+    client = make_client()
+    state = app_state(client)
+    for _ in range(8):
+        token, draft, row = queued(client, actions_db, recipient)
+        ctx = state.identity.authenticate(token, None)
+        barrier = threading.Barrier(2)
+        out: dict[str, Any] = {}
+
+        def run(
+            name: str,
+            fn: Callable[[], Any],
+            out: dict[str, Any] = out,
+            barrier: threading.Barrier = barrier,
+        ) -> None:
+            barrier.wait()
+            try:
+                out[name] = fn()
+            except Exception as exc:
+                out[name] = exc
+
+        threads = [
+            threading.Thread(
+                target=run,
+                args=(
+                    "cancel",
+                    lambda d=draft, c=ctx: state.actions.cancel(c, uuid.UUID(d["action_id"])),
+                ),
+            ),
+            threading.Thread(
+                target=run,
+                args=(
+                    "deliver",
+                    lambda r=row: state.email_delivery.deliver(r.execution_key, r.tenant_id),
+                ),
+            ),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(30)
+        assert not isinstance(out["deliver"], Exception), out
+        final = outbox(actions_db, draft["action_id"])
+        sent = len(mailpit_messages(mailpit[2], row.message_id))
+        if final.status == "cancelled":
+            assert sent == 0 and out["deliver"] == "not_pending:cancelled"
+            assert getattr(out["cancel"], "status", None) == "cancelled"
+        else:
+            assert final.status == "delivered" and sent == 1
+            assert getattr(out["cancel"], "code", None) in ("action_locked", "too_late")
+
+
 class AcceptThenTimeout:
     """Hands the message to the real Mailpit, then reports a timeout waiting for the
     reply: the classic ambiguous SMTP outcome."""
@@ -774,7 +1121,9 @@ class AcceptThenTimeout:
         self.inner = inner
 
     def send(self, message: EmailMessage, sender: str, recipient: str) -> Accepted:
-        self.inner.send(message, sender, recipient)
+        accepted = self.inner.send(message, sender, recipient)
+        if message["X-EAIOS-Canary"]:
+            return accepted  # the receipt-history canary goes through normally
         raise Ambiguous("TimeoutError after DATA")
 
 
@@ -839,15 +1188,18 @@ def test_unreachable_smtp_before_data_is_retried_safely(
     mailpit: tuple[str, int, str],
 ) -> None:
     client = make_client(mailer=SmtpMailer("127.0.0.1", 9, 0.5))
+    delivery = app_state(client).email_delivery
+    tenant = actions_db.foundation.tenants["niletech"].id
+    delivery.mailer = SmtpMailer(mailpit[0], mailpit[1], 5)
+    assert delivery.ensure_canary(tenant)  # receipt history exists before the outage
+    delivery.mailer = SmtpMailer("127.0.0.1", 9, 0.5)
     token, draft, approval = flow_to_approval(client, actions_db, recipient)
     assert send(client, token, draft, approval["approval_token"]).status_code == 202
-    row = wait_outbox(actions_db, draft["action_id"], {"pending"})
     deadline = time.monotonic() + 5
     while outbox(actions_db, draft["action_id"]).attempts < 1 and time.monotonic() < deadline:
         time.sleep(0.05)
-    row = outbox(actions_db, draft["action_id"])
-    assert row.status == "pending" and row.status_reason == "not_sent_retry"
-    delivery = app_state(client).email_delivery
+    row = wait_outbox(actions_db, draft["action_id"], {"pending"})
+    assert row.status_reason == "not_sent_retry" and row.attempts == 1
     delivery.mailer = SmtpMailer(mailpit[0], mailpit[1], 5)
     assert app_state(client).action_worker.tick()["deliver"] == ["delivered"]
     assert len(mailpit_messages(mailpit[2], row.message_id)) == 1

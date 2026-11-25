@@ -1,0 +1,19 @@
+{
+  "recorded": "2026-11-25",
+  "where": "Claude desktop app built-in browser against the local Compose stack (http://localhost:3000, Mailpit UI http://localhost:8025)",
+  "stack": {"MODEL_MODE": "fake", "ACTION_APPROVAL_TTL_SECONDS": 30, "REPORT_DISPATCH": "celery", "mailpit": "axllent/mailpit:v1.27.11 with MP_DATABASE on a volume"},
+  "user": "niletech / finance.reader@niletech.example (fixture test account, password from var/dev-credentials.json)",
+  "run_1_full_flow_with_edit_and_expiry": [
+    "Signed in; Ask > Use example > Run report: verified report 'Fulfilled sales, Q1 2026' published (labelled FAKE INFERENCE)",
+    "Email and briefings: recipient 'Finance Reader (finance.reader@niletech.example)', Create draft for review -> draft v1",
+    "Edited the subject (appended ' (browser check)'), Save as new version -> 'Version 2 (edited)'",
+    "Approve this version -> 'You approved version 2. The approval expires at 8:11:26 PM'; Send now offered",
+    "Waited 33 s without sending -> 'Your approval expired before sending. Review the draft and approve this version again.'; Send now hidden; Approve this version offered",
+    "Approve this version (same version 2) -> Send now -> 'Delivered to Mailpit', 'Delivery delivered · attempts 1 · Message-ID <47c38ae2-d3bc-4855-adeb-e876cc1d3e00@eaios.local>'",
+    "Mailpit search by Message-ID: exactly 1 message, subject 'Verified report: Fulfilled sales, Q1 2026 (browser check)', to finance.reader@niletech.example; message view shows the verified figures (291 orders, USD 80,934,385.00 net)"
+  ],
+  "run_2_after_ui_fix": [
+    "Rebuilt frontend (consumed approval cleared after Send). Report -> draft -> Approve -> Send now -> 'Delivery delivered · attempts 1 · Message-ID <7e10a40a-c0ae-45d2-899a-592d4b0da252@eaios.local>'; no stale 'You approved version' line",
+    "Mailpit: exactly 1 message for that Message-ID; the run-1 message was still present after the test suite restarted the Mailpit container"
+  ]
+}

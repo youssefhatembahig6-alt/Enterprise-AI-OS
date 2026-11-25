@@ -577,3 +577,88 @@ def update_occurrence(conn: Connection, occurrence_id: UUID, **values: Any) -> N
         text(f"UPDATE briefing_occurrences SET {', '.join(sets)} WHERE id = :id"),  # noqa: S608
         params,
     )
+
+
+# -- receipt-history canaries ----------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class CanaryRow:
+    id: UUID
+    message_id: str
+    recipient: str
+    accepted_at: datetime
+
+
+def active_canary(conn: Connection) -> CanaryRow | None:
+    row = conn.execute(
+        text(
+            "SELECT id, message_id, recipient, accepted_at FROM mail_receipt_canaries"
+            " WHERE status = 'active'"
+        )
+    ).one_or_none()
+    return CanaryRow(row.id, row.message_id, row.recipient, row.accepted_at) if row else None
+
+
+def covering_canary(conn: Connection, before: datetime) -> CanaryRow | None:
+    """The newest canary accepted before ``before`` (any status)."""
+
+    row = conn.execute(
+        text(
+            "SELECT id, message_id, recipient, accepted_at, status FROM mail_receipt_canaries"
+            " WHERE accepted_at <= :b ORDER BY accepted_at DESC LIMIT 1"
+        ),
+        {"b": before},
+    ).one_or_none()
+    if row is None or row.status != "active":
+        return None
+    return CanaryRow(row.id, row.message_id, row.recipient, row.accepted_at)
+
+
+def insert_canary(
+    conn: Connection, *, canary_id: UUID, tenant_id: UUID, message_id: str, recipient: str
+) -> bool:
+    return (
+        conn.execute(
+            text(
+                "INSERT INTO mail_receipt_canaries (id, tenant_id, message_id, recipient)"
+                " VALUES (:id, :t, :m, :r) ON CONFLICT DO NOTHING"
+            ),
+            {"id": canary_id, "t": tenant_id, "m": message_id, "r": recipient},
+        ).rowcount
+        == 1
+    )
+
+
+def mark_canary(conn: Connection, canary_id: UUID, status: str) -> None:
+    conn.execute(
+        text(
+            "UPDATE mail_receipt_canaries SET status = :s, checked_at = clock_timestamp()"
+            " WHERE id = :id"
+        ),
+        {"s": status, "id": canary_id},
+    )
+
+
+def lock_action_then_outbox(
+    conn: Connection, execution_key: UUID, *, skip_locked: bool = False
+) -> tuple[ActionRow, OutboxRow] | None | str:
+    """Canonical lock order for M6 rows: (tenant policy epoch, if taken) -> email_actions
+    -> email_outbox -> email_approvals. Cancel and send lock the action first, so every
+    worker path does the same. Returns ``"busy"`` when ``skip_locked`` and another
+    transaction holds the action (for example a live SMTP handoff)."""
+
+    action_id = conn.execute(
+        text("SELECT action_id FROM email_outbox WHERE execution_key = :k"), {"k": execution_key}
+    ).scalar_one_or_none()
+    if action_id is None:
+        return None
+    sql = f"SELECT {_ACTION} FROM email_actions WHERE id = :id FOR UPDATE"  # noqa: S608
+    if skip_locked:
+        sql += " SKIP LOCKED"
+    row = conn.execute(text(sql), {"id": action_id}).one_or_none()
+    if row is None:
+        return "busy"
+    outbox = load_outbox(conn, execution_key, lock=True)
+    assert outbox is not None  # noqa: S101 - rows are never deleted
+    return _action(row), outbox

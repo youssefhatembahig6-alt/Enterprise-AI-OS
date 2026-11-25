@@ -71,14 +71,29 @@ function DraftEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [expiredNotice, setExpiredNotice] = useState(false);
+
   useEffect(() => {
     setSubject(draft.subject ?? "");
     setBody(draft.body ?? "");
     setTo(draft.recipient.user_id);
-    if (approval && (approval.version !== draft.version || approval.draft_sha256 !== draft.draft_sha256)) {
+  }, [draft]);
+
+  // An approval is only usable for the exact version it names and until it expires.
+  // When it lapses, drop it so "Approve this version" is offered again.
+  useEffect(() => {
+    if (!approval) return;
+    if (approval.version !== draft.version || approval.draft_sha256 !== draft.draft_sha256) {
       setApproval(null);
+      return;
     }
-  }, [draft, approval]);
+    const left = new Date(approval.expires_at).getTime() - Date.now();
+    const timer = setTimeout(() => {
+      setApproval(null);
+      setExpiredNotice(true);
+    }, Math.max(0, left));
+    return () => clearTimeout(timer);
+  }, [approval, draft.version, draft.draft_sha256]);
 
   const editable = ["draft", "approved"].includes(draft.status) && !draft.content_withheld;
   const dirty = subject !== (draft.subject ?? "") || body !== (draft.body ?? "") || to !== draft.recipient.user_id;
@@ -91,6 +106,7 @@ function DraftEditor({
       if (next) onChanged(next);
     } catch (err) {
       setError(message(err));
+      if (err instanceof ApiError && err.code === "approval_rejected") setApproval(null);
       try {
         onChanged(await actions.draft(token, draft.action_id));
       } catch {
@@ -157,6 +173,7 @@ function DraftEditor({
             onClick={() =>
               void act(async () => {
                 const a = await actions.approve(token, draft);
+                setExpiredNotice(false);
                 setApproval(a);
                 return actions.draft(token, draft.action_id);
               })
@@ -166,7 +183,16 @@ function DraftEditor({
           </Button>
         ) : null}
         {editable && !dirty && approval ? (
-          <Button disabled={busy} onClick={() => void act(() => actions.send(token, draft, approval))}>
+          <Button
+            disabled={busy}
+            onClick={() =>
+              void act(async () => {
+                const sent = await actions.send(token, draft, approval);
+                setApproval(null); // consumed: one send per approval
+                return sent;
+              })
+            }
+          >
             Send now
           </Button>
         ) : null}
@@ -176,7 +202,12 @@ function DraftEditor({
           </Button>
         ) : null}
       </div>
-      {approval ? (
+      {expiredNotice && !approval ? (
+        <p className="text-xs text-muted-fg" role="status">
+          Your approval expired before sending. Review the draft and approve this version again.
+        </p>
+      ) : null}
+      {approval && editable ? (
         <p className="text-xs text-muted-fg">
           You approved version {approval.version}. The approval expires at{" "}
           {new Date(approval.expires_at).toLocaleTimeString()} and any edit cancels it.
