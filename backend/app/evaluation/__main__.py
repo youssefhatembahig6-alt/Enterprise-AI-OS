@@ -15,22 +15,32 @@ import json
 import sys
 from pathlib import Path
 
-from app.evaluation import labels
+from app.evaluation import freeze, labels
 from app.evaluation import manifest as mf
 from app.evaluation.checks import counts_report, format_report, run_checks
 from app.evaluation.pilot import write_pilot
 
 
-def cmd_freeze(_: argparse.Namespace) -> int:
-    manifest, problems = mf.load_manifest()
+def cmd_freeze(args: argparse.Namespace) -> int:
+    """Write the lock for a NEW manifest file and print its snapshot entry for review.
+
+    It never writes frozen-snapshots.json and never overwrites a lock.
+    """
+
+    manifest_file = args.manifest
+    lock_file = manifest_file.removesuffix(".toml") + ".lock.json"
+    manifest, problems = mf.load_manifest(mf.M7 / manifest_file)
     if problems:
         print("\n".join(f"manifest: {p}" for p in problems), file=sys.stderr)
         return 1
-    if mf.LOCK.exists():
-        print(f"{mf.LOCK.name} exists: a frozen manifest is never re-frozen", file=sys.stderr)
+    lock = mf.M7 / lock_file
+    if lock.exists():
+        print(f"{lock_file} exists: a frozen manifest is never re-frozen", file=sys.stderr)
         return 1
-    mf.LOCK.write_text(json.dumps(mf.build_lock(manifest), indent=2, sort_keys=True) + "\n")
-    print(f"froze {manifest.name} sha256={manifest.sha256}")
+    lock.write_text(mf.lock_text(mf.build_lock(manifest, manifest_file)))
+    print(f"froze {manifest.name}: wrote {lock_file}")
+    print("Add this entry to frozen-snapshots.json by hand, for independent review:")
+    print(json.dumps(freeze.snapshot_entry(manifest_file, lock_file), indent=2))
     return 0
 
 
@@ -76,7 +86,9 @@ def cmd_labels(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.evaluation")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("freeze").set_defaults(func=cmd_freeze)
+    frz = sub.add_parser("freeze")
+    frz.add_argument("manifest", help="new manifest file name, e.g. split-manifest-v3.toml")
+    frz.set_defaults(func=cmd_freeze)
     sub.add_parser("check").set_defaults(func=cmd_check)
     sub.add_parser("build-pilot").set_defaults(func=cmd_build_pilot)
     report = sub.add_parser("report")

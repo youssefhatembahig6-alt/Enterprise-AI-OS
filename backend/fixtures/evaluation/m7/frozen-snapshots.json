@@ -1,0 +1,25 @@
+{
+  "_review": "Independently reviewed snapshot of frozen split manifests. Written by hand, never by a tool. Reviewers must check each SHA-256 against the manifest and lock in the same commit. Once on main, CI (--base origin/main) rejects any change to an existing entry except active -> superseded.",
+  "active": "m7-split-v2",
+  "manifests": {
+    "m7-split-v1": {
+      "manifest": "split-manifest-v1.toml",
+      "lock": "split-manifest-v1.lock.json",
+      "manifest_sha256": "9f832f523d51a265801eb70981dfab154462a786a4a945ef92ce3411e6ba78b4",
+      "lock_sha256": "6b75d6eafd6f9014cef50fcab63a146d6cc887b3e12d1a3ccacabd01167590af",
+      "frozen_at": "2026-11-25",
+      "frozen_commit": "57ed79c",
+      "status": "superseded",
+      "superseded_by": "m7-split-v2",
+      "reason": "PR #10 review: v1 placed development-exposed families in train (code-config-constants: M5 GitHub acceptance and real-model Colab run; contract-template: M5 legal extractor) and held-out (board-governance: M3 Colab retrieval evaluation index and answer tests). Kept unchanged as an audit record."
+    },
+    "m7-split-v2": {
+      "manifest": "split-manifest-v2.toml",
+      "lock": "split-manifest-v2.lock.json",
+      "manifest_sha256": "a5a6bbb4526d8ef5d90e9445224ad731574a172cd73bd914ead42231cd7dccb9",
+      "lock_sha256": "91fdb1a97276cadb33f48dbe9d1373108c5f51fe7d4bbee790bc199a19e3d0d4",
+      "frozen_at": "2026-11-26",
+      "status": "active"
+    }
+  }
+}

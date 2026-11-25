@@ -1,0 +1,180 @@
+# M7 train/dev/held-out split manifest, version 2. Frozen 2026-11-26.
+#
+# Supersedes split-manifest-v1 (kept unchanged as an audit record). The PR #10 review found
+# that v1 put development-exposed families in train and held-out:
+#   * code-config-constants was used by the M5 GitHub acceptance runs, including a real-model
+#     Colab run (docs/evidence/m5/2026-11-24-colab-code-real-model.json);
+#   * board-governance was indexed in the M3 Colab retrieval evaluation that chose dense
+#     retrieval (docs/evidence/m3/2026-11-21-colab-retrieval-eval.json) and used by M3
+#     answer tests.
+# Re-auditing every family against M1–M6 evidence also found that contract-template drove the
+# M5 legal extractor (tests/unit/test_m5_legal_extract.py, tests/integration/test_m5_legal.py).
+# Every current family is therefore `dev`. No current source is usable for training or for a
+# held-out evaluation.
+#
+# Unit of splitting: a FAMILY (sources that share a template or restate the same facts).
+# Rules (the M7 check enforces each one):
+#   1. Every corpus document, contract, code fixture and SQL template belongs to exactly one family.
+#   2. A family that any M1–M6 test, script, evidence capture, ML run or evaluation fixture mentions
+#      is development-exposed and must be `dev`. `exposure` lists the evidence, and every listed
+#      path must exist and mention a member. The check also scans those locations: if any of them
+#      mentions a member of a train or held-out family, CI fails.
+#   3. Train and held-out data must come from FRESH families: regenerated NileTech documents that no
+#      development artifact has touched. They are reserved below with no members. A later manifest
+#      version (v3) adds their members, and is frozen before any claim is written from them.
+#      Held-out families are sealed: no pilot record may use them.
+#
+# Freezing: split-manifest-v2.lock.json holds the SHA-256 of this file and of every member source.
+# frozen-snapshots.json is the independently reviewed snapshot. It pins this file and the lock by
+# SHA-256, is written by hand rather than by any tool, and once merged CI compares it with `main`.
+# Regenerating the lock or the pilot therefore cannot make an edited manifest pass.
+
+version = 2
+name = "m7-split-v2"
+frozen_at = "2026-11-26"
+supersedes = "m7-split-v1"
+splits = ["train", "dev", "heldout"]
+
+[sql_templates.sales-period-net-fulfilled]
+description = "Net (tax-exclusive) FULFILLED sales for a calendar period, order_date basis, USD"
+dataset = "niletech-0.1.6"
+normalized_fingerprint = "e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127"
+fixtures = [
+  "fixtures/evaluation/sales-q1-2026.toml",
+  "fixtures/evaluation/sales-generalization-m2.toml",
+]
+
+[[families]]
+id = "q1-2026-sales-figures"
+split = "dev"
+members = [
+  "sql:sales-period-net-fulfilled",
+  "doc:finance-q1-commentary",
+  "doc:sales-tables-pdf",
+  "doc:q1-workbook",
+  "doc:delivery-note-scan",
+  "doc:isolation-handbook",
+]
+reason = "Restate the same Q1 figures or the same revenue-sentence template; SQL template used by M1/M2 dev cases."
+exposure = [
+  "backend/tests/unit/test_sales_reference.py",
+  "backend/fixtures/evaluation/documents-dev-m3.toml",
+  "backend/tests/integration/test_documents_answers.py",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+[[families]]
+id = "hr-leave-policy"
+split = "dev"
+members = ["doc:hr-leave-policy"]
+reason = "M3 retrieval dev cases, relevance study and answer tests."
+exposure = [
+  "backend/fixtures/evaluation/documents-dev-m3.toml",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+[[families]]
+id = "it-security-handbook"
+split = "dev"
+members = ["doc:it-security-handbook"]
+reason = "M3 retrieval dev cases, relevance study and answer tests."
+exposure = [
+  "backend/fixtures/evaluation/documents-dev-m3.toml",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+[[families]]
+id = "product-catalogue"
+split = "dev"
+members = ["doc:product-catalogue"]
+reason = "M3 retrieval dev cases, relevance study and answer tests."
+exposure = [
+  "backend/fixtures/evaluation/documents-dev-m3.toml",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+[[families]]
+id = "company-profile"
+split = "dev"
+members = ["doc:company-overview-pdf", "doc:newsletter-pdf"]
+reason = "Overview in M3 retrieval dev cases; newsletter restates the same offices and is an M1 parser-benchmark gold document."
+exposure = [
+  "backend/fixtures/evaluation/documents-dev-m3.toml",
+  "docs/evidence/m3/2026-11-21-colab-parsers-scores.md",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+[[families]]
+id = "customer-records"
+split = "dev"
+members = ["doc:customers-csv"]
+reason = "M3 retrieval dev cases; M1 parser-benchmark gold document."
+exposure = [
+  "backend/fixtures/evaluation/documents-dev-m3.toml",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+[[families]]
+id = "contract-template"
+split = "dev"
+members = ["contract:aswan-supply", "contract:red-sea-logistics", "contract:nilecloud-licence"]
+reason = "One contract template; the M5 legal extractor was developed and tested against all three, also through tests/unit/test_m5_legal_extract.py, which loads them via legal.toml (corrected from v1 train)."
+exposure = ["backend/tests/integration/test_m5_legal.py"]
+
+[[families]]
+id = "code-config-constants"
+split = "dev"
+members = ["code:billing/refunds.py", "code:inventory/reservations.py"]
+reason = "M5 GitHub acceptance fixtures, including a real-model Colab run (corrected from v1 train)."
+exposure = [
+  "backend/tests/integration/test_m5_acceptance_runner.py",
+  "docs/evidence/m5/2026-11-24-colab-code-real-model.json",
+  "scripts/m5_github_acceptance.py",
+]
+
+[[families]]
+id = "board-governance"
+split = "dev"
+members = ["doc:board-minutes", "doc:draft-strategy"]
+reason = "Indexed in the M3 Colab retrieval evaluation and used by M3 answer tests (corrected from v1 held-out)."
+exposure = [
+  "backend/tests/integration/test_documents_answers.py",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+# Fresh families reserved for regenerated NileTech documents. They have no members until v3, and
+# held-out ones stay sealed.
+[[reserved_families]]
+id = "fresh-train-regenerated"
+split = "train"
+reason = "Checker training pairs and train-split QA from regenerated documents no development artifact has touched."
+
+[[reserved_families]]
+id = "fresh-heldout-regenerated-a"
+split = "heldout"
+reason = "Release held-out evaluation (QA, retrieval, gold checker pairs). Sealed."
+
+[[reserved_families]]
+id = "fresh-heldout-regenerated-b"
+split = "heldout"
+reason = "Second release held-out family, so the held-out result does not rest on one template. Sealed."
+
+[[legacy_fixtures]]
+path = "fixtures/evaluation/sales-q1-2026.toml"
+split = "dev"
+kind = "sql-cases"
+
+[[legacy_fixtures]]
+path = "fixtures/evaluation/sales-generalization-m2.toml"
+split = "dev"
+kind = "sql-cases"
+
+[[legacy_fixtures]]
+path = "fixtures/evaluation/documents-dev-m3.toml"
+split = "dev"
+kind = "retrieval-cases"
+
+[[legacy_fixtures]]
+path = "fixtures/evaluation/relevance-study-m3.toml"
+split = "dev"
+kind = "relevance-pairs"
