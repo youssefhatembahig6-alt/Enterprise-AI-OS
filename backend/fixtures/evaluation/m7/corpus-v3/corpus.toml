@@ -4,7 +4,7 @@
 generator = "eaios-m7-fresh-corpus"
 generator_version = "3.0.0"
 generator_source = "backend/app/evaluation/corpus_v3.py"
-generator_sha256 = "b7bbb0c88918836b38ce7468f937cb811f27aa3706fe11d099045ccc7807214b"
+generator_sha256 = "c0004fbc97639b53db53cfea508f2d35d87196e33ad40a92fd7601cfbd040d4e"
 seed = 20261126
 reference_date = "2026-06-30"
 original_generator = { repository = "youssefhatembahig6-alt/enterprise-ai-oshh", commit = "bf4a247a5c3db8bcedc37e0ed47dad6c635d9349", path = "scripts/seed", status = "located, not used: its templates and stated values are the source of the dev corpus" }

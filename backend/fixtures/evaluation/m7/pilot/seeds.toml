@@ -1,6 +1,7 @@
 # M7 PILOT seeds, authored after split-manifest-v1 was frozen (commit 57ed79c). Families and
-# splits are resolved under the ACTIVE manifest (split-manifest-v2, frozen in commit ba6e9c8
-# before this pilot was regenerated). Under v2 every source here is development-exposed, so
+# splits are resolved under the ACTIVE manifest (split-manifest-v3, frozen in commit 497632c
+# before this pilot was re-indexed; v2 was frozen in ba6e9c8). Every source here is in one of
+# the nine development-exposed families (identical in v2 and v3), so
 # every derived record is dev: the "checker-train" seeds below are a FORMAT exercise and must
 # not be used to train a checker, and nothing here is held-out.
 #
@@ -20,7 +21,7 @@
 #   * perturbations stay in their seed's family and split.
 
 version = 1
-manifest = "m7-split-v2"
+manifest = "m7-split-v3"
 created = "2026-11-25"
 author = "claude-opus-5-5 (AI draft; not human-reviewed)"
 

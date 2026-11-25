@@ -28,7 +28,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any
 
-from app.evaluation import freeze
+from app.evaluation import corpus_v3, freeze, overlap
 from app.evaluation import labels as lab
 from app.evaluation.manifest import Manifest
 from app.evaluation.pilot import (
@@ -97,6 +97,38 @@ def legacy_assignments(manifest: Manifest) -> tuple[LegacyIndex, list[str]]:
                 f"is {declared}, so the family would cross splits"
             )
     return rows, problems
+
+
+# ------------------------------------------------------------------- fresh corpus
+def corpus_assignment_problems(manifest: Manifest) -> list[str]:
+    """The generator's declared family/split must equal the frozen manifest's, document by
+    document, and every fresh family must be assigned whole."""
+
+    problems: list[str] = []
+    index = overlap.load_corpus_index()
+    for doc in index.get("documents", []):
+        ref = f"fresh:{doc['key']}"
+        fam = manifest.member_family.get(ref)
+        if fam is None:
+            problems.append(f"{ref} is not assigned by {manifest.name}")
+        elif fam != doc["family"] or manifest.family_split[fam] != doc["split"]:
+            problems.append(
+                f"{ref}: generated as {doc['family']} ({doc['split']}) but the manifest has "
+                f"{fam} ({manifest.family_split[fam]})"
+            )
+    by_family: dict[str, set[str]] = defaultdict(set)
+    for doc in index.get("documents", []):
+        by_family[doc["family"]].add(doc["template"])
+    for fam, templates in sorted(by_family.items()):
+        if len(templates) != 1:
+            problems.append(f"fresh family {fam} mixes templates {sorted(templates)}")
+    owners: dict[str, set[str]] = defaultdict(set)
+    for doc in index.get("documents", []):
+        owners[doc["template"]].add(doc["family"])
+    for tpl, fams in sorted(owners.items()):
+        if len(fams) != 1:
+            problems.append(f"template {tpl} is used by several families {sorted(fams)}")
+    return problems
 
 
 # ------------------------------------------------------------------------- records
@@ -297,6 +329,10 @@ def run_checks(
             f"freeze order: {p}"
             for p in freeze.check_freeze_order(active["lock"], "pilot/datasets.json")
         ]
+    problems += [f"corpus-v3: {p}" for p in corpus_v3.check_corpus()]
+    problems += [f"corpus-v3: {p}" for p in corpus_assignment_problems(manifest)]
+    report = overlap.overlap_report(manifest)
+    problems += [f"overlap: {p}" for p in overlap.overlap_problems(report)]
     legacy, legacy_problems = legacy_assignments(manifest)
     problems += [f"legacy: {p}" for p in legacy_problems]
     seeds = load_seeds()
@@ -336,11 +372,16 @@ def counts_report(
     fam_counts: dict[str, int] = defaultdict(int)
     for fam in manifest.family_split.values():
         fam_counts[fam] += 1
+    doc_counts: dict[str, int] = defaultdict(int)
+    for ref, fam in manifest.member_family.items():
+        if not ref.startswith("sql:"):
+            doc_counts[manifest.family_split[fam]] += 1
     return {
         "manifest": {
             "name": manifest.name,
             "sha256": manifest.sha256,
             "families_by_split": dict(sorted(fam_counts.items())),
+            "source_files_by_split": dict(sorted(doc_counts.items())),
             "reserved_fresh_families": dict(sorted(manifest.reserved.items())),
             "sealed_families": sorted(manifest.sealed()),
         },
@@ -369,6 +410,7 @@ def format_report(report: dict[str, Any]) -> str:
     lines = [
         f"Active split manifest {m['name']} sha256={m['sha256'][:16]}…",
         f"  families by split: {m['families_by_split']}",
+        f"  source files by split: {m['source_files_by_split']}",
         f"  reserved fresh families (no members yet): {m['reserved_fresh_families']}",
         f"Pre-M7 fixture items mapped to families: {report['legacy_items_checked']}",
         "",

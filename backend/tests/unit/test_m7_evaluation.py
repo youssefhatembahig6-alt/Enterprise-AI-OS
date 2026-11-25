@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import csv
+import datetime as dt
 import json
 import re
 import shutil
@@ -28,6 +29,7 @@ from app.evaluation.pilot import build_records, render
 M7 = mf.REPO / freeze.M7_REL
 V1_TEXT = (M7 / "split-manifest-v1.toml").read_text("utf-8")
 V2_TEXT = (M7 / "split-manifest-v2.toml").read_text("utf-8")
+V3_TEXT = (M7 / "split-manifest-v3.toml").read_text("utf-8")  # active
 CODE_DEV = 'id = "code-config-constants"\nsplit = "dev"'
 BOARD_DEV = 'id = "board-governance"\nsplit = "dev"'
 
@@ -49,7 +51,7 @@ def test_pilot_build_is_byte_identical_across_runs() -> None:
     assert render() == render()
 
 
-def test_pilot_counts_are_all_dev_under_v2() -> None:
+def test_pilot_counts_are_all_dev() -> None:
     data = build_records()
     assert {k: len(v) for k, v in data.items()} == {
         "qa-cases": 12,
@@ -72,27 +74,38 @@ def test_gold_pairs_never_carry_a_label_field_only_a_proposal() -> None:
 
 
 # ------------------------------------------- finding 3: split inventory and exposure
-def test_v2_assigns_every_source_once_and_passes_the_exposure_audit() -> None:
-    manifest = _parse(V2_TEXT)
-    assert set(manifest.family_split.values()) == {"dev"}
-    assert set(manifest.reserved.values()) == {"train", "heldout"}
+def test_v3_assigns_every_source_once_and_passes_the_exposure_audit() -> None:
+    manifest = _parse(V3_TEXT)
+    splits = list(manifest.family_split.values())
+    assert (splits.count("dev"), splits.count("train"), splits.count("heldout")) == (9, 3, 2)
+    assert manifest.reserved == {}
     assert mf.audit_exposure(manifest) == []
 
 
+def test_v3_keeps_the_nine_v2_dev_families_unchanged() -> None:
+    v2, _ = mf.parse_manifest(V2_TEXT)  # superseded: fresh files are unassigned there
+    v3 = _parse(V3_TEXT)
+    assert v2.family_split == {f: s for f, s in v3.family_split.items() if f in v2.family_split}
+    assert set(v2.family_split.values()) == {"dev"}
+    assert {r: f for r, f in v3.member_family.items() if not r.startswith("fresh:")} == (
+        v2.member_family
+    )
+
+
 def test_v1_is_kept_and_its_misassignments_are_caught_by_the_audit() -> None:
-    problems = mf.audit_exposure(_parse(V1_TEXT))
+    problems = mf.audit_exposure(mf.parse_manifest(V1_TEXT)[0])
     flagged = {p.split()[1] for p in problems if "development artifacts mention it" in p}
     assert flagged == {"code-config-constants", "contract-template", "board-governance"}
 
 
 def test_moving_an_exposed_family_out_of_dev_fails_the_audit() -> None:
-    text = V2_TEXT.replace(BOARD_DEV, 'id = "board-governance"\nsplit = "heldout"')
+    text = V3_TEXT.replace(BOARD_DEV, 'id = "board-governance"\nsplit = "heldout"')
     problems = mf.audit_exposure(_parse(text))
     assert any("board-governance is heldout but development artifacts" in p for p in problems)
 
 
 def test_listed_exposure_must_exist_and_mention_a_member() -> None:
-    text = V2_TEXT.replace(
+    text = V3_TEXT.replace(
         'exposure = ["backend/tests/integration/test_m5_legal.py"]',
         'exposure = ["backend/tests/unit/test_policy_evaluator.py", "docs/nope.md"]',
     )
@@ -103,11 +116,11 @@ def test_listed_exposure_must_exist_and_mention_a_member() -> None:
 
 def test_unassigned_source_and_double_assignment_fail() -> None:
     _, problems = mf.parse_manifest(
-        V2_TEXT.replace('members = ["doc:customers-csv"]', "members = []")
+        V3_TEXT.replace('members = ["doc:customers-csv"]', "members = []")
     )
     assert any("doc:customers-csv is not assigned" in p for p in problems)
     _, problems = mf.parse_manifest(
-        V2_TEXT.replace(
+        V3_TEXT.replace(
             'members = ["doc:customers-csv"]',
             'members = ["doc:customers-csv", "doc:hr-leave-policy"]',
         )
@@ -116,16 +129,14 @@ def test_unassigned_source_and_double_assignment_fail() -> None:
 
 
 def test_reserved_families_cannot_hold_members() -> None:
-    text = V2_TEXT.replace(
-        'id = "fresh-train-regenerated"\nsplit = "train"',
-        'id = "fresh-train-regenerated"\nsplit = "train"\nmembers = ["doc:x"]',
-    )
+    text = V3_TEXT + '\n[[reserved_families]]\nid = "r"\nsplit = "heldout"\nmembers = ["doc:x"]\n'
+
     _, problems = mf.parse_manifest(text)
     assert any("must not have members" in p for p in problems)
 
 
 def test_moving_a_dev_exposed_family_is_caught_via_legacy_fixtures() -> None:
-    text = V2_TEXT.replace(
+    text = V3_TEXT.replace(
         'id = "hr-leave-policy"\nsplit = "dev"', 'id = "hr-leave-policy"\nsplit = "heldout"'
     )
     _, problems = legacy_assignments(_parse(text))
@@ -138,9 +149,9 @@ def _tampered_overlay(text: str) -> dict[str, str]:
 
     manifest = _parse(text)
     overlay = {
-        "split-manifest-v2.toml": text,
-        "split-manifest-v2.lock.json": mf.lock_text(
-            mf.build_lock(manifest, "split-manifest-v2.toml")
+        "split-manifest-v3.toml": text,
+        "split-manifest-v3.lock.json": mf.lock_text(
+            mf.build_lock(manifest, "split-manifest-v3.toml")
         ),
     }
     overlay.update({f"pilot/{rel}": body for rel, body in render(manifest).items()})
@@ -148,7 +159,7 @@ def _tampered_overlay(text: str) -> dict[str, str]:
 
 
 def test_changed_manifest_with_regenerated_lock_and_pilot_still_fails() -> None:
-    text = V2_TEXT.replace(
+    text = V3_TEXT.replace(
         'reason = "M3 retrieval dev cases; M1 parser-benchmark gold document."',
         'reason = "Edited after the freeze."',
     )
@@ -169,8 +180,8 @@ def test_editing_a_superseded_manifest_or_lock_fails() -> None:
 
 
 def test_changed_member_source_fails_the_lock() -> None:
-    manifest = _parse(V2_TEXT)
-    lock = mf.load_lock(M7 / "split-manifest-v2.lock.json")
+    manifest = _parse(V3_TEXT)
+    lock = mf.load_lock(M7 / "split-manifest-v3.lock.json")
     lock["member_sha256"]["doc:hr-leave-policy"] = "0" * 64
     assert any("doc:hr-leave-policy changed" in p for p in mf.verify_lock(manifest, lock))
 
@@ -194,6 +205,7 @@ def frozen_repo(tmp_path: Path) -> tuple[Path, Path]:
     m7.mkdir(parents=True)
     for name in ("split-manifest-v1.toml", "split-manifest-v1.lock.json",
                  "split-manifest-v2.toml", "split-manifest-v2.lock.json",
+                 "split-manifest-v3.toml", "split-manifest-v3.lock.json",
                  "frozen-snapshots.json"):  # fmt: skip
         shutil.copy(M7 / name, m7 / name)
     _git(repo, "init", "-q", "-b", "main")
@@ -208,26 +220,26 @@ def test_rewriting_manifest_lock_and_snapshot_together_fails_against_base(
 ) -> None:
     repo, m7 = frozen_repo
     overlay = _tampered_overlay(
-        V2_TEXT.replace(BOARD_DEV, 'id = "board-governance"\nsplit = "heldout"')
+        V3_TEXT.replace(BOARD_DEV, 'id = "board-governance"\nsplit = "heldout"')
     )
-    (m7 / "split-manifest-v2.toml").write_text(overlay["split-manifest-v2.toml"])
-    (m7 / "split-manifest-v2.lock.json").write_text(overlay["split-manifest-v2.lock.json"])
+    (m7 / "split-manifest-v3.toml").write_text(overlay["split-manifest-v3.toml"])
+    (m7 / "split-manifest-v3.lock.json").write_text(overlay["split-manifest-v3.lock.json"])
     snaps = json.loads((m7 / "frozen-snapshots.json").read_text())
-    entry = snaps["manifests"]["m7-split-v2"]
-    entry["manifest_sha256"] = freeze._sha(overlay["split-manifest-v2.toml"])
-    entry["lock_sha256"] = freeze._sha(overlay["split-manifest-v2.lock.json"])
+    entry = snaps["manifests"]["m7-split-v3"]
+    entry["manifest_sha256"] = freeze._sha(overlay["split-manifest-v3.toml"])
+    entry["lock_sha256"] = freeze._sha(overlay["split-manifest-v3.lock.json"])
     (m7 / "frozen-snapshots.json").write_text(json.dumps(snaps))
     _git(repo, "commit", "-q", "-am", "rewrite the freeze")
     problems = freeze.check_against_base("main", repo, freeze.M7_REL)
-    assert any("split-manifest-v2.toml is frozen on main" in p for p in problems)
-    assert any("split-manifest-v2.lock.json is frozen on main" in p for p in problems)
-    assert any("m7-split-v2.manifest_sha256 on main was changed" in p for p in problems)
+    assert any("split-manifest-v3.toml is frozen on main" in p for p in problems)
+    assert any("split-manifest-v3.lock.json is frozen on main" in p for p in problems)
+    assert any("m7-split-v3.manifest_sha256 on main was changed" in p for p in problems)
 
 
 def test_base_allows_only_active_to_superseded(frozen_repo: tuple[Path, Path]) -> None:
     repo, m7 = frozen_repo
     snaps = json.loads((m7 / "frozen-snapshots.json").read_text())
-    snaps["manifests"]["m7-split-v2"].update(status="superseded", superseded_by="v3", reason="r")
+    snaps["manifests"]["m7-split-v3"].update(status="superseded", superseded_by="v4", reason="r")
     (m7 / "frozen-snapshots.json").write_text(json.dumps(snaps))
     assert freeze.check_against_base("main", repo, freeze.M7_REL) == []
     snaps["manifests"]["m7-split-v1"]["status"] = "active"
@@ -257,7 +269,7 @@ def test_freeze_must_be_committed_before_the_pilot(tmp_path: Path) -> None:
 def train_manifest() -> mf.Manifest:
     """v2 with the code family moved to train, so train/dev crossings can be built."""
 
-    return _parse(V2_TEXT.replace(CODE_DEV, 'id = "code-config-constants"\nsplit = "train"'))
+    return _parse(V3_TEXT.replace(CODE_DEV, 'id = "code-config-constants"\nsplit = "train"'))
 
 
 @pytest.fixture
@@ -359,7 +371,7 @@ def test_record_in_the_wrong_split_fails(train_manifest, data) -> None:  # type:
 
 
 def test_sealed_heldout_family_fails() -> None:
-    manifest = _parse(V2_TEXT.replace(BOARD_DEV, 'id = "board-governance"\nsplit = "heldout"'))
+    manifest = _parse(V3_TEXT.replace(BOARD_DEV, 'id = "board-governance"\nsplit = "heldout"'))
     data = copy.deepcopy(build_records(manifest))
     rec = data["retrieval-pairs"][0]
     rec.update(
@@ -657,3 +669,155 @@ def test_write_failure_leaves_nothing_and_a_retry_succeeds(
     status = lab.status(label_dir)
     assert status["problems"] == []
     assert status["double_labelled"] == len(lab.gold_pairs())
+
+
+# ------------------------------------------------------------- v3 fresh corpus
+from app.evaluation import corpus_v3, overlap  # noqa: E402
+from app.evaluation.checks import corpus_assignment_problems  # noqa: E402
+
+
+def test_v3_corpus_is_deterministic_and_matches_the_committed_files() -> None:
+    assert corpus_v3.generate() == corpus_v3.generate()
+    assert corpus_v3.check_corpus() == []
+    index = overlap.load_corpus_index()
+    assert index["seed"] == corpus_v3.SEED == 20261126
+    assert index["generator_sha256"] == corpus_v3.generator_sha256()
+    assert index["original_generator"]["commit"].startswith("bf4a247")
+    counts: dict[str, int] = {}
+    for doc in index["documents"]:
+        counts[doc["split"]] = counts.get(doc["split"], 0) + 1
+    assert counts == {"train": 60, "heldout": 24}
+
+
+def test_v3_corpus_rebuild_catches_a_changed_seed_or_edited_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    corpus_v3.write_corpus(tmp_path)
+    assert corpus_v3.check_corpus(tmp_path) == []
+    (tmp_path / "files" / "v3-wo-001.md").write_text("edited\n")
+    assert any("v3-wo-001.md differs" in p for p in corpus_v3.check_corpus(tmp_path))
+    corpus_v3.write_corpus(tmp_path)
+    monkeypatch.setattr(corpus_v3, "SEED", 1)
+    assert len(corpus_v3.check_corpus(tmp_path)) > 50
+
+
+def _fmt_date(iso: str) -> str:
+    d = dt.date.fromisoformat(iso[:10])
+    return f"{d.day} {d.strftime('%B')} {d.year}"
+
+
+def test_every_fact_is_stated_in_its_document() -> None:
+    index = overlap.load_corpus_index()
+    base = M7 / "corpus-v3"
+    for doc in index["documents"]:
+        text = (base / doc["file"]).read_text("utf-8")
+        facts = json.loads((base / doc["facts"]).read_text("utf-8"))
+        for key, value in facts.items():
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int):
+                assert f"{value:,}" in text or str(value) in text, (doc["key"], key)
+            elif isinstance(value, str) and re.fullmatch(r"\d{4}-\d\d-\d\d.*", value):
+                assert _fmt_date(value) in text, (doc["key"], key)
+            elif isinstance(value, str):
+                assert value in text, (doc["key"], key)
+            else:
+                for q in value:
+                    assert q["supplier"] in text and f"{q['unit_egp']:,}" in text
+
+
+def test_v3_fresh_families_do_not_overlap_dev_or_each_other() -> None:
+    report = overlap.overlap_report(_parse(V3_TEXT))
+    assert overlap.overlap_problems(report) == []
+    assert report["dev_texts_compared"] >= 20
+    assert len(report["family_pairs"]) == 10
+
+
+def _heldout_doc_text() -> str:
+    return (M7 / "corpus-v3" / "files" / "v3-ps-001.md").read_text("utf-8")
+
+
+def test_overlap_check_catches_dev_text_copied_into_a_fresh_family(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real = overlap._dev_texts
+    copied = _heldout_doc_text().split("## Progress")[1]
+    monkeypatch.setattr(overlap, "_dev_texts", lambda m: {**real(m), "doc:fake": copied})
+    problems = overlap.overlap_problems(overlap.overlap_report(_parse(V3_TEXT)))
+    assert any("fresh-heldout-regenerated-a shares template text with dev" in p for p in problems)
+
+
+def test_overlap_check_catches_a_reused_fact_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    real = overlap._dev_texts
+    monkeypatch.setattr(
+        overlap,
+        "_dev_texts",
+        lambda m: {**real(m), "doc:fake": "We hired Karnak Facility Services."},
+    )
+    problems = overlap.overlap_problems(overlap.overlap_report(_parse(V3_TEXT)))
+    assert any("fresh-train-regenerated reuses names" in p and "Karnak" in p for p in problems)
+
+
+def test_overlap_check_catches_a_template_shared_across_splits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real = overlap._fresh_docs
+    train_text = (M7 / "corpus-v3" / "files" / "v3-pir-001.md").read_text("utf-8")
+
+    def leaky(m: mf.Manifest) -> dict[str, tuple[str, str, str]]:
+        docs = real(m)
+        fam, split, text = docs["fresh:v3-pr-001"]
+        docs["fresh:v3-pr-001"] = (fam, split, text + "\n" + train_text)
+        return docs
+
+    monkeypatch.setattr(overlap, "_fresh_docs", leaky)
+    problems = overlap.overlap_problems(overlap.overlap_report(_parse(V3_TEXT)))
+    assert any(
+        "fresh-heldout-regenerated-b and fresh-train-incident-review share" in p
+        or "fresh-train-incident-review and fresh-heldout-regenerated-b share" in p
+        for p in problems
+    )
+
+
+def test_a_development_artifact_mentioning_heldout_material_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real = mf._artifact_texts()
+    monkeypatch.setattr(
+        mf, "_artifact_texts", lambda: (*real, ("ml/tune_threshold.py", "load('v3-ps-004.md')"))
+    )
+    problems = mf.audit_exposure(_parse(V3_TEXT))
+    assert any(
+        "fresh-heldout-regenerated-a is heldout but development artifacts mention it "
+        "(ml/tune_threshold.py)" in p
+        for p in problems
+    )
+
+
+def test_generated_split_must_match_the_frozen_manifest() -> None:
+    text = V3_TEXT.replace(
+        'id = "fresh-heldout-regenerated-a"\nsplit = "heldout"',
+        'id = "fresh-heldout-regenerated-a"\nsplit = "train"',
+    )
+    problems = corpus_assignment_problems(_parse(text))
+    assert any(
+        "fresh:v3-ps-001: generated as fresh-heldout-regenerated-a (heldout) but the manifest "
+        "has fresh-heldout-regenerated-a (train)" in p
+        for p in problems
+    )
+    assert corpus_assignment_problems(_parse(V3_TEXT)) == []
+
+
+def test_pilot_records_cannot_use_a_fresh_heldout_family() -> None:
+    manifest = _parse(V3_TEXT)
+    data = copy.deepcopy(build_records(manifest))
+    rec = data["retrieval-pairs"][0]
+    rec.update(
+        sources=["fresh:v3-ps-001"],
+        source="fresh:v3-ps-001",
+        family="fresh-heldout-regenerated-a",
+        split="heldout",
+        quote=_heldout_doc_text().split("\n")[0][2:],
+    )
+    problems = check_records(manifest, data)
+    assert any("sealed held-out family fresh-heldout-regenerated-a" in p for p in problems)

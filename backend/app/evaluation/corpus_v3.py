@@ -60,7 +60,8 @@ class FamilySpec:
 
 def _rng(family: str) -> random.Random:
     digest = hashlib.sha256(f"{SEED}:{family}".encode()).hexdigest()
-    return random.Random(int(digest[:16], 16))
+    # Reproducible synthetic data, not security: a seeded PRNG is the point.
+    return random.Random(int(digest[:16], 16))  # noqa: S311
 
 
 def _date(rng: random.Random, lo: int, hi: int) -> dt.date:
@@ -144,9 +145,7 @@ def _due_diligence(rng: random.Random, n: int) -> tuple[str, str, Facts]:
     reviewed = _date(rng, 10, 160)
     next_months = {"low": 24, "medium": 12, "high": 6}[tier]
     handles_personal_data = rng.random() < 0.5
-    decision = {"low": "approved", "medium": "approved with conditions", "high": "suspended"}[
-        tier
-    ]
+    decision = {"low": "approved", "medium": "approved with conditions", "high": "suspended"}[tier]
     ref = f"SDR-{n:03d}"
     facts = {
         "reference": ref,
@@ -420,10 +419,10 @@ def generate() -> dict[str, str]:
             f"generator_sha256 = {_toml_str(generator_sha256())}",
             f"seed = {SEED}",
             f"reference_date = {_toml_str(REFERENCE_DATE.isoformat())}",
-            "original_generator = { repository = \"youssefhatembahig6-alt/enterprise-ai-oshh\", "
-            "commit = \"bf4a247a5c3db8bcedc37e0ed47dad6c635d9349\", path = \"scripts/seed\", "
-            "status = \"located, not used: its templates and stated values are the source of "
-            "the dev corpus\" }",
+            'original_generator = { repository = "youssefhatembahig6-alt/enterprise-ai-oshh", '
+            'commit = "bf4a247a5c3db8bcedc37e0ed47dad6c635d9349", path = "scripts/seed", '
+            'status = "located, not used: its templates and stated values are the source of '
+            'the dev corpus" }',
             "",
         ]
     )
