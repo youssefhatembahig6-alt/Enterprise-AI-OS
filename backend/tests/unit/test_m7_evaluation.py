@@ -1009,10 +1009,10 @@ def test_committed_batch_matches_a_fresh_build_and_validates() -> None:
 
 def test_batch_counts_match_the_index(batch: list[dict[str, Any]]) -> None:
     index = json.loads((cp.OUT_DIR / cp.INDEX_FILE).read_text())
-    assert index["pairs"] == len(batch) == 2088
-    assert index["by_label"] == {"supported": 560, "unsupported": 1528}
-    assert index["label_conflicts"] == 0 and index["duplicates_removed"] == 25
-    assert index["gap_to_target_lower_bound"] == 3000 - 2088
+    assert index["pairs"] == len(batch) == 2091
+    assert index["by_label"] == {"supported": 560, "unsupported": 1531}
+    assert index["label_conflicts"] == 0 and index["duplicates_removed"] == 22
+    assert index["gap_to_target_lower_bound"] == 3000 - 2091
     assert index["loader_purpose"] == "training" and index["manifest"] == "m7-split-v3"
     assert {p["label_quality"] for p in batch} == {"silver"}
 
@@ -1169,3 +1169,140 @@ def test_token_report_for_other_pairs_is_rejected(tmp_path: Path) -> None:
     problems = cp.token_report_problems(tmp_path)
     assert any("measured on different pairs" in p for p in problems)
     assert any("does not cover exactly" in p for p in problems)
+
+
+# --------------------------------------- batch 001 re-review: ambiguity and pinning
+def _decision_status(text: str) -> str:
+    return re.search(r'as exactly "([^"]+)"', text).group(1)  # type: ignore[union-attr]
+
+
+def test_decision_claims_state_an_exact_status(batch: list[dict[str, Any]]) -> None:
+    decisions = [p for p in batch if p["claim_type"] == "decision"]
+    assert decisions
+    for p in decisions:
+        assert re.search(r'records the decision status for .+ as exactly "[a-z ]+"\.$', p["claim"])
+        evidence_status = re.search(r"The supplier is (.+)\.", p["evidence"]).group(1)  # type: ignore[union-attr]
+        same = _decision_status(p["claim"]) == evidence_status
+        if p["variant"] != "wrong_evidence":
+            assert same == (p["label"] == "supported"), p["id"]
+    # The formerly ambiguous case: "approved" against "approved with conditions" is now an
+    # explicit status mismatch, so "unsupported" is unambiguous.
+    flagged = [
+        p for p in decisions
+        if p["variant"] != "wrong_evidence" and "approved with conditions" in p["evidence"]
+        and _decision_status(p["claim"]) == "approved"
+    ]  # fmt: skip
+    assert len(flagged) == 3 and {p["label"] for p in flagged} == {"unsupported"}
+    assert not [p for p in batch if p["claim"].endswith(" as approved.")]
+
+
+def test_start_year_claims_state_the_exact_start_year(batch: list[dict[str, Any]]) -> None:
+    years = [p for p in batch if p["claim_type"] == "start-year"]
+    assert years and not [p for p in batch if " since " in p["claim"]]
+    later = 0
+    for p in years:
+        claim_year = int(re.search(r"started using .+ in (\d{4})\.$", p["claim"]).group(1))  # type: ignore[union-attr]
+        evidence_year = int(re.search(r"used since (\d{4})", p["evidence"]).group(1))  # type: ignore[union-attr]
+        if p["variant"] != "wrong_evidence":
+            assert (claim_year == evidence_year) == (p["label"] == "supported"), p["id"]
+            later += claim_year > evidence_year
+    assert later > 0  # later-year variants exist and are explicit mismatches, so unsupported
+
+
+def test_count_claims_state_totals(batch: list[dict[str, Any]]) -> None:
+    for kind in ("labour", "accounts", "duration"):
+        claims = [p["claim"] for p in batch if p["claim_type"] == kind]
+        assert claims and all(c.endswith(" in total.") for c in claims)
+
+
+def test_still_entailed_rules() -> None:
+    specs = {s.name: s for s in cp.SPECS["fresh-train-regenerated"]}
+    response, labour = specs["response"], specs["labour"]
+    assert cp.still_entailed(response, 24, 72)  # a looser bound is still supported
+    assert not cp.still_entailed(response, 24, 4)
+    assert not cp.still_entailed(labour, 16, 10) and cp.still_entailed(labour, 16, 16)
+
+
+@pytest.mark.parametrize("claim_type", ["decision", "start-year", "response"])
+def test_validation_rejects_unsupported_variants_the_evidence_still_entails(
+    training: loader.LoadResult, batch: list[dict[str, Any]], claim_type: str
+) -> None:
+    pairs = copy.deepcopy(batch)
+    p = next(
+        p for p in pairs
+        if p["claim_type"] == claim_type and p["variant"] in ("swap", "shift")
+    )  # fmt: skip
+    looser = p["evidence_value"] + 1 if claim_type == "response" else p["evidence_value"]
+    p["claim_value"] = looser
+    assert any("its evidence still entails it" in x for x in cp.validate(pairs, training))
+
+
+def _activate_newer_manifest(tmp_path: Path) -> Path:
+    """A copy of the M7 metadata in which a v4 manifest (moving a train family to
+    held-out) is active and v3 is superseded."""
+
+    m7 = tmp_path / "m7"
+    m7.mkdir()
+    for name in ("frozen-snapshots.json", "split-manifest-v3.toml", "split-manifest-v3.lock.json"):
+        shutil.copy(M7 / name, m7 / name)
+    v4_text = V3_TEXT.replace(
+        'version = 3\nname = "m7-split-v3"', 'version = 4\nname = "m7-split-v4"'
+    ).replace(
+        'id = "fresh-train-incident-review"\nsplit = "train"',
+        'id = "fresh-train-incident-review"\nsplit = "heldout"',
+    )
+    v4 = _parse(v4_text)
+    lock_text = mf.lock_text(mf.build_lock(v4, "split-manifest-v4.toml"))
+    (m7 / "split-manifest-v4.toml").write_text(v4_text)
+    (m7 / "split-manifest-v4.lock.json").write_text(lock_text)
+    snaps = json.loads((m7 / "frozen-snapshots.json").read_text())
+    snaps["manifests"]["m7-split-v3"].update(
+        status="superseded", superseded_by="m7-split-v4", reason="test"
+    )
+    snaps["manifests"]["m7-split-v4"] = {
+        "manifest": "split-manifest-v4.toml",
+        "lock": "split-manifest-v4.lock.json",
+        "manifest_sha256": freeze._sha(v4_text),
+        "lock_sha256": freeze._sha(lock_text),
+        "frozen_at": "2026-12-01",
+        "status": "active",
+    }
+    snaps["active"] = "m7-split-v4"
+    (m7 / "frozen-snapshots.json").write_text(json.dumps(snaps))
+    return m7
+
+
+def test_batch_001_rebuilds_byte_for_byte_after_a_newer_manifest_is_activated(
+    tmp_path: Path,
+) -> None:
+    m7 = _activate_newer_manifest(tmp_path)
+    active = loader.load("training", m7_dir=m7)  # unpinned: follows the newer manifest
+    assert active.manifest == "m7-split-v4" and len(active.documents) == 40
+    pinned = cp.load_pinned(m7)
+    assert pinned.manifest == "m7-split-v3" and len(pinned.documents) == 60
+    for name, text in cp.render(pinned).items():
+        assert text == (cp.OUT_DIR / name).read_text("utf-8"), name
+    assert cp.check(m7_dir=m7) == []
+    with pytest.raises(ValueError, match="must be built from m7-split-v3"):
+        cp.render(active)
+
+
+def test_pinned_load_rejects_a_snapshot_entry_that_differs_from_the_pin(tmp_path: Path) -> None:
+    m7 = _activate_newer_manifest(tmp_path)
+    snaps = json.loads((m7 / "frozen-snapshots.json").read_text())
+    snaps["manifests"]["m7-split-v3"]["lock_sha256"] = "0" * 64
+    (m7 / "frozen-snapshots.json").write_text(json.dumps(snaps))
+    with pytest.raises(loader.LoaderError, match="differs from the pin"):
+        cp.load_pinned(m7)
+
+
+def test_index_records_the_pinned_manifest_hashes() -> None:
+    index = json.loads((cp.OUT_DIR / cp.INDEX_FILE).read_text())
+    assert (index["manifest"], index["manifest_sha256"], index["lock_sha256"]) == (
+        cp.PIN.name, cp.PIN.manifest_sha256, cp.PIN.lock_sha256
+    )  # fmt: skip
+    snaps = json.loads((M7 / "frozen-snapshots.json").read_text())
+    entry = snaps["manifests"][cp.PIN.name]
+    assert (entry["manifest_sha256"], entry["lock_sha256"]) == (
+        cp.PIN.manifest_sha256, cp.PIN.lock_sha256
+    )  # fmt: skip

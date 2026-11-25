@@ -44,6 +44,13 @@ from app.config import Settings
 from app.evaluation import loader, token_lengths
 
 BATCH = "batch-001"
+# Batch 001 is built from, and verified against, exactly this frozen manifest, whatever
+# manifest is active later (hashes from the reviewed frozen-snapshots.json entry).
+PIN = loader.Pin(
+    name="m7-split-v3",
+    manifest_sha256="be2205dbe8bb909500efc3680e7eb7934c02cbd3bfa267c57a7cedacee6e02a7",
+    lock_sha256="39456f467ea6108a32089ca70543ce80f3af2c238d26f4606ed858f63eaa4e5a",
+)
 BATCH_SEED = 20261127
 GENERATOR_VERSION = "1.0.0"
 OUT_DIR = loader.M7_DIR / "checker" / BATCH
@@ -73,8 +80,23 @@ class Spec:
     claim: Callable[[Facts, Any], str]
     distractor: str | None = None  # another fact of the same document, same kind
     # "upper": the claim states a bound ("within N hours"). A looser value would still be
-    # entailed, so unsupported variants may only make it stricter (smaller).
+    # entailed, so it is never used for an unsupported variant (see ``still_entailed``).
     bound: str | None = None
+
+
+def still_entailed(spec: Spec, evidence_value: Any, claim_value: Any) -> bool:
+    """Would the evidence still support the claim phrased with ``claim_value``?
+
+    Claim wording is chosen to be exact (a decision *status*, a *start* year, a *total*),
+    so only equal values are entailed, except for upper-bound claims, where any looser
+    bound is entailed too. Unsupported variants for which this is true are dropped.
+    """
+
+    if claim_value == evidence_value:
+        return True
+    if spec.bound == "upper":
+        return bool(claim_value >= evidence_value)
+    return False
 
 
 def _ref(f: Facts) -> str:
@@ -95,7 +117,7 @@ SPECS: dict[str, tuple[Spec, ...]] = {
         Spec("vendor", "vendor", "text", lambda f, v: f"{v} must respond",
              lambda f, v: f"{v} must respond to work order {_ref(f)}."),
         Spec("labour", "labour_hours", "int", lambda f, v: f"allows {v} labour hours",
-             lambda f, v: f"Work order {_ref(f)} allows {v} labour hours."),
+             lambda f, v: f"Work order {_ref(f)} allows {v} labour hours in total."),
         Spec("technicians", "technicians", "int",
              lambda f, v: f"labour hours for {v} technician",
              lambda f, v: f"Work order {_ref(f)} plans for {v} technician{'s' if v != 1 else ''}."),
@@ -117,9 +139,9 @@ SPECS: dict[str, tuple[Spec, ...]] = {
              lambda f, v: f"Review {_ref(f)} describes {f['supplier']} as a {v} supplier."),
         Spec("city", "city", "text", lambda f, v: f"based in {v},",
              lambda f, v: f"Review {_ref(f)} records {f['supplier']} as based in {v}."),
-        Spec("since", "supplier_since", "year", lambda f, v: f"used since {v}.",
-             lambda f, v: f"According to review {_ref(f)}, NileTech has used "
-             f"{f['supplier']} since {v}."),
+        Spec("start-year", "supplier_since", "year", lambda f, v: f"used since {v}.",
+             lambda f, v: f"According to review {_ref(f)}, NileTech started using "
+             f"{f['supplier']} in {v}."),
         Spec("tier", "risk_tier", "text", lambda f, v: f"Risk tier: {v}.",
              lambda f, v: f"Review {_ref(f)} rates {f['supplier']} as {v} risk."),
         Spec("cover", "indemnity_cover_usd", "money", lambda f, v: f"cover: USD {v:,}.",
@@ -134,7 +156,8 @@ SPECS: dict[str, tuple[Spec, ...]] = {
                  "from NileTech."
              )),
         Spec("decision", "decision", "text", lambda f, v: f"The supplier is {v}.",
-             lambda f, v: f"Review {_ref(f)} records {f['supplier']} as {v}."),
+             lambda f, v: f"Review {_ref(f)} records the decision status for {f['supplier']} "
+             f'as exactly "{v}".'),
         Spec("next-review", "next_review_months", "int", lambda f, v: f"due in {v} months",
              lambda f, v: f"After review {_ref(f)}, the next review of {f['supplier']} is due "
              f"in {v} months."),
@@ -147,12 +170,12 @@ SPECS: dict[str, tuple[Spec, ...]] = {
         Spec("severity", "severity", "int", lambda f, v: f"Severity {v}.",
              lambda f, v: f"Incident {_ref(f)} was rated severity {v}."),
         Spec("duration", "duration_minutes", "int", lambda f, v: f"lasted {v} minutes",
-             lambda f, v: f"Incident {_ref(f)} lasted {v} minutes."),
+             lambda f, v: f"Incident {_ref(f)} lasted {v} minutes in total."),
         Spec("began", "started", "date", lambda f, v: f"Began {fmt_date(v)}",
              lambda f, v: f"Incident {_ref(f)} began on {fmt_date(v)}.",
              distractor="action_due"),
         Spec("accounts", "affected_accounts", "int", lambda f, v: f"{v} client accounts",
-             lambda f, v: f"Incident {_ref(f)} affected {v} client accounts."),
+             lambda f, v: f"Incident {_ref(f)} affected {v} client accounts in total."),
         Spec("cause", "cause", "text", lambda f, v: f"caused by {v}",
              lambda f, v: f"Incident {_ref(f)} was caused by {v}."),
         Spec("owner", "action_owner", "text", lambda f, v: f"The {v} team owns",
@@ -163,6 +186,8 @@ SPECS: dict[str, tuple[Spec, ...]] = {
              distractor="started"),
     ),
 }  # fmt: skip
+
+_SPEC_BY_NAME = {(fam, s.name): s for fam, specs in SPECS.items() for s in specs}
 
 _SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9])")
 
@@ -225,10 +250,16 @@ def _base_pair(doc: loader.LoadedDocument, spec: Spec) -> tuple[str, int, str, s
     return title, offset, span, hashlib.sha256(doc.text.encode()).hexdigest()
 
 
+def load_pinned(m7_dir: Path = loader.M7_DIR) -> loader.LoadResult:
+    """The training load for this batch: train split of the pinned manifest only."""
+
+    return loader.load(loader.Purpose.TRAINING, m7_dir=m7_dir, pin=PIN)
+
+
 def build_pairs(result: loader.LoadResult | None = None) -> tuple[list[Pair], dict[str, Any]]:
     """Generate the batch from the training loader. Returns (pairs, build statistics)."""
 
-    result = result or loader.load(loader.Purpose.TRAINING)
+    result = result or load_pinned()
     if result.purpose is not loader.Purpose.TRAINING:
         raise ValueError("checker training pairs must come from the training loader")
     docs = sorted(result.documents, key=lambda d: d.ref)
@@ -298,6 +329,9 @@ def _pairs_for(
             # evidence is the title line), hypothesis = claim.
             "premise": ev[0] if ev[2] == ev[0] else f"{ev[0]}\n\n{ev[2]}",
             "variant": kind,
+            # The fact value the claim states, and the one its evidence states.
+            "claim_value": claim_value,
+            "evidence_value": evidence_doc.facts[spec.fact] if evidence_doc.facts else None,
             "parent": None if kind == "original" else parent_id,
             "label": label,
             "label_quality": "silver",
@@ -306,17 +340,17 @@ def _pairs_for(
 
     ev = (title, offset, span, text_sha)
     out = [pair("original", value, "supported", doc, ev)]
-    others = [v for v in pool if v != value and (spec.bound != "upper" or v < value)]
+    others = [v for v in pool if not still_entailed(spec, value, v)]
     if spec.kind == "bool":
         out.append(pair("polarity", not value, "unsupported", doc, ev))
     elif others:
         out.append(pair("swap", rng.choice(others), "unsupported", doc, ev))
     shifted = _shift(spec, value, rng)
-    if spec.bound == "upper" and shifted is not None and shifted >= value:
-        shifted = value - 1 if value > 1 else None
-    if shifted is not None and shifted != value:
+    if spec.bound == "upper" and shifted is not None and still_entailed(spec, value, shifted):
+        shifted = value - 1 if value > 1 else None  # make the bound stricter instead
+    if shifted is not None and not still_entailed(spec, value, shifted):
         out.append(pair("shift", shifted, "unsupported", doc, ev))
-    if spec.distractor and facts[spec.distractor] != value:
+    if spec.distractor and not still_entailed(spec, value, facts[spec.distractor]):
         out.append(pair("distractor", facts[spec.distractor], "unsupported", doc, ev))
     candidates = [
         d for d in fam_docs if d.ref != doc.ref and d.facts and d.facts[spec.fact] != value
@@ -377,6 +411,15 @@ def validate(pairs: list[Pair], result: loader.LoadResult) -> list[str]:
         )
         if p["premise"] != expected:
             problems.append(f"{where}: premise is not title + evidence")
+        spec = _SPEC_BY_NAME.get((p["family"], p["claim_type"]))
+        if spec is None:
+            problems.append(f"{where}: unknown claim type {p['claim_type']}")
+        elif (
+            p["variant"] != "wrong_evidence"
+            and p["label"] == "unsupported"
+            and still_entailed(spec, p["evidence_value"], p["claim_value"])
+        ):
+            problems.append(f"{where}: labelled unsupported but its evidence still entails it")
         claim = p["claim"].strip()
         if ";" in claim or re.search(r"[.!?]\s+[A-Z]", claim) or len(claim.split()) > 30:
             problems.append(f"{where}: claim is not atomic")
@@ -393,7 +436,13 @@ def _jsonl(pairs: list[Pair]) -> str:
 
 
 def render(result: loader.LoadResult | None = None) -> dict[str, str]:
-    result = result or loader.load(loader.Purpose.TRAINING)
+    result = result or load_pinned()
+    if (result.manifest, result.manifest_sha256, result.lock_sha256) != (
+        PIN.name,
+        PIN.manifest_sha256,
+        PIN.lock_sha256,
+    ):
+        raise ValueError(f"{BATCH} must be built from {PIN.name} at its pinned hashes")
     pairs, stats = build_pairs(result)
     body = _jsonl(pairs)
     by_family: dict[str, Counter[str]] = defaultdict(Counter)
@@ -406,6 +455,8 @@ def render(result: loader.LoadResult | None = None) -> dict[str, str]:
         "generator_version": GENERATOR_VERSION,
         "batch_seed": BATCH_SEED,
         "manifest": result.manifest,
+        "manifest_sha256": result.manifest_sha256,
+        "lock_sha256": result.lock_sha256,
         "loader_purpose": result.purpose.value,
         "source_documents": len(result.documents),
         "label_quality": "silver",
@@ -432,10 +483,10 @@ def write(out_dir: Path = OUT_DIR) -> dict[str, Any]:
     return index
 
 
-def check(out_dir: Path = OUT_DIR) -> list[str]:
-    """Committed batch == fresh build, and every rule in ``validate`` holds."""
+def check(out_dir: Path = OUT_DIR, m7_dir: Path = loader.M7_DIR) -> list[str]:
+    """Committed batch == fresh build from the pinned manifest, and ``validate`` holds."""
 
-    result = loader.load(loader.Purpose.TRAINING)
+    result = load_pinned(m7_dir)
     problems: list[str] = []
     for name, text in render(result).items():
         path = out_dir / name

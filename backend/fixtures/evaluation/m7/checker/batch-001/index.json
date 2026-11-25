@@ -12,32 +12,34 @@
     },
     "fresh-train-supplier-due-diligence": {
       "supported": 180,
-      "unsupported": 436
+      "unsupported": 439
     }
   },
   "by_label": {
     "supported": 560,
-    "unsupported": 1528
+    "unsupported": 1531
   },
   "by_variant": {
     "distractor": 110,
     "original": 560,
     "polarity": 20,
-    "shift": 303,
+    "shift": 306,
     "swap": 535,
     "wrong_evidence": 560
   },
-  "duplicates_removed": 25,
-  "gap_to_target_lower_bound": 912,
+  "duplicates_removed": 22,
+  "gap_to_target_lower_bound": 909,
   "generated_before_dedup": 2113,
   "generator": "app/evaluation/checker_pairs.py",
   "generator_version": "1.0.0",
   "label_conflicts": 0,
   "label_quality": "silver",
   "loader_purpose": "training",
+  "lock_sha256": "39456f467ea6108a32089ca70543ce80f3af2c238d26f4606ed858f63eaa4e5a",
   "manifest": "m7-split-v3",
-  "pairs": 2088,
-  "pairs_sha256": "d0e597d72c6195a2ba3bb5c449e574b818669d0c8c714057149066e2ba952517",
+  "manifest_sha256": "be2205dbe8bb909500efc3680e7eb7934c02cbd3bfa267c57a7cedacee6e02a7",
+  "pairs": 2091,
+  "pairs_sha256": "c98fbcd55811f34baa16492c1cf2524341030a1f7b59bdbdfafc38fdac581b1b",
   "roadmap_target": "3,000-5,000 checker training pairs",
   "source_documents": 60
 }

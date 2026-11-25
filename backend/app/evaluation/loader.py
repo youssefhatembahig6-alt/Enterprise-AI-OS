@@ -85,17 +85,46 @@ class LoadResult:
     manifest: str
     documents: list[LoadedDocument] = field(default_factory=list)
     skipped: dict[str, str] = field(default_factory=dict)  # ref -> reason
+    manifest_sha256: str = ""
+    lock_sha256: str = ""
 
 
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _frozen_metadata(m7_dir: Path) -> tuple[str, dict[str, Any], dict[str, str]]:
-    """(manifest name, parsed manifest, lock member fingerprints), hash-checked."""
+@dataclass(frozen=True)
+class Pin:
+    """A specific frozen manifest, by name and the reviewed SHA-256 of manifest and lock.
+
+    Pinned data (e.g. a released training batch) is built and verified against exactly
+    this snapshot, whichever manifest is active later. A superseded manifest stays usable
+    because superseded manifests and their locks are immutable on ``main``.
+    """
+
+    name: str
+    manifest_sha256: str
+    lock_sha256: str
+
+
+def _frozen_metadata(
+    m7_dir: Path, pin: Pin | None = None
+) -> tuple[str, dict[str, Any], dict[str, str], dict[str, Any]]:
+    """(name, parsed manifest, lock member fingerprints, snapshot entry), hash-checked.
+
+    Without ``pin`` the active manifest is used; with it, exactly the pinned one.
+    """
 
     snaps = json.loads((m7_dir / "frozen-snapshots.json").read_text("utf-8"))
-    entry = snaps["manifests"][snaps["active"]]
+    name = pin.name if pin else snaps["active"]
+    if name not in snaps["manifests"]:
+        raise LoaderError(f"{name} is not in the reviewed snapshot")
+    entry = snaps["manifests"][name]
+    if pin and (entry["manifest_sha256"], entry["lock_sha256"]) != (
+        pin.manifest_sha256,
+        pin.lock_sha256,
+    ):
+        raise LoaderError(f"the reviewed snapshot's entry for {name} differs from the pin")
     manifest_bytes = (m7_dir / entry["manifest"]).read_bytes()
     lock_bytes = (m7_dir / entry["lock"]).read_bytes()
     if _sha(manifest_bytes) != entry["manifest_sha256"]:
@@ -105,18 +134,22 @@ def _frozen_metadata(m7_dir: Path) -> tuple[str, dict[str, Any], dict[str, str]]
     manifest = tomllib.loads(manifest_bytes.decode("utf-8"))
     lock = json.loads(lock_bytes)
     if lock.get("manifest_sha256") != entry["manifest_sha256"]:
-        raise LoaderError("the lock does not belong to the active manifest")
-    return snaps["active"], manifest, lock["member_sha256"]
+        raise LoaderError(f"the lock does not belong to {name}")
+    if manifest.get("name") != name:
+        raise LoaderError(f"{entry['manifest']} is named {manifest.get('name')}, not {name}")
+    return name, manifest, lock["member_sha256"], entry
 
 
-def eligible(purpose: Purpose | str, m7_dir: Path = M7_DIR) -> list[Eligible]:
+def eligible(
+    purpose: Purpose | str, m7_dir: Path = M7_DIR, pin: Pin | None = None
+) -> list[Eligible]:
     """Members a purpose may load, chosen from frozen metadata alone (no source opened)."""
 
     purpose = Purpose(purpose)
     allowed = ALLOWED_SPLITS[purpose]
     if "heldout" in allowed:  # pragma: no cover - a guard against a future edit
         raise LoaderError("no purpose may load held-out material")
-    _, manifest, _ = _frozen_metadata(m7_dir)
+    _, manifest, _, _ = _frozen_metadata(m7_dir, pin)
     out = [
         Eligible(ref, fam["id"], fam["split"])
         for fam in manifest["families"]
@@ -137,20 +170,27 @@ def load(
     m7_dir: Path = M7_DIR,
     fresh_files_dir: Path | None = None,
     fresh_facts_dir: Path | None = None,
+    pin: Pin | None = None,
 ) -> LoadResult:
     """Load every eligible member for ``purpose``, verified against the frozen lock.
 
     ``fresh_files_dir`` / ``fresh_facts_dir`` override where fresh documents and
     sidecars live (both may be one shared directory). Only ``<key>.md`` and
-    ``<key>.json`` of eligible keys are ever opened there.
+    ``<key>.json`` of eligible keys are ever opened there. ``pin`` selects a specific
+    frozen manifest instead of the active one.
     """
 
     purpose = Purpose(purpose)
-    name, _, fingerprints = _frozen_metadata(m7_dir)
-    selected = eligible(purpose, m7_dir)
+    name, _, fingerprints, entry = _frozen_metadata(m7_dir, pin)
+    selected = eligible(purpose, m7_dir, pin)
     files_dir = fresh_files_dir or FRESH_DIR / "files"
     facts_dir = fresh_facts_dir or FRESH_DIR / "facts"
-    result = LoadResult(purpose=purpose, manifest=name)
+    result = LoadResult(
+        purpose=purpose,
+        manifest=name,
+        manifest_sha256=entry["manifest_sha256"],
+        lock_sha256=entry["lock_sha256"],
+    )
     tables: dict[str, dict[str, str]] = {}
     for item in selected:
         kind, _, key = item.ref.partition(":")

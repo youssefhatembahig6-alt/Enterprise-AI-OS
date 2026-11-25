@@ -142,7 +142,7 @@ git fetch origin main && .venv/bin/python -m app.evaluation check --base origin/
 
 ## 8. Gaps
 
-**Update:** the first checker training batch (2,088 silver pairs from the train split) is in [m7-checker-batch-001.md](m7-checker-batch-001.md).
+**Update:** the first checker training batch (2,091 silver pairs from the train split, pinned to v3) is in [m7-checker-batch-001.md](m7-checker-batch-001.md).
 
 0. **Blind release data does not exist yet:** v3 held-out is a public benchmark split (section 7). A coordinator still has to be chosen, and must create, freeze and publish metadata for blind data before release scoring.
 1. **No derived data for the fresh families yet:** QA cases, retrieval pairs, checker training pairs and gold pairs are the next, separately reviewed step.
