@@ -302,7 +302,9 @@ class PredictionsScorer:
 
     name = "predictions-file"
 
-    def __init__(self, path: Path, pairs: Sequence[EvalPair]) -> None:
+    def __init__(
+        self, path: Path, pairs: Sequence[EvalPair], *, allow_synthetic: bool = False
+    ) -> None:
         lines = [json.loads(x) for x in path.read_text("utf-8").splitlines() if x.strip()]
         if not lines:
             raise ValueError(f"{path} is empty")
@@ -312,8 +314,11 @@ class PredictionsScorer:
         ]
         if missing_meta:
             raise ValueError(f"{path} header lacks {missing_meta}")
-        if str(self.header.get("inference", "")).lower() == "fake":
+        inference = str(self.header.get("inference", "")).lower()
+        if inference == "fake":
             raise BackendRejected(f"{path} was produced by fake inference")
+        if inference == "synthetic" and not allow_synthetic:
+            raise BackendRejected(f"{path} holds synthetic test scores, not a model result")
         self.rows = {r["pair_id"]: r for r in rows}
         expected = {p.pair_id: p for p in pairs}
         if set(self.rows) != set(expected) or len(rows) != len(self.rows):

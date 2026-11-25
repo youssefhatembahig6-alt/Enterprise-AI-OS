@@ -1854,3 +1854,186 @@ def test_f1_uses_two_tp_over_two_tp_plus_fp_plus_fn() -> None:
     assert cm.unsupported_prf(only_supported)["f1"] is None  # denominator zero
     over_flag = [cm.Scored("a", S, 0.1, U, 1, "x")]  # TP = 0, FP = 1: F1 is 0, not None
     assert cm.unsupported_prf(over_flag)["f1"] == 0.0
+
+
+# ---------------------------------------------------------------- HHEM-2.1-open scorer
+import importlib.util  # noqa: E402
+
+_HHEM_PATH = mf.REPO / "ml" / "hhem-baseline" / "hhem_score.py"
+
+
+def _load_hhem() -> Any:
+    spec = importlib.util.spec_from_file_location("hhem_score", _HHEM_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["hhem_score"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+hhem = _load_hhem()
+
+
+def _export(agreed: Path, tmp_path: Path) -> tuple[list[cb.EvalPair], dict[str, Any], Path]:
+    pairs, dataset = cb.dev_eval_set(agreed)
+    path = tmp_path / "inputs.jsonl"
+    path.write_text(cb.export_inputs(pairs), "utf-8")
+    return pairs, dataset, path
+
+
+def test_hhem_digests_match_the_runner() -> None:
+    for pid, claim, premise in [("a", "b", "c"), ("ü-1", "Zürich 🚀 claim.", "Title\n\nSpan.")]:
+        assert hhem.input_digest(pid, claim, premise) == cb.input_digest(pid, claim, premise)
+    pairs = cb.synthetic_pairs()
+    rows = [{"pair_id": p.pair_id, "claim": p.claim, "premise": p.premise} for p in pairs]
+    assert hhem.inputs_digest(rows) == cb.inputs_digest(pairs)
+
+
+def test_hhem_round_trip_is_accepted_by_the_runner_with_hashes_preserved(
+    agreed: Path, tmp_path: Path
+) -> None:
+    pairs, dataset, inputs_path = _export(agreed, tmp_path)
+    inputs = hhem.read_inputs(inputs_path)
+    out = tmp_path / "predictions.jsonl"
+    out.write_text(hhem.score_inputs(inputs, hhem.SyntheticBackend()), "utf-8")
+    lines = [json.loads(x) for x in out.read_text().splitlines()]
+    header, rows = lines[0], lines[1:]
+    exported = [json.loads(x) for x in inputs_path.read_text().splitlines()]
+    assert header["inputs_sha256"] == exported[0]["inputs_sha256"] == cb.inputs_digest(pairs)
+    assert [r["input_sha256"] for r in rows] == [r["input_sha256"] for r in exported[1:]]
+    assert (header["model"], header["revision"]) == (hhem.HHEM_REPO, hhem.HHEM_REVISION)
+    runtime = header["runtime"]
+    assert runtime["reviewed_code_sha256"] == {n: hhem.HHEM_FILES[n] for n in hhem.REVIEWED_CODE}
+    assert runtime["foundation"] == {"repo": "google/flan-t5-base", "revision": hhem.FLAN_REVISION}
+    assert runtime["python"] and runtime["scorer_sha256"] and header["inference"] == "synthetic"
+    scorer = cb.PredictionsScorer(out, pairs, allow_synthetic=True)
+    report = cb.run(lambda: scorer, pairs, dataset)
+    assert report["status"] == "scored" and report["metrics"]["pairs"] == 37
+    assert report["scorer"]["model"] == {"model": hhem.HHEM_REPO, "revision": hhem.HHEM_REVISION}
+
+
+def test_runner_refuses_synthetic_hhem_files_by_default(agreed: Path, tmp_path: Path) -> None:
+    pairs, _, inputs_path = _export(agreed, tmp_path)
+    out = tmp_path / "predictions.jsonl"
+    out.write_text(hhem.score_inputs(hhem.read_inputs(inputs_path), hhem.SyntheticBackend()))
+    with pytest.raises(cb.BackendRejected, match="synthetic test scores"):
+        cb.PredictionsScorer(out, pairs)
+
+
+def _rewrite(path: Path, edit: Callable[[list[dict[str, Any]]], None]) -> None:
+    lines = [json.loads(x) for x in path.read_text().splitlines()]
+    edit(lines)
+    path.write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines))
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (lambda ls: ls[1].update(claim=ls[1]["claim"] + " Edited."), "changed after export"),
+        (lambda ls: ls[2].update(premise="A different premise."), "changed after export"),
+        (lambda ls: ls[0].update(inputs_sha256="0" * 64), "inputs_sha256 does not match"),
+        (lambda ls: ls.pop(), "header announces"),
+        (lambda ls: ls.append(dict(ls[1])), "header announces"),
+        (lambda ls: ls[0].update(kind="something-else"), "not an M7 checker-inputs export"),
+    ],
+)
+def test_hhem_refuses_stale_or_edited_inputs(
+    agreed: Path, tmp_path: Path, edit: Any, message: str
+) -> None:
+    _, _, inputs_path = _export(agreed, tmp_path)
+    _rewrite(inputs_path, edit)
+    with pytest.raises(hhem.InputError, match=message):
+        hhem.read_inputs(inputs_path)
+
+
+def test_predictions_go_stale_when_inputs_change_under_the_same_ids(
+    agreed: Path, tmp_path: Path
+) -> None:
+    pairs, _, inputs_path = _export(agreed, tmp_path)
+    out = tmp_path / "predictions.jsonl"
+    out.write_text(hhem.score_inputs(hhem.read_inputs(inputs_path), hhem.SyntheticBackend()))
+    changed = list(pairs)
+    p0 = pairs[0]
+    changed[0] = cb.EvalPair(p0.pair_id, p0.claim, p0.premise + " (revised)", p0.gold,
+                             p0.change_type, p0.family)  # fmt: skip
+    with pytest.raises(ValueError, match="inputs_sha256 is stale"):
+        cb.PredictionsScorer(out, changed, allow_synthetic=True)
+
+
+def test_hhem_scores_nothing_and_downloads_nothing_for_stale_inputs(
+    agreed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, _, inputs_path = _export(agreed, tmp_path)
+    _rewrite(inputs_path, lambda ls: ls[1].update(claim="Edited."))
+
+    def no_fetch(_: Path) -> None:
+        raise AssertionError("must not download before the inputs are verified")
+
+    monkeypatch.setattr(hhem, "fetch", no_fetch)
+    with pytest.raises(hhem.InputError):
+        hhem.main(["--inputs", str(inputs_path), "--out", str(tmp_path / "o.jsonl")])
+    assert not (tmp_path / "o.jsonl").exists()
+
+
+def _unreviewed_copy(tmp_path: Path) -> Path:
+    """A local HHEM dir whose code files have the reviewed names but other bytes."""
+
+    d = tmp_path / "hhem"
+    d.mkdir()
+    for name in hhem.REVIEWED_CODE:
+        (d / name).write_text("# placeholder, not the reviewed code\n")
+    return d
+
+
+def test_unreviewed_hhem_code_is_never_loaded(tmp_path: Path) -> None:
+    d = _unreviewed_copy(tmp_path)  # placeholder bytes: hashes differ from the reviewed code
+    with pytest.raises(hhem.PinError, match=re.escape("configuration_hhem_v2.py: sha256")):
+        hhem.verify_reviewed_code(d)
+    # The backend checks the code before importing torch or transformers (neither is
+    # installed here, so reaching an import would raise ImportError instead).
+    with pytest.raises(hhem.PinError):
+        hhem.HhemBackend(d, tmp_path / "flan", "cuda")
+
+
+def test_extra_python_files_in_the_model_dir_are_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    d = _unreviewed_copy(tmp_path)
+    (d / "evil.py").write_text("import os\n")
+    monkeypatch.setattr(hhem, "verify_file", lambda path, pinned: None)  # pretend hashes match
+    with pytest.raises(hhem.PinError, match=r"unreviewed code .*evil\.py"):
+        hhem.verify_reviewed_code(d)
+
+
+def test_pinned_file_mismatch_is_refused(tmp_path: Path) -> None:
+    f = tmp_path / "model.safetensors"
+    f.write_bytes(b"not the weights")
+    with pytest.raises(hhem.PinError, match=re.escape("model.safetensors: sha256")):
+        hhem.verify_file(f, hhem.HHEM_FILES["model.safetensors"])
+
+
+class _FixedBackend:
+    inference = "synthetic"
+
+    def __init__(self, values: list[float]) -> None:
+        self.values = values
+
+    def describe(self) -> dict[str, Any]:
+        return {}
+
+    def score(self, premise: str, claim: str) -> float:
+        return self.values.pop(0)
+
+
+def test_hhem_decision_is_the_models_argmax_and_scores_are_bounded(
+    agreed: Path, tmp_path: Path
+) -> None:
+    _, _, inputs_path = _export(agreed, tmp_path)
+    inputs = hhem.read_inputs(inputs_path)
+    values = [0.5, 0.5000001, 0.2] + [0.9] * (len(inputs.rows) - 3)
+    rows = [json.loads(x) for x in hhem.score_inputs(inputs, _FixedBackend(values)).splitlines()][
+        1:
+    ]
+    assert [r["predicted"] for r in rows[:3]] == ["unsupported", "supported", "unsupported"]
+    with pytest.raises(RuntimeError, match="outside"):
+        hhem.score_inputs(inputs, _FixedBackend([1.2] * len(inputs.rows)))
