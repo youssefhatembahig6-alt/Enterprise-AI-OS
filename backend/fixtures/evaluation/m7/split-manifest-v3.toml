@@ -1,0 +1,287 @@
+# M7 train/dev/held-out split manifest, version 3. Frozen 2026-11-26.
+#
+# Supersedes split-manifest-v2 (kept unchanged as an audit record). It is identical to v2 for
+# the nine development-exposed families, which all stay `dev`, and adds FRESH families for
+# training and the release holdout. Their documents come from the deterministic generator
+# backend/app/evaluation/corpus_v3.py (seed 20261126, version 3.0.0). That generator's SHA-256,
+# the seed and every file hash are recorded in corpus-v3/corpus.toml; the lock below also hashes
+# each document together with its facts sidecar.
+#
+# The original NileTech generator (old repository, commit bf4a247, scripts/seed) was located but
+# not used: the dev corpus was built from its templates and stated values. See
+# docs/evaluation/m7-v3-corpus.md.
+#
+# Rules (enforced by the M7 check):
+#   1. Every source belongs to exactly one family; whole families are assigned to one split.
+#   2. Development-exposed families stay `dev` (the exposure scan of tests, scripts, ML runs and
+#      evidence still applies; train and held-out families must not be mentioned there).
+#   3. One template per fresh family. Fresh families share no digit-masked word 8-gram and no
+#      fact name with any dev source, with one another, or with the original generator's
+#      archive (when present locally). See app/evaluation/overlap.py.
+#   4. Held-out families are SEALED: no pilot or derived record, tuning run or model-selection
+#      step may use them. Pair, claim and question generation happens later, after this freeze.
+#
+# Freezing: split-manifest-v3.lock.json plus the hand-written entry in frozen-snapshots.json,
+# which CI also compares with `main`.
+
+version = 3
+name = "m7-split-v3"
+frozen_at = "2026-11-26"
+supersedes = "m7-split-v2"
+splits = ["train", "dev", "heldout"]
+
+# Member references: doc:, contract:, code:, sql: as in v2;
+#   fresh:<key>   backend/fixtures/evaluation/m7/corpus-v3/corpus.toml
+
+[sql_templates.sales-period-net-fulfilled]
+description = "Net (tax-exclusive) FULFILLED sales for a calendar period, order_date basis, USD"
+dataset = "niletech-0.1.6"
+normalized_fingerprint = "e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127"
+fixtures = [
+  "fixtures/evaluation/sales-q1-2026.toml",
+  "fixtures/evaluation/sales-generalization-m2.toml",
+]
+
+[[families]]
+id = "q1-2026-sales-figures"
+split = "dev"
+members = [
+  "sql:sales-period-net-fulfilled",
+  "doc:finance-q1-commentary",
+  "doc:sales-tables-pdf",
+  "doc:q1-workbook",
+  "doc:delivery-note-scan",
+  "doc:isolation-handbook",
+]
+reason = "Restate the same Q1 figures or the same revenue-sentence template; SQL template used by M1/M2 dev cases."
+exposure = [
+  "backend/tests/unit/test_sales_reference.py",
+  "backend/fixtures/evaluation/documents-dev-m3.toml",
+  "backend/tests/integration/test_documents_answers.py",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+[[families]]
+id = "hr-leave-policy"
+split = "dev"
+members = ["doc:hr-leave-policy"]
+reason = "M3 retrieval dev cases, relevance study and answer tests."
+exposure = [
+  "backend/fixtures/evaluation/documents-dev-m3.toml",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+[[families]]
+id = "it-security-handbook"
+split = "dev"
+members = ["doc:it-security-handbook"]
+reason = "M3 retrieval dev cases, relevance study and answer tests."
+exposure = [
+  "backend/fixtures/evaluation/documents-dev-m3.toml",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+[[families]]
+id = "product-catalogue"
+split = "dev"
+members = ["doc:product-catalogue"]
+reason = "M3 retrieval dev cases, relevance study and answer tests."
+exposure = [
+  "backend/fixtures/evaluation/documents-dev-m3.toml",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+[[families]]
+id = "company-profile"
+split = "dev"
+members = ["doc:company-overview-pdf", "doc:newsletter-pdf"]
+reason = "Overview in M3 retrieval dev cases; newsletter restates the same offices and is an M1 parser-benchmark gold document."
+exposure = [
+  "backend/fixtures/evaluation/documents-dev-m3.toml",
+  "docs/evidence/m3/2026-11-21-colab-parsers-scores.md",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+[[families]]
+id = "customer-records"
+split = "dev"
+members = ["doc:customers-csv"]
+reason = "M3 retrieval dev cases; M1 parser-benchmark gold document."
+exposure = [
+  "backend/fixtures/evaluation/documents-dev-m3.toml",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+[[families]]
+id = "contract-template"
+split = "dev"
+members = ["contract:aswan-supply", "contract:red-sea-logistics", "contract:nilecloud-licence"]
+reason = "One contract template; the M5 legal extractor was developed and tested against all three, also through tests/unit/test_m5_legal_extract.py, which loads them via legal.toml (corrected from v1 train)."
+exposure = ["backend/tests/integration/test_m5_legal.py"]
+
+[[families]]
+id = "code-config-constants"
+split = "dev"
+members = ["code:billing/refunds.py", "code:inventory/reservations.py"]
+reason = "M5 GitHub acceptance fixtures, including a real-model Colab run (corrected from v1 train)."
+exposure = [
+  "backend/tests/integration/test_m5_acceptance_runner.py",
+  "docs/evidence/m5/2026-11-24-colab-code-real-model.json",
+  "scripts/m5_github_acceptance.py",
+]
+
+[[families]]
+id = "board-governance"
+split = "dev"
+members = ["doc:board-minutes", "doc:draft-strategy"]
+reason = "Indexed in the M3 Colab retrieval evaluation and used by M3 answer tests (corrected from v1 held-out)."
+exposure = [
+  "backend/tests/integration/test_documents_answers.py",
+  "docs/evidence/m3/2026-11-21-colab-retrieval-eval.json",
+]
+
+# ------------------------------------------------------------------ fresh families (v3)
+
+[[families]]
+id = "fresh-train-regenerated"
+split = "train"
+template = "facility-work-order"
+members = [
+  "fresh:v3-wo-001",
+  "fresh:v3-wo-002",
+  "fresh:v3-wo-003",
+  "fresh:v3-wo-004",
+  "fresh:v3-wo-005",
+  "fresh:v3-wo-006",
+  "fresh:v3-wo-007",
+  "fresh:v3-wo-008",
+  "fresh:v3-wo-009",
+  "fresh:v3-wo-010",
+  "fresh:v3-wo-011",
+  "fresh:v3-wo-012",
+  "fresh:v3-wo-013",
+  "fresh:v3-wo-014",
+  "fresh:v3-wo-015",
+  "fresh:v3-wo-016",
+  "fresh:v3-wo-017",
+  "fresh:v3-wo-018",
+  "fresh:v3-wo-019",
+  "fresh:v3-wo-020",
+]
+reason = "Facility work orders (site, asset, priority, response hours, vendor, labour, cost). New template and facts."
+
+[[families]]
+id = "fresh-train-supplier-due-diligence"
+split = "train"
+template = "supplier-due-diligence"
+members = [
+  "fresh:v3-sdr-001",
+  "fresh:v3-sdr-002",
+  "fresh:v3-sdr-003",
+  "fresh:v3-sdr-004",
+  "fresh:v3-sdr-005",
+  "fresh:v3-sdr-006",
+  "fresh:v3-sdr-007",
+  "fresh:v3-sdr-008",
+  "fresh:v3-sdr-009",
+  "fresh:v3-sdr-010",
+  "fresh:v3-sdr-011",
+  "fresh:v3-sdr-012",
+  "fresh:v3-sdr-013",
+  "fresh:v3-sdr-014",
+  "fresh:v3-sdr-015",
+  "fresh:v3-sdr-016",
+  "fresh:v3-sdr-017",
+  "fresh:v3-sdr-018",
+  "fresh:v3-sdr-019",
+  "fresh:v3-sdr-020",
+]
+reason = "Supplier due-diligence reviews (supplier, location, risk tier, indemnity cover, personal data, decision). New template and facts."
+
+[[families]]
+id = "fresh-train-incident-review"
+split = "train"
+template = "post-incident-review"
+members = [
+  "fresh:v3-pir-001",
+  "fresh:v3-pir-002",
+  "fresh:v3-pir-003",
+  "fresh:v3-pir-004",
+  "fresh:v3-pir-005",
+  "fresh:v3-pir-006",
+  "fresh:v3-pir-007",
+  "fresh:v3-pir-008",
+  "fresh:v3-pir-009",
+  "fresh:v3-pir-010",
+  "fresh:v3-pir-011",
+  "fresh:v3-pir-012",
+  "fresh:v3-pir-013",
+  "fresh:v3-pir-014",
+  "fresh:v3-pir-015",
+  "fresh:v3-pir-016",
+  "fresh:v3-pir-017",
+  "fresh:v3-pir-018",
+  "fresh:v3-pir-019",
+  "fresh:v3-pir-020",
+]
+reason = "Post-incident reviews (service, severity, duration, affected accounts, cause, owner). New template and facts."
+
+[[families]]
+id = "fresh-heldout-regenerated-a"
+split = "heldout"
+template = "client-project-status"
+members = [
+  "fresh:v3-ps-001",
+  "fresh:v3-ps-002",
+  "fresh:v3-ps-003",
+  "fresh:v3-ps-004",
+  "fresh:v3-ps-005",
+  "fresh:v3-ps-006",
+  "fresh:v3-ps-007",
+  "fresh:v3-ps-008",
+  "fresh:v3-ps-009",
+  "fresh:v3-ps-010",
+  "fresh:v3-ps-011",
+  "fresh:v3-ps-012",
+]
+reason = "Client project status reports (client, sector, workstream, RAG status, budget hours, milestone). New template and facts. SEALED."
+
+[[families]]
+id = "fresh-heldout-regenerated-b"
+split = "heldout"
+template = "purchase-requisition"
+members = [
+  "fresh:v3-pr-001",
+  "fresh:v3-pr-002",
+  "fresh:v3-pr-003",
+  "fresh:v3-pr-004",
+  "fresh:v3-pr-005",
+  "fresh:v3-pr-006",
+  "fresh:v3-pr-007",
+  "fresh:v3-pr-008",
+  "fresh:v3-pr-009",
+  "fresh:v3-pr-010",
+  "fresh:v3-pr-011",
+  "fresh:v3-pr-012",
+]
+reason = "Purchase requisitions with quote comparisons (item, quantity, three quotes, award, approval limit). New template and facts. SEALED."
+
+[[legacy_fixtures]]
+path = "fixtures/evaluation/sales-q1-2026.toml"
+split = "dev"
+kind = "sql-cases"
+
+[[legacy_fixtures]]
+path = "fixtures/evaluation/sales-generalization-m2.toml"
+split = "dev"
+kind = "sql-cases"
+
+[[legacy_fixtures]]
+path = "fixtures/evaluation/documents-dev-m3.toml"
+split = "dev"
+kind = "retrieval-cases"
+
+[[legacy_fixtures]]
+path = "fixtures/evaluation/relevance-study-m3.toml"
+split = "dev"
+kind = "relevance-pairs"
