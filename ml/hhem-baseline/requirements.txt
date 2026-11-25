@@ -1,0 +1,8 @@
+# Pins for the HHEM-2.1-open scorer on the Colab GPU (torch: the Colab runtime's CUDA build).
+# Same transformers and tokenizer stack as ml/checker-tokenizer/requirements.txt.
+transformers==4.56.2
+tokenizers==0.22.2
+huggingface_hub==0.36.2
+safetensors==0.8.0
+sentencepiece==0.2.3
+protobuf==7.36.2

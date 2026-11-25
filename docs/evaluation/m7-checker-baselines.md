@@ -17,7 +17,7 @@ The Member 5 report, section 4.3, "How the result is measured", names the compar
 | Baseline | Runner scorer | How it is run |
 | --- | --- | --- |
 | Zero-shot NLI checkpoint (no fine-tuning) | `deberta` | The **current pinned checker**, `MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli@6f5cf0a2…`, through the model gateway's `/check`, exactly as the application calls it. P(supported) = P(entailment). |
-| HHEM-2.1-open (Vectara) | `predictions` | Scored offline on Colab from `--export-inputs`; the predictions file must carry model, revision, runtime and the input digests. **Not yet produced** (see gaps). |
+| HHEM-2.1-open (Vectara) | `predictions` | Scored offline on Colab from `--export-inputs`; the predictions file must carry model, revision, runtime and the input digests. Scorer: `ml/hhem-baseline/hhem_score.py` ([m7-hhem-baseline.md](m7-hhem-baseline.md)); no real run yet. |
 | Qwen3-8B as a judge (on Colab) | `qwen-judge` | Through the gateway chat route, temperature 0, thinking off, fixed prompt `m7-judge-1` (its SHA-256 is recorded), one-word answer. Hard labels; an unparseable answer is scored UNSUPPORTED (fail closed) and counted. |
 
 The fine-tuned checker does not exist yet. When it does, it plugs in as another scorer.
