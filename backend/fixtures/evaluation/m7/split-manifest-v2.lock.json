@@ -1,0 +1,28 @@
+{
+  "frozen_at": "2026-11-26",
+  "manifest": "split-manifest-v2.toml",
+  "manifest_sha256": "a5a6bbb4526d8ef5d90e9445224ad731574a172cd73bd914ead42231cd7dccb9",
+  "member_sha256": {
+    "code:billing/refunds.py": "aa2269cb6f8c60a33ae62f98c63389b0936873479fc93a527177ce43fd0637dc",
+    "code:inventory/reservations.py": "351987fd55b0dcc90d67b4eeba6092f72451066c5c3642da1c17bc6e683346b3",
+    "contract:aswan-supply": "3c385aad7059a1c4cb2a95aae630df6d185b890760be918e9d1343d5c6b8c4ff",
+    "contract:nilecloud-licence": "4dcc88c643f6cf1b99a900c9f49fbebc92252e76e7da583bf41fe217bb88746e",
+    "contract:red-sea-logistics": "1bf2672e2780d4cdd2d8e453080e1583799a448ebcf94ca01e20e18fff2c9e32",
+    "doc:board-minutes": "76489de883560d4168163674d93b221d3251654901010b7c8a9d14018fa3aafa",
+    "doc:company-overview-pdf": "3c47e7f1fc13cb553d178d37bf1adbc78ccb530d7c01bba8cbf0266d0adba625",
+    "doc:customers-csv": "02f3ca381bbb449414dcea4541f1a56b67832d94a8fbb5a22e22c899f6166dc2",
+    "doc:delivery-note-scan": "9b30e8436ab7ffa971d8ae2c0cabe3a6cb81d1e7ce75ac6e1b59566f3255799f",
+    "doc:draft-strategy": "ebdb4bb5b86b71e302b8bd6d2c9ae5f9d603916372aa0e52b09ff8ec5b6c9598",
+    "doc:finance-q1-commentary": "8275b77d5f3236aee04baa66fe0e42443b5d271be0fcc17a37a8731f64b557c7",
+    "doc:hr-leave-policy": "e6e1244f59c9ca2b31c53281e71e65bd6084776c5693477641c884ac4685c3d6",
+    "doc:isolation-handbook": "06f3647b826f5b424ff3998fb7cd904f55727e2942ff88632898b4ebbd49a00c",
+    "doc:it-security-handbook": "0158d26f787ee8b914507e0a81de274b742f5fe807f03b7eb45ecd5096f9eb2e",
+    "doc:newsletter-pdf": "f88af22ce0843c93ef5a0c7946a222143b75b9fefcf4b0ee0393598544042594",
+    "doc:product-catalogue": "eabe3a38c7266e7f1b3ededf1dc92c5b0582efdeb7bea0e0d7fbca956f904e8f",
+    "doc:q1-workbook": "572016e7abef5b27fe5870f621868a9d52b6b975e50b9c4c5444966f287894b9",
+    "doc:sales-tables-pdf": "a0dd67b85b2976392235c05bf1be30a9b8be9fa198138208caeed6596af61365",
+    "sql:sales-period-net-fulfilled": "e0030ede436d84aad260cb42286629476eadf5763deaeee965ad99e17e0b98a4"
+  },
+  "name": "m7-split-v2",
+  "version": 2
+}

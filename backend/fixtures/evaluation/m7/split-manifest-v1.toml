@@ -1,0 +1,139 @@
+# M7 train/dev/held-out split manifest, version 1. Frozen 2026-11-25, before any
+# derived claim, checker pair or pilot case was generated.
+#
+# Unit of splitting: a FAMILY. A family groups every source that shares a document
+# template or restates the same underlying facts, so that a model or threshold tuned
+# on one member cannot have seen another member's facts or wording:
+#   * documents that restate the same figures (Q1 commentary, Q1 sales tables, Q1
+#     workbook, a Q1 delivery note, and the SQL report template that computes them);
+#   * documents written from the same template (the three contracts; the isolation
+#     tenant's handbook copies the finance commentary's revenue sentence);
+#   * one SQL question template (all periods of "net fulfilled sales") is one family.
+# The NileTech business database (niletech-0.1.6) is the shared environment that SQL
+# templates run against; it is not itself a family.
+#
+# Assignment rule (deterministic, recorded per family in `reason`):
+#   1. A family whose content was used by an M1–M6 development fixture or a
+#      model/retrieval/threshold decision is `dev`. It can never become held-out.
+#   2. Families not exposed in that way: template families with several members go to
+#      `train` (checker training pairs); the remaining family goes to `heldout`.
+#   3. `heldout` families are SEALED: no pilot dataset may reference them, and no claim,
+#      question or pair may be written from them until the release evaluation.
+#
+# Freezing: split-manifest-v1.lock.json records the SHA-256 of this file and of every
+# member's source file. Any edit to this file or to a member source fails the M7 check;
+# a change needs split-manifest-v2 (and regenerated derived datasets), never an edit.
+#
+# Release note: v1 covers the M1–M6 fixture corpus only. Its held-out family is far too
+# small for a release evaluation. The release held-out split is planned as v2 over the
+# regenerated NileTech documents (roadmap section 10); see docs/evaluation/m7-foundation.md.
+
+version = 1
+name = "m7-split-v1"
+frozen_at = "2026-11-25"
+splits = ["train", "dev", "heldout"]
+
+# Member references:
+#   doc:<key>        backend/fixtures/documents/corpus.toml
+#   contract:<key>   backend/fixtures/legal/legal.toml
+#   code:<path>      backend/fixtures/github-acceptance/<path>
+#   sql:<template>   an SQL report question template (see `sql_templates`)
+
+[sql_templates.sales-period-net-fulfilled]
+description = "Net (tax-exclusive) FULFILLED sales for a calendar period, order_date basis, USD"
+dataset = "niletech-0.1.6"
+normalized_fingerprint = "e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127"
+fixtures = [
+  "fixtures/evaluation/sales-q1-2026.toml",
+  "fixtures/evaluation/sales-generalization-m2.toml",
+]
+
+[[families]]
+id = "q1-2026-sales-figures"
+split = "dev"
+members = [
+  "sql:sales-period-net-fulfilled",
+  "doc:finance-q1-commentary",
+  "doc:sales-tables-pdf",
+  "doc:q1-workbook",
+  "doc:delivery-note-scan",
+  "doc:isolation-handbook",
+]
+reason = """Rule 1. The SQL template is used by the frozen M1/M2 dev cases; the commentary and \
+sales tables by the M3 retrieval dev cases. The workbook and the delivery note (order \
+SO-001809, in the M1 worked subset) restate the same Q1 figures. The isolation handbook \
+copies the commentary's revenue sentence template."""
+
+[[families]]
+id = "hr-leave-policy"
+split = "dev"
+members = ["doc:hr-leave-policy"]
+reason = "Rule 1. Used by the M3 retrieval dev cases and the M3 relevance study."
+
+[[families]]
+id = "it-security-handbook"
+split = "dev"
+members = ["doc:it-security-handbook"]
+reason = "Rule 1. Used by the M3 retrieval dev cases and the M3 relevance study."
+
+[[families]]
+id = "product-catalogue"
+split = "dev"
+members = ["doc:product-catalogue"]
+reason = "Rule 1. Used by the M3 retrieval dev cases and the M3 relevance study."
+
+[[families]]
+id = "company-profile"
+split = "dev"
+members = ["doc:company-overview-pdf", "doc:newsletter-pdf"]
+reason = """Rule 1. The overview is used by the M3 retrieval dev cases; the newsletter restates \
+the same offices and practices and is a parser-benchmark (M1) gold document."""
+
+[[families]]
+id = "customer-records"
+split = "dev"
+members = ["doc:customers-csv"]
+reason = "Rule 1. Used by the M3 retrieval dev cases."
+
+[[families]]
+id = "contract-template"
+split = "train"
+members = ["contract:aswan-supply", "contract:red-sea-logistics", "contract:nilecloud-licence"]
+reason = """Rule 2. One contract template (term, payment, termination, liability, governing \
+law). Used by M5 legal extraction tests, never by a model, retrieval or threshold choice."""
+
+[[families]]
+id = "code-config-constants"
+split = "train"
+members = ["code:billing/refunds.py", "code:inventory/reservations.py"]
+reason = """Rule 2. One template (module docstring + documented constant). Used by M5 GitHub \
+acceptance tests, never by a model, retrieval or threshold choice."""
+
+[[families]]
+id = "board-governance"
+split = "heldout"
+members = ["doc:board-minutes", "doc:draft-strategy"]
+reason = """Rule 2. Only their permission markers were used (M3 restricted/unknown-permission \
+tests); their content never informed a model, retrieval or threshold decision. SEALED."""
+
+# Pre-M7 evaluation fixtures. They are not regenerated; the M7 check maps every case or
+# pair in them to its family and fails if any of them is outside the declared split.
+[[legacy_fixtures]]
+path = "fixtures/evaluation/sales-q1-2026.toml"
+split = "dev"
+kind = "sql-cases"
+
+[[legacy_fixtures]]
+path = "fixtures/evaluation/sales-generalization-m2.toml"
+split = "dev"
+kind = "sql-cases"
+
+[[legacy_fixtures]]
+path = "fixtures/evaluation/documents-dev-m3.toml"
+split = "dev"
+kind = "retrieval-cases"
+
+[[legacy_fixtures]]
+path = "fixtures/evaluation/relevance-study-m3.toml"
+split = "dev"
+kind = "relevance-pairs"

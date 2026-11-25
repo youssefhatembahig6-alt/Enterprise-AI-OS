@@ -14,3 +14,5 @@ ml/parser-benchmark/results/colab-zips/** -text
 docs/evidence/** -text
 # M3 document fixtures are verified by SHA-256; never normalize them.
 backend/fixtures/documents/** -text
+# M7 split manifest and pilot datasets are verified by SHA-256; never normalize them.
+backend/fixtures/evaluation/m7/** -text

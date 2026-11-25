@@ -1,0 +1,62 @@
+{
+  "datasets": {
+    "checker-train-pairs": {
+      "by_split": {
+        "dev": 78,
+        "heldout": 0,
+        "train": 0
+      },
+      "count": 78,
+      "file": "generated/checker-train-pairs.jsonl",
+      "in_intended_split": 0,
+      "intended_split": "train",
+      "roadmap_target": "3,000-5,000",
+      "sha256": "197fd14a1300055ae42df31ee822bb5fd2738a2b1633279ef9da1efccb38fd8a"
+    },
+    "gold-checker-pairs": {
+      "by_split": {
+        "dev": 37,
+        "heldout": 0,
+        "train": 0
+      },
+      "count": 37,
+      "file": "generated/gold-checker-pairs.jsonl",
+      "in_intended_split": 0,
+      "intended_split": "heldout",
+      "roadmap_target": "300-500 (each independently double-labelled)",
+      "sha256": "cc05512a3fc4ed6a50823846f7f058bd5386b52875198706bc7345e979db32c6"
+    },
+    "qa-cases": {
+      "by_split": {
+        "dev": 12,
+        "heldout": 0,
+        "train": 0
+      },
+      "count": 12,
+      "file": "generated/qa-cases.jsonl",
+      "in_intended_split": 0,
+      "intended_split": "heldout",
+      "roadmap_target": "100-200",
+      "sha256": "f239139147195bff74e5e2a82e8a3d660b6d526bffe5e111e5d4f283a2f7ee59"
+    },
+    "retrieval-pairs": {
+      "by_split": {
+        "dev": 57,
+        "heldout": 0,
+        "train": 0
+      },
+      "count": 57,
+      "file": "generated/retrieval-pairs.jsonl",
+      "in_intended_split": 0,
+      "intended_split": "heldout",
+      "roadmap_target": "200-300",
+      "sha256": "ceea87b5d0a7e82826805903e22656093393a29f549dbc519ea2228f6f6747e5"
+    }
+  },
+  "manifest": "m7-split-v2",
+  "manifest_sha256": "a5a6bbb4526d8ef5d90e9445224ad731574a172cd73bd914ead42231cd7dccb9",
+  "notice": "PILOT. Not the release evaluation; sizes are far below the roadmap targets; no label here is human-reviewed unless labels/ says so. Under the active manifest every current family is development-exposed, so every record is dev: none may be used for training or as held-out evaluation (see in_intended_split).",
+  "pilot": true,
+  "release": false,
+  "seeds_sha256": "3179cb088b96a10a397f88f01c908c8f1c43c0541c2bc491342fba0954d03c79"
+}

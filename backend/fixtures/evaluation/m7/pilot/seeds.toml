@@ -1,0 +1,707 @@
+# M7 PILOT seeds, authored after split-manifest-v1 was frozen (commit 57ed79c). Families and
+# splits are resolved under the ACTIVE manifest (split-manifest-v2, frozen in commit ba6e9c8
+# before this pilot was regenerated). Under v2 every source here is development-exposed, so
+# every derived record is dev: the "checker-train" seeds below are a FORMAT exercise and must
+# not be used to train a checker, and nothing here is held-out.
+#
+# PILOT ONLY. Not the release evaluation, not training data at the roadmap's planned
+# sizes, and not human-reviewed. Every item here was drafted by an AI assistant
+# (claude-opus-5-5) from the fixture sources and must be reviewed by two people
+# before any of it counts as gold (see docs/evaluation/m7-labelling.md).
+#
+# `python -m app.evaluation build-pilot` derives the four pilot datasets from this file
+# and from the frozen pre-M7 fixtures. Rules the M7 check enforces:
+#   * every item's family comes from the active frozen manifest; no item uses a held-out family;
+#   * every evidence source a record cites is declared in its `sources`, and every parent
+#     (seed or legacy fixture item) resolves to the same family and split;
+#   * every evidence span is an exact substring of the source's canonical text
+#     (the application's own native parser output) or, for SQL, of a frozen fixture value;
+#   * claims are atomic: one sentence, no semicolons, at most 30 words;
+#   * perturbations stay in their seed's family and split.
+
+version = 1
+manifest = "m7-split-v2"
+created = "2026-11-25"
+author = "claude-opus-5-5 (AI draft; not human-reviewed)"
+
+# ---------------------------------------------------------------- question-answer cases
+# Dev families only. Each answer is decomposed into atomic claims with cited evidence.
+
+[[qa]]
+id = "qa-pilot-001"
+question = "What were NileTech's net fulfilled sales in Q1 2026, and from how many orders?"
+asking_identity = "niletech/finance-reader"
+tenant = "niletech"
+expected_kind = "answer"
+allowed_sources = ["sql:sales-period-net-fulfilled"]
+  [[qa.claims]]
+  text = "NileTech's net fulfilled sales in Q1 2026 were USD 80,934,385.00."
+  source = "sql:sales-period-net-fulfilled"
+  fixture_case = "m1-sales-q1-2026-net-fulfilled"
+  field = "expected_net"
+  [[qa.claims]]
+  text = "NileTech had 291 fulfilled orders in Q1 2026."
+  source = "sql:sales-period-net-fulfilled"
+  fixture_case = "m1-sales-q1-2026-net-fulfilled"
+  field = "expected_order_count"
+
+[[qa]]
+id = "qa-pilot-002"
+question = "What were gross fulfilled sales, including tax, in February 2026?"
+asking_identity = "niletech/finance-reader"
+tenant = "niletech"
+expected_kind = "answer"
+allowed_sources = ["sql:sales-period-net-fulfilled"]
+  [[qa.claims]]
+  text = "Gross fulfilled sales in February 2026, including tax, were USD 31,321,379.16."
+  source = "sql:sales-period-net-fulfilled"
+  fixture_case = "m2-sales-2026-02-net-fulfilled"
+  field = "expected_gross"
+
+[[qa]]
+id = "qa-pilot-003"
+question = "What were net fulfilled sales in Q1 2026?"
+asking_identity = "isolation-test/finance-reader"
+tenant = "isolation-test"
+expected_kind = "abstention"
+allowed_sources = []
+family_source = "sql:sales-period-net-fulfilled"   # same question template as qa-pilot-001
+forbidden_values = ["80934385.00", "80,934,385.00"]
+note = "Isolation tenant holds no NileTech business data; NileTech figures must not appear."
+
+[[qa]]
+id = "qa-pilot-004"
+question = "How much annual leave do employees in Egypt get, and does it increase?"
+asking_identity = "niletech/finance-reader"
+tenant = "niletech"
+expected_kind = "answer"
+allowed_sources = ["doc:hr-leave-policy"]
+  [[qa.claims]]
+  text = "Employees in Egypt receive 21 working days of annual leave per year."
+  source = "doc:hr-leave-policy"
+  quote = "Employees in Egypt receive 21 working days of annual leave per year"
+  [[qa.claims]]
+  text = "After ten years of service, annual leave for employees in Egypt rises to 30 days."
+  source = "doc:hr-leave-policy"
+  quote = "Employees in Egypt receive 21 working days of annual leave per year; after ten years of service this rises to 30 days."
+
+[[qa]]
+id = "qa-pilot-005"
+question = "Can I carry unused leave into next year?"
+asking_identity = "niletech/finance-reader"
+tenant = "niletech"
+expected_kind = "answer"
+allowed_sources = ["doc:hr-leave-policy"]
+  [[qa.claims]]
+  text = "Up to five unused leave days may be carried into the first quarter of the next year."
+  source = "doc:hr-leave-policy"
+  quote = "Up to five unused days may be carried into the first quarter of the next year."
+  [[qa.claims]]
+  text = "Carried-over leave days expire on 31 March."
+  source = "doc:hr-leave-policy"
+  quote = "Carried days expire on 31 March."
+
+[[qa]]
+id = "qa-pilot-006"
+question = "How many days of paternity leave do employees in Saudi Arabia get?"
+asking_identity = "niletech/finance-reader"
+tenant = "niletech"
+expected_kind = "abstention"
+allowed_sources = ["doc:hr-leave-policy"]
+note = "The policy covers Egypt and the UAE only and has no paternity-leave rule; a correct answer says the documents do not state it."
+
+[[qa]]
+id = "qa-pilot-007"
+question = "What are the password and MFA requirements?"
+asking_identity = "niletech/finance-reader"
+tenant = "niletech"
+expected_kind = "answer"
+allowed_sources = ["doc:it-security-handbook"]
+  [[qa.claims]]
+  text = "All accounts require multi-factor authentication."
+  source = "doc:it-security-handbook"
+  quote = "All accounts require multi-factor authentication."
+  [[qa.claims]]
+  text = "Passwords must be at least 14 characters long."
+  source = "doc:it-security-handbook"
+  quote = "Passwords must be at least 14 characters"
+
+[[qa]]
+id = "qa-pilot-008"
+question = "Who do I tell if my company laptop is stolen, and how quickly?"
+asking_identity = "niletech/finance-reader"
+tenant = "niletech"
+expected_kind = "answer"
+allowed_sources = ["doc:it-security-handbook"]
+  [[qa.claims]]
+  text = "A lost or stolen company laptop must be reported to the IT service desk within one hour."
+  source = "doc:it-security-handbook"
+  quote = "Report a lost or stolen laptop to the IT service desk within one hour."
+
+[[qa]]
+id = "qa-pilot-009"
+question = "How is the Workflow Automation Platform priced?"
+asking_identity = "niletech/finance-reader"
+tenant = "niletech"
+expected_kind = "answer"
+allowed_sources = ["doc:product-catalogue"]
+  [[qa.claims]]
+  text = "The Workflow Automation Platform is licensed per active user per month."
+  source = "doc:product-catalogue"
+  quote = "Workflow Automation Platform\n\nAutomates approvals, document routing and back-office steps. Licensed per active user per month."
+
+[[qa]]
+id = "qa-pilot-010"
+question = "Why was cloud hosting over budget in Q1 2026?"
+asking_identity = "niletech/finance-reader"
+tenant = "niletech"
+expected_kind = "answer"
+allowed_sources = ["doc:finance-q1-commentary"]
+  [[qa.claims]]
+  text = "Cloud hosting exceeded its budget because the data-platform migration ran six weeks longer than planned."
+  source = "doc:finance-q1-commentary"
+  quote = "Cloud hosting exceeded budget because the data-platform migration ran six weeks longer than planned."
+
+[[qa]]
+id = "qa-pilot-011"
+question = "Which cities does NileTech operate from?"
+asking_identity = "niletech/finance-reader"
+tenant = "niletech"
+expected_kind = "answer"
+allowed_sources = ["doc:company-overview-pdf"]
+  [[qa.claims]]
+  text = "NileTech Solutions operates from Cairo, Alexandria and Dubai."
+  source = "doc:company-overview-pdf"
+  quote = "NileTech Solutions operates from Cairo, Alexandria, Dubai."
+
+[[qa]]
+id = "qa-pilot-012"
+question = "What is the credit limit recorded for Zürich Analytics GmbH?"
+asking_identity = "niletech/finance-reader"
+tenant = "niletech"
+expected_kind = "answer"
+allowed_sources = ["doc:customers-csv"]
+  [[qa.claims]]
+  text = "Zürich Analytics GmbH has a recorded credit limit of -1200.00 USD."
+  source = "doc:customers-csv"
+  quote = "01005 | Zürich Analytics GmbH | CH | Zürich | -1200.00"
+
+# ------------------------------------------------------ retrieval query-chunk pairs (new)
+# The pilot also reuses the 22 frozen M3 retrieval cases and the 24 M3 relevance pairs
+# (generated by build-pilot; both are dev). These new pairs cover contracts and code (dev under v2).
+
+[[retrieval]]
+id = "ret-pilot-ctr-aswan-payment"
+query = "How long does NileTech have to pay Aswan Components invoices?"
+source = "contract:aswan-supply"
+quote = "NileTech shall pay each undisputed invoice within 45 days of receipt."
+relevant = true
+
+[[retrieval]]
+id = "ret-pilot-ctr-redsea-expiry"
+query = "When does the Red Sea Freight contract end?"
+source = "contract:red-sea-logistics"
+quote = "expires on 30 June 2026"
+relevant = true
+
+[[retrieval]]
+id = "ret-pilot-ctr-nilecloud-cap"
+query = "What is the liability cap in the NileCloud licence?"
+source = "contract:nilecloud-licence"
+quote = "The Licensor's total liability is capped at USD 1,200,000."
+relevant = true
+
+[[retrieval]]
+id = "ret-pilot-ctr-aswan-law"
+query = "Which country's law governs the Aswan supply agreement?"
+source = "contract:aswan-supply"
+quote = "This Agreement is governed by the laws of the Arab Republic of Egypt."
+relevant = true
+
+[[retrieval]]
+id = "ret-pilot-ctr-redsea-cancel"
+query = "How much notice do we need to cancel the freight contract for convenience?"
+source = "contract:red-sea-logistics"
+quote = "Either party may terminate this Agreement for convenience on thirty (30) days' written notice."
+relevant = true
+
+[[retrieval]]
+id = "ret-pilot-ctr-nilecloud-term"
+query = "How long is the NileCloud licence's initial term?"
+source = "contract:nilecloud-licence"
+quote = "The initial term of this Agreement is three (3) years."
+relevant = true
+
+[[retrieval]]
+id = "ret-pilot-code-refund-fee"
+query = "What fee is deducted from customer refunds?"
+source = "code:billing/refunds.py"
+quote = "The refund processing fee is 2.5 percent of the order total."
+relevant = true
+
+[[retrieval]]
+id = "ret-pilot-code-reservation"
+query = "How long is stock held for an order that has not been paid yet?"
+source = "code:inventory/reservations.py"
+quote = "inventory reservations last 45 minutes before they expire"
+relevant = true
+
+[[retrieval]]
+id = "ret-pilot-ctr-neg-cap"
+query = "What is the liability cap in the NileCloud licence?"
+source = "contract:red-sea-logistics"
+quote = "Provider's aggregate liability for loss of or damage to goods shall not exceed USD 250,000 per calendar year."
+relevant = false
+note = "Same-template trap: a liability cap, but in a different contract."
+
+[[retrieval]]
+id = "ret-pilot-ctr-neg-law"
+query = "Which law governs the NileCloud licence?"
+source = "contract:aswan-supply"
+quote = "This Agreement is governed by the laws of the Arab Republic of Egypt."
+relevant = false
+note = "Same-template trap: identical clause wording, different contract."
+
+[[retrieval]]
+id = "ret-pilot-code-neg-fee"
+query = "How long are inventory reservations held?"
+source = "code:billing/refunds.py"
+quote = "REFUND_FEE_PERCENT = 2.5"
+relevant = false
+note = "Same-template trap: a documented constant from the other module."
+
+# ------------------------------------------------------------- checker seed claims
+# dataset = "checker-train": the training-pair format (dev families under v2, so a format
+#   exercise only). Pairs: (claim, evidence) supported, each authored perturbation
+#   unsupported, plus one automatic wrong-evidence pair.
+# dataset = "gold-checker": dev families. Pairs to be double-labelled by humans.
+
+[[claims]]
+id = "ctr-aswan-effective"
+dataset = "checker-train"
+source = "contract:aswan-supply"
+evidence = "This Agreement is effective from 1 April 2025 (the \"Effective Date\")."
+claim = "The Aswan Components supply agreement is effective from 1 April 2025."
+perturbations = [
+  { kind = "number", text = "The Aswan Components supply agreement is effective from 1 April 2024." },
+]
+
+[[claims]]
+id = "ctr-aswan-initial-term"
+dataset = "checker-train"
+source = "contract:aswan-supply"
+evidence = "The initial term of this Agreement is twenty-four (24) months from the Effective Date."
+claim = "The initial term of the Aswan Components agreement is 24 months."
+perturbations = [
+  { kind = "number", text = "The initial term of the Aswan Components agreement is 36 months." },
+]
+
+[[claims]]
+id = "ctr-aswan-renewal"
+dataset = "checker-train"
+source = "contract:aswan-supply"
+evidence = "After the initial term, this Agreement automatically renews for successive periods of twelve (12) months unless either party gives at least ninety (90) days' written notice of non-renewal before the end of the then-current term."
+claim = "Non-renewal of the Aswan Components agreement requires at least 90 days' written notice."
+perturbations = [
+  { kind = "number", text = "Non-renewal of the Aswan Components agreement requires at least 60 days' written notice." },
+  { kind = "polarity", text = "The Aswan Components agreement does not renew automatically after its initial term." },
+]
+
+[[claims]]
+id = "ctr-aswan-payment"
+dataset = "checker-train"
+source = "contract:aswan-supply"
+evidence = "NileTech shall pay each undisputed invoice within 45 days of receipt."
+claim = "NileTech must pay undisputed Aswan Components invoices within 45 days of receipt."
+perturbations = [
+  { kind = "number", text = "NileTech must pay undisputed Aswan Components invoices within 30 days of receipt." },
+  { kind = "scope", text = "NileTech must pay every Aswan Components invoice, including disputed ones, within 45 days of receipt." },
+]
+
+[[claims]]
+id = "ctr-aswan-interest"
+dataset = "checker-train"
+source = "contract:aswan-supply"
+evidence = "Late amounts carry interest at 1% per month."
+claim = "Late payments under the Aswan Components agreement carry interest of 1% per month."
+perturbations = [
+  { kind = "unit", text = "Late payments under the Aswan Components agreement carry interest of 1% per year." },
+]
+
+[[claims]]
+id = "ctr-aswan-termination"
+dataset = "checker-train"
+source = "contract:aswan-supply"
+evidence = "Either party may terminate this Agreement for convenience by giving sixty (60) days' written notice to the other party."
+claim = "Either party may terminate the Aswan Components agreement for convenience with 60 days' written notice."
+perturbations = [
+  { kind = "scope", text = "Only NileTech may terminate the Aswan Components agreement for convenience." },
+  { kind = "number", text = "Either party may terminate the Aswan Components agreement for convenience with 90 days' written notice." },
+]
+
+[[claims]]
+id = "ctr-aswan-liability"
+dataset = "checker-train"
+source = "contract:aswan-supply"
+evidence = "Each party's total liability under this Agreement shall not exceed the fees paid by NileTech in the twelve (12) months before the claim."
+claim = "Liability under the Aswan Components agreement is capped at the fees NileTech paid in the twelve months before the claim."
+perturbations = [
+  { kind = "entity", text = "Liability under the Aswan Components agreement is capped at USD 1,200,000." },
+]
+
+[[claims]]
+id = "ctr-aswan-confidentiality"
+dataset = "checker-train"
+source = "contract:aswan-supply"
+evidence = "Each party shall keep the other party's confidential information secret during this Agreement and for 3 years after it ends."
+claim = "Confidentiality obligations under the Aswan Components agreement continue for 3 years after it ends."
+perturbations = [
+  { kind = "number", text = "Confidentiality obligations under the Aswan Components agreement continue for 5 years after it ends." },
+]
+
+[[claims]]
+id = "ctr-aswan-law"
+dataset = "checker-train"
+source = "contract:aswan-supply"
+evidence = "This Agreement is governed by the laws of the Arab Republic of Egypt."
+claim = "The Aswan Components agreement is governed by Egyptian law."
+perturbations = [
+  { kind = "entity", text = "The Aswan Components agreement is governed by the laws of England and Wales." },
+]
+
+[[claims]]
+id = "ctr-redsea-expiry"
+dataset = "checker-train"
+source = "contract:red-sea-logistics"
+evidence = "This Agreement commences on 1 July 2024 and expires on 30 June 2026, unless terminated earlier under section 3."
+claim = "The Red Sea Freight logistics agreement expires on 30 June 2026."
+perturbations = [
+  { kind = "number", text = "The Red Sea Freight logistics agreement expires on 30 June 2027." },
+  { kind = "polarity", text = "The Red Sea Freight logistics agreement cannot be terminated before 30 June 2026." },
+]
+
+[[claims]]
+id = "ctr-redsea-payment"
+dataset = "checker-train"
+source = "contract:red-sea-logistics"
+evidence = "NileTech shall pay each invoice within 30 days of the invoice date."
+claim = "NileTech must pay Red Sea Freight invoices within 30 days of the invoice date."
+perturbations = [
+  { kind = "scope", text = "NileTech must pay Red Sea Freight invoices within 30 days of receiving them." },
+]
+
+[[claims]]
+id = "ctr-redsea-invoicing"
+dataset = "checker-train"
+source = "contract:red-sea-logistics"
+evidence = "Provider invoices monthly in arrears."
+claim = "Red Sea Freight invoices NileTech monthly in arrears."
+perturbations = [
+  { kind = "polarity", text = "Red Sea Freight invoices NileTech monthly in advance." },
+]
+
+[[claims]]
+id = "ctr-redsea-termination"
+dataset = "checker-train"
+source = "contract:red-sea-logistics"
+evidence = "Either party may terminate this Agreement for convenience on thirty (30) days' written notice."
+claim = "Either party may terminate the Red Sea Freight agreement for convenience on 30 days' written notice."
+perturbations = [
+  { kind = "number", text = "Either party may terminate the Red Sea Freight agreement for convenience on 60 days' written notice." },
+]
+
+[[claims]]
+id = "ctr-redsea-liability"
+dataset = "checker-train"
+source = "contract:red-sea-logistics"
+evidence = "Provider's aggregate liability for loss of or damage to goods shall not exceed USD 250,000 per calendar year."
+claim = "Red Sea Freight's liability for lost or damaged goods is capped at USD 250,000 per calendar year."
+perturbations = [
+  { kind = "unit", text = "Red Sea Freight's liability for lost or damaged goods is capped at USD 250,000 per shipment." },
+  { kind = "number", text = "Red Sea Freight's liability for lost or damaged goods is capped at USD 2,500,000 per calendar year." },
+]
+
+[[claims]]
+id = "ctr-redsea-law"
+dataset = "checker-train"
+source = "contract:red-sea-logistics"
+evidence = "This Agreement is governed by the laws of England and Wales."
+claim = "The Red Sea Freight agreement is governed by the laws of England and Wales."
+perturbations = [
+  { kind = "entity", text = "The Red Sea Freight agreement is governed by Egyptian law." },
+]
+
+[[claims]]
+id = "ctr-nilecloud-start"
+dataset = "checker-train"
+source = "contract:nilecloud-licence"
+evidence = "The licence enters into force on 15 January 2026."
+claim = "The NileCloud software licence enters into force on 15 January 2026."
+perturbations = [
+  { kind = "number", text = "The NileCloud software licence enters into force on 15 June 2026." },
+]
+
+[[claims]]
+id = "ctr-nilecloud-term"
+dataset = "checker-train"
+source = "contract:nilecloud-licence"
+evidence = "The initial term of this Agreement is three (3) years."
+claim = "The NileCloud software licence has an initial term of three years."
+perturbations = [
+  { kind = "number", text = "The NileCloud software licence has an initial term of two years." },
+]
+
+[[claims]]
+id = "ctr-nilecloud-termination"
+dataset = "checker-train"
+source = "contract:nilecloud-licence"
+evidence = "NileTech may terminate this Agreement by giving ninety (90) days' written notice to the Licensor."
+claim = "NileTech may terminate the NileCloud licence by giving 90 days' written notice."
+perturbations = [
+  { kind = "scope", text = "Either party may terminate the NileCloud licence by giving 90 days' written notice." },
+]
+
+[[claims]]
+id = "ctr-nilecloud-liability"
+dataset = "checker-train"
+source = "contract:nilecloud-licence"
+evidence = "The Licensor's total liability is capped at USD 1,200,000."
+claim = "NileCloud's total liability under the licence is capped at USD 1,200,000."
+perturbations = [
+  { kind = "number", text = "NileCloud's total liability under the licence is capped at USD 12,000,000." },
+]
+
+[[claims]]
+id = "ctr-nilecloud-law"
+dataset = "checker-train"
+source = "contract:nilecloud-licence"
+evidence = "This Agreement is governed by the laws of the Dubai International Financial Centre."
+claim = "The NileCloud licence is governed by the laws of the Dubai International Financial Centre."
+perturbations = [
+  { kind = "entity", text = "The NileCloud licence is governed by Egyptian law." },
+]
+
+[[claims]]
+id = "code-refund-fee"
+dataset = "checker-train"
+source = "code:billing/refunds.py"
+evidence = "# The refund processing fee is 2.5 percent of the order total."
+claim = "The refund processing fee is 2.5 percent of the order total."
+perturbations = [
+  { kind = "number", text = "The refund processing fee is 25 percent of the order total." },
+  { kind = "entity", text = "The refund processing fee is 2.5 percent of the shipping cost." },
+]
+
+[[claims]]
+id = "code-reservation-duration"
+dataset = "checker-train"
+source = "code:inventory/reservations.py"
+evidence = "RESERVATION_MINUTES = 45  # inventory reservations last 45 minutes before they expire"
+claim = "Inventory reservations last 45 minutes before they expire."
+perturbations = [
+  { kind = "unit", text = "Inventory reservations last 45 hours before they expire." },
+]
+
+[[claims]]
+id = "code-reservation-purpose"
+dataset = "checker-train"
+source = "code:inventory/reservations.py"
+evidence = "Reservations hold stock while a customer pays."
+claim = "Inventory reservations hold stock while a customer pays."
+perturbations = [
+  { kind = "scope", text = "Inventory reservations hold stock until the order is shipped." },
+]
+
+[[claims]]
+id = "code-reservation-validation"
+dataset = "checker-train"
+source = "code:inventory/reservations.py"
+evidence = "    if quantity <= 0:\n        raise ValueError(\"quantity must be positive\")"
+claim = "Reserving a quantity of zero raises a ValueError."
+perturbations = [
+  { kind = "polarity", text = "Reserving a quantity of zero returns an empty reservation." },
+]
+
+# Gold checker pilot pairs (dev families). The author's proposed label is stored but is
+# never shown on annotators' sheets and never counts as a human label.
+
+[[claims]]
+id = "gold-hr-egypt-days"
+dataset = "gold-checker"
+source = "doc:hr-leave-policy"
+evidence = "Employees in Egypt receive 21 working days of annual leave per year; after ten years of service this rises to 30 days."
+claim = "Employees in Egypt receive 21 working days of annual leave per year."
+perturbations = [
+  { kind = "number", text = "Employees in Egypt receive 25 working days of annual leave per year." },
+  { kind = "entity", text = "Employees in Saudi Arabia receive 21 working days of annual leave per year." },
+]
+
+[[claims]]
+id = "gold-hr-uae-days"
+dataset = "gold-checker"
+source = "doc:hr-leave-policy"
+evidence = "Employees in the UAE receive 30 calendar days."
+claim = "Employees in the UAE receive 30 calendar days of annual leave."
+perturbations = [
+  { kind = "unit", text = "Employees in the UAE receive 30 working days of annual leave." },
+]
+
+[[claims]]
+id = "gold-hr-carry-over"
+dataset = "gold-checker"
+source = "doc:hr-leave-policy"
+evidence = "Up to five unused days may be carried into the first quarter of the next year."
+claim = "Up to five unused leave days may be carried into the first quarter of the next year."
+perturbations = [
+  { kind = "number", text = "Up to ten unused leave days may be carried into the first quarter of the next year." },
+]
+
+[[claims]]
+id = "gold-hr-carry-expiry"
+dataset = "gold-checker"
+source = "doc:hr-leave-policy"
+evidence = "Carried days expire on 31 March."
+claim = "Carried-over leave days expire on 31 March."
+perturbations = [
+  { kind = "number", text = "Carried-over leave days expire on 30 June." },
+]
+
+[[claims]]
+id = "gold-hr-holiday-deduction"
+dataset = "gold-checker"
+source = "doc:hr-leave-policy"
+evidence = "Holidays that fall during approved leave are not deducted."
+claim = "Public holidays that fall during approved leave are not deducted from leave."
+perturbations = [
+  { kind = "polarity", text = "Public holidays that fall during approved leave are deducted from leave." },
+]
+
+[[claims]]
+id = "gold-hr-family-leave"
+dataset = "gold-checker"
+source = "doc:hr-leave-policy"
+evidence = "Parents may take ten days of family leave per year for school events and caregiving."
+claim = "Parents may take ten days of family leave per year."
+perturbations = [
+  { kind = "unit", text = "Parents may take ten weeks of family leave per year." },
+]
+
+[[claims]]
+id = "gold-it-mfa"
+dataset = "gold-checker"
+source = "doc:it-security-handbook"
+evidence = "All accounts require multi-factor authentication."
+claim = "All accounts require multi-factor authentication."
+perturbations = [
+  { kind = "scope", text = "Only administrator accounts require multi-factor authentication." },
+]
+
+[[claims]]
+id = "gold-it-password"
+dataset = "gold-checker"
+source = "doc:it-security-handbook"
+evidence = "Passwords must be at least 14 characters and are never shared over chat or email."
+claim = "Passwords must be at least 14 characters long."
+perturbations = [
+  { kind = "number", text = "Passwords must be at least 12 characters long." },
+]
+
+[[claims]]
+id = "gold-it-laptop"
+dataset = "gold-checker"
+source = "doc:it-security-handbook"
+evidence = "Report a lost or stolen laptop to the IT service desk within one hour."
+claim = "A lost or stolen laptop must be reported to the IT service desk within one hour."
+perturbations = [
+  { kind = "unit", text = "A lost or stolen laptop must be reported to the IT service desk within one day." },
+]
+
+[[claims]]
+id = "gold-it-phishing"
+dataset = "gold-checker"
+source = "doc:it-security-handbook"
+evidence = "The security team runs a phishing simulation every quarter."
+claim = "The security team runs a phishing simulation every quarter."
+perturbations = [
+  { kind = "unit", text = "The security team runs a phishing simulation every month." },
+]
+
+[[claims]]
+id = "gold-cat-integration-hub"
+dataset = "gold-checker"
+source = "doc:product-catalogue"
+evidence = "Integration Hub\n\nConnects ERP, CRM and payment systems through managed connectors with audit trails."
+claim = "The Integration Hub connects ERP, CRM and payment systems."
+perturbations = [
+  { kind = "entity", text = "The Integration Hub connects ERP, CRM and payroll systems." },
+]
+
+[[claims]]
+id = "gold-cat-workflow-licence"
+dataset = "gold-checker"
+source = "doc:product-catalogue"
+evidence = "Workflow Automation Platform\n\nAutomates approvals, document routing and back-office steps. Licensed per active user per month."
+claim = "The Workflow Automation Platform is licensed per active user per month."
+perturbations = [
+  { kind = "unit", text = "The Workflow Automation Platform is licensed per server per year." },
+]
+
+[[claims]]
+id = "gold-fin-cloud-variance"
+dataset = "gold-checker"
+source = "doc:finance-q1-commentary"
+evidence = "Cloud hosting exceeded budget because the data-platform migration ran six weeks longer than planned."
+claim = "Cloud hosting exceeded its budget because the data-platform migration ran six weeks longer than planned."
+perturbations = [
+  { kind = "unit", text = "Cloud hosting exceeded its budget because the data-platform migration ran six months longer than planned." },
+]
+
+[[claims]]
+id = "gold-fin-overdue"
+dataset = "gold-checker"
+source = "doc:finance-q1-commentary"
+evidence = "Collections lagged revenue because 370 open invoices were already past their due date at the reference date."
+claim = "370 open invoices were past their due date at the reference date."
+perturbations = [
+  { kind = "number", text = "307 open invoices were past their due date at the reference date." },
+]
+
+[[claims]]
+id = "gold-fin-net-sales"
+dataset = "gold-checker"
+source = "doc:finance-q1-commentary"
+evidence = "Net fulfilled sales for Q1 2026 were USD 80,934,385.00 across 291 orders."
+claim = "Net fulfilled sales for Q1 2026 were USD 80,934,385.00."
+perturbations = [
+  { kind = "number", text = "Net fulfilled sales for Q1 2026 were USD 92,265,198.90." },
+]
+
+[[claims]]
+id = "gold-co-offices"
+dataset = "gold-checker"
+source = "doc:company-overview-pdf"
+evidence = "NileTech Solutions operates from Cairo, Alexandria, Dubai."
+claim = "NileTech Solutions has offices in Cairo, Alexandria and Dubai."
+perturbations = [
+  { kind = "entity", text = "NileTech Solutions has offices in Cairo, Alexandria and Riyadh." },
+]
+
+[[claims]]
+id = "gold-co-increments"
+dataset = "gold-checker"
+source = "doc:company-overview-pdf"
+evidence = "Work is delivered in two-week increments."
+claim = "NileTech delivers work in two-week increments."
+perturbations = [
+  { kind = "number", text = "NileTech delivers work in four-week increments." },
+]
+
+[[claims]]
+id = "gold-cust-zurich-credit"
+dataset = "gold-checker"
+source = "doc:customers-csv"
+evidence = "01005 | Zürich Analytics GmbH | CH | Zürich | -1200.00"
+claim = "Zürich Analytics GmbH has a recorded credit limit of -1200.00 USD."
+perturbations = [
+  { kind = "number", text = "Zürich Analytics GmbH has a recorded credit limit of 1200.00 USD." },
+]
