@@ -11,3 +11,5 @@ pip install -r requirements.txt            # torch comes from the Colab runtime
 python hhem_score.py --inputs inputs.jsonl --out predictions.jsonl --cache-dir /content/hhem-pinned
 # Requires a Colab GPU runtime with a Tesla T4; otherwise it exits (code 2) before downloading.
 ```
+
+**Colab T4 smoke test (pending):** open `hhem_smoke_t4.ipynb` in Colab with a T4 GPU runtime and *Run all*. It checks that HHEM loads under transformers 4.56.2, compares the model card's seven public examples with their published scores, records the GPU, versions and latency, and downloads `hhem-smoke-report.json`.
