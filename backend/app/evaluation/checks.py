@@ -28,7 +28,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any
 
-from app.evaluation import corpus_v3, freeze, overlap
+from app.evaluation import checker_pairs, corpus_v3, freeze, overlap
 from app.evaluation import labels as lab
 from app.evaluation.manifest import Manifest
 from app.evaluation.pilot import (
@@ -333,6 +333,10 @@ def run_checks(
     problems += [f"corpus-v3: {p}" for p in corpus_assignment_problems(manifest)]
     report = overlap.overlap_report(manifest)
     problems += [f"overlap: {p}" for p in overlap.overlap_problems(report)]
+    problems += [f"checker {checker_pairs.BATCH}: {p}" for p in checker_pairs.check()]
+    problems += [
+        f"checker {checker_pairs.BATCH}: {p}" for p in checker_pairs.token_report_problems()
+    ]
     legacy, legacy_problems = legacy_assignments(manifest)
     problems += [f"legacy: {p}" for p in legacy_problems]
     seeds = load_seeds()

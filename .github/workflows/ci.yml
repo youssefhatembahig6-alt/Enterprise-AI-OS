@@ -199,6 +199,27 @@ jobs:
           EAIOS_REQUIRE_VLLM_TOKENIZER_TEST: "1"
         run: python -m unittest ml/gpu-feasibility/tests/test_vllm_tokenizer.py -v
 
+  checker-tokenizer:
+    # M7: recounts every committed checker pair with the pinned DeBERTa tokenizer (the
+    # gateway's counting rule) and fails on any mismatch with the committed report or any
+    # pair over 512 tokens. Only tokenizer files are downloaded, verified by SHA-256.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.7"
+      - name: Install the pinned tokenizer environment
+        run: |
+          python -m venv /tmp/tok-env
+          /tmp/tok-env/bin/pip install --no-deps -r ml/checker-tokenizer/requirements.txt
+      - name: Checker pair lengths (required, not skipped)
+        run: >-
+          /tmp/tok-env/bin/python -I backend/app/evaluation/token_lengths.py
+          --pairs backend/fixtures/evaluation/m7/checker/batch-001/pairs.jsonl
+          --tokenizer-dir /tmp/deberta-tokenizer
+          --check backend/fixtures/evaluation/m7/checker/batch-001/token-lengths.json
+
   compose:
     runs-on: ubuntu-24.04
     steps:

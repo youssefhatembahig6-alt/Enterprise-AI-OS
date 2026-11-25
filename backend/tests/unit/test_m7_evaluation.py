@@ -970,3 +970,339 @@ def test_loader_use_passes_the_audit(monkeypatch: pytest.MonkeyPatch) -> None:
     code = "from app.evaluation import loader\ndocs = loader.load('training').documents\n"
     monkeypatch.setattr(mf, "_artifact_texts", lambda: (*real, ("ml/train_checker.py", code)))
     assert mf.audit_exposure(_parse(V3_TEXT)) == []
+
+
+# ------------------------------------------------------ checker pairs, batch 001
+from app.evaluation import checker_pairs as cp  # noqa: E402
+
+_BUILD_PROBE = r"""
+import json, sys
+events = []
+def hook(event, args):
+    if event == "open":
+        events.append(("open", str(args[0])))
+    elif event in ("os.listdir", "os.scandir", "glob.glob", "os.walk"):
+        events.append(("list", str(args[0])))
+sys.addaudithook(hook)
+from app.evaluation import checker_pairs
+pairs, stats = checker_pairs.build_pairs()
+print(json.dumps({"events": events, "splits": sorted({p["split"] for p in pairs}),
+                  "sources": sorted({p["source"] for p in pairs} | {p["evidence_source"] for p in pairs})}))
+"""
+
+
+@pytest.fixture(scope="module")
+def training() -> loader.LoadResult:
+    return loader.load("training")
+
+
+@pytest.fixture(scope="module")
+def batch(training: loader.LoadResult) -> list[dict[str, Any]]:
+    pairs, _ = cp.build_pairs(training)
+    return pairs
+
+
+def test_committed_batch_matches_a_fresh_build_and_validates() -> None:
+    assert cp.check() == []
+    assert cp.token_report_problems() == []
+
+
+def test_batch_counts_match_the_index(batch: list[dict[str, Any]]) -> None:
+    index = json.loads((cp.OUT_DIR / cp.INDEX_FILE).read_text())
+    assert index["pairs"] == len(batch) == 2091
+    assert index["by_label"] == {"supported": 560, "unsupported": 1531}
+    assert index["label_conflicts"] == 0 and index["duplicates_removed"] == 22
+    assert index["gap_to_target_lower_bound"] == 3000 - 2091
+    assert index["loader_purpose"] == "training" and index["manifest"] == "m7-split-v3"
+    assert {p["label_quality"] for p in batch} == {"silver"}
+
+
+def test_building_the_batch_never_opens_dev_or_heldout_material() -> None:
+    done = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", _BUILD_PROBE], cwd=mf.REPO / "backend", capture_output=True,
+        check=True,
+    )  # fmt: skip
+    out = json.loads(done.stdout)
+    assert out["splits"] == ["train"]
+    assert all(
+        s.startswith(("fresh:v3-wo-", "fresh:v3-sdr-", "fresh:v3-pir-")) for s in out["sources"]
+    )
+    touched = [p for _, p in out["events"]]
+    assert not [p for p in touched if any(k in p for k in HELDOUT_KEYS)]
+    dev_dirs = ("fixtures/documents/files", "fixtures/legal/files", "fixtures/github-acceptance")
+    assert not [p for p in touched if any(d in p for d in dev_dirs)]
+    assert not [p for p in touched if p.endswith("corpus-v3/corpus.toml")]
+    assert not [p for kind, p in out["events"] if kind == "list" and "fixtures" in p]
+
+
+def test_only_the_training_loader_can_feed_the_batch() -> None:
+    with pytest.raises(ValueError, match="training loader"):
+        cp.build_pairs(loader.load("tuning"))
+
+
+def test_a_dev_or_heldout_document_smuggled_into_the_training_result_is_refused(
+    training: loader.LoadResult,
+) -> None:
+    for split, ref, family in (
+        ("dev", "doc:hr-leave-policy", "hr-leave-policy"),
+        ("heldout", "fresh:v3-ps-001", "fresh-heldout-regenerated-a"),
+    ):
+        smuggled = loader.LoadedDocument(ref, family, split, "Title\n\nText.", {"reference": "X"})
+        tainted = loader.LoadResult(
+            training.purpose, training.manifest, [*training.documents, smuggled]
+        )
+        with pytest.raises(ValueError, match=f"{ref} is not a train document"):
+            cp.build_pairs(tainted)
+
+
+@pytest.mark.parametrize(
+    ("ref", "family", "split"),
+    [
+        ("doc:hr-leave-policy", "hr-leave-policy", "dev"),
+        ("fresh:v3-ps-001", "fresh-heldout-regenerated-a", "heldout"),
+    ],
+)
+def test_validation_rejects_dev_and_heldout_pairs(
+    training: loader.LoadResult, batch: list[dict[str, Any]], ref: str, family: str, split: str
+) -> None:
+    pairs = copy.deepcopy(batch)
+    pairs[0].update(source=ref, evidence_source=ref, family=family, split=split)
+    problems = cp.validate(pairs, training)
+    assert any(f"{ref} is not a train document" in p for p in problems)
+    assert any(f"split {split} / family {family} is not train" in p for p in problems)
+
+
+def test_every_variant_keeps_its_parents_family_split_and_source(
+    training: loader.LoadResult, batch: list[dict[str, Any]]
+) -> None:
+    by_id = {p["id"]: p for p in batch}
+    for p in batch:
+        if p["parent"] is None:
+            assert p["variant"] == "original" and p["label"] == "supported"
+            continue
+        parent = by_id[p["parent"]]
+        assert (parent["family"], parent["split"], parent["source"]) == (
+            p["family"], p["split"], p["source"]
+        )  # fmt: skip
+        assert p["label"] == "unsupported"
+    pairs = copy.deepcopy(batch)
+    variant = next(p for p in pairs if p["variant"] == "swap")
+    variant["source"] = next(p["source"] for p in pairs if p["source"] != variant["source"])
+    assert any("variant left its parent" in p for p in cp.validate(pairs, training))
+
+
+def test_wrong_evidence_stays_in_family_and_is_another_document(
+    batch: list[dict[str, Any]],
+) -> None:
+    wrong = [p for p in batch if p["variant"] == "wrong_evidence"]
+    assert len(wrong) == 560
+    assert all(p["evidence_source"] != p["source"] for p in wrong)
+    assert all(p["evidence_source"].split("-")[1] == p["source"].split("-")[1] for p in wrong)
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (lambda p: p.update(evidence_start=p["evidence_start"] + 1), "not the exact span"),
+        (lambda p: p.update(premise=p["evidence"]), "premise is not title + evidence"),
+        (lambda p: p.update(claim="It is late; the fee rose."), "not atomic"),
+        (lambda p: p.update(label="supported"), "only the original claim may be supported"),
+        (lambda p: p.update(label_quality="gold"), "labels must be silver"),
+    ],
+)
+def test_validation_catches_broken_pairs(
+    training: loader.LoadResult, batch: list[dict[str, Any]], edit: Any, message: str
+) -> None:
+    pairs = copy.deepcopy(batch)
+    edit(next(p for p in pairs if p["variant"] == "shift"))
+    assert any(message in p for p in cp.validate(pairs, training))
+
+
+def test_every_evidence_span_is_exact_and_claims_are_atomic(
+    training: loader.LoadResult, batch: list[dict[str, Any]]
+) -> None:
+    texts = {d.ref: d.text for d in training.documents}
+    for p in batch:
+        assert texts[p["evidence_source"]][p["evidence_start"] : p["evidence_end"]] == p["evidence"]
+        assert p["claim"].count(". ") == 0 and ";" not in p["claim"]
+
+
+def test_bound_claims_are_only_perturbed_to_stricter_values(batch: list[dict[str, Any]]) -> None:
+    def hours(text: str) -> int:
+        return int(re.search(r"within (\d+) hours", text).group(1))  # type: ignore[union-attr]
+
+    for p in batch:
+        if p["claim_type"] == "response" and p["variant"] in ("swap", "shift"):
+            assert hours(p["claim"]) < hours(p["evidence"])
+
+
+def test_batch_build_is_deterministic(training: loader.LoadResult) -> None:
+    assert cp.render(training) == cp.render(training)
+
+
+def test_train_claims_share_no_text_with_dev_pilot_records(batch: list[dict[str, Any]]) -> None:
+    from app.evaluation.checks import load_data, normalise
+
+    dev = {
+        normalise(t)
+        for recs in load_data(freeze.disk_reader()).values()
+        for r in recs
+        for t in [r.get("claim", ""), r.get("question", ""), r.get("query", "")]
+        if t
+    }
+    assert not {normalise(p["claim"]) for p in batch} & dev
+
+
+def test_token_report_matches_the_pins_and_has_no_over_length_pairs() -> None:
+    report = json.loads((cp.OUT_DIR / cp.LENGTHS_FILE).read_text())
+    assert report["tokenizer"]["revision"] == "6f5cf0a2b59cabb106aca4c287eed12e357e90eb"
+    assert report["tokenizer"]["class"] == "DebertaV2TokenizerFast"
+    assert report["overall"]["over_limit"] == 0 and report["over_limit_ids"] == []
+    assert report["overall"]["max"] <= report["limit"] == 512
+
+
+def test_token_report_for_other_pairs_is_rejected(tmp_path: Path) -> None:
+    for name in (cp.PAIRS_FILE, cp.LENGTHS_FILE):
+        shutil.copy(cp.OUT_DIR / name, tmp_path / name)
+    lines = (tmp_path / cp.PAIRS_FILE).read_text().splitlines(keepends=True)
+    (tmp_path / cp.PAIRS_FILE).write_text("".join(lines[:-1]))
+    problems = cp.token_report_problems(tmp_path)
+    assert any("measured on different pairs" in p for p in problems)
+    assert any("does not cover exactly" in p for p in problems)
+
+
+# --------------------------------------- batch 001 re-review: ambiguity and pinning
+def _decision_status(text: str) -> str:
+    return re.search(r'as exactly "([^"]+)"', text).group(1)  # type: ignore[union-attr]
+
+
+def test_decision_claims_state_an_exact_status(batch: list[dict[str, Any]]) -> None:
+    decisions = [p for p in batch if p["claim_type"] == "decision"]
+    assert decisions
+    for p in decisions:
+        assert re.search(r'records the decision status for .+ as exactly "[a-z ]+"\.$', p["claim"])
+        evidence_status = re.search(r"The supplier is (.+)\.", p["evidence"]).group(1)  # type: ignore[union-attr]
+        same = _decision_status(p["claim"]) == evidence_status
+        if p["variant"] != "wrong_evidence":
+            assert same == (p["label"] == "supported"), p["id"]
+    # The formerly ambiguous case: "approved" against "approved with conditions" is now an
+    # explicit status mismatch, so "unsupported" is unambiguous.
+    flagged = [
+        p for p in decisions
+        if p["variant"] != "wrong_evidence" and "approved with conditions" in p["evidence"]
+        and _decision_status(p["claim"]) == "approved"
+    ]  # fmt: skip
+    assert len(flagged) == 3 and {p["label"] for p in flagged} == {"unsupported"}
+    assert not [p for p in batch if p["claim"].endswith(" as approved.")]
+
+
+def test_start_year_claims_state_the_exact_start_year(batch: list[dict[str, Any]]) -> None:
+    years = [p for p in batch if p["claim_type"] == "start-year"]
+    assert years and not [p for p in batch if " since " in p["claim"]]
+    later = 0
+    for p in years:
+        claim_year = int(re.search(r"started using .+ in (\d{4})\.$", p["claim"]).group(1))  # type: ignore[union-attr]
+        evidence_year = int(re.search(r"used since (\d{4})", p["evidence"]).group(1))  # type: ignore[union-attr]
+        if p["variant"] != "wrong_evidence":
+            assert (claim_year == evidence_year) == (p["label"] == "supported"), p["id"]
+            later += claim_year > evidence_year
+    assert later > 0  # later-year variants exist and are explicit mismatches, so unsupported
+
+
+def test_count_claims_state_totals(batch: list[dict[str, Any]]) -> None:
+    for kind in ("labour", "accounts", "duration"):
+        claims = [p["claim"] for p in batch if p["claim_type"] == kind]
+        assert claims and all(c.endswith(" in total.") for c in claims)
+
+
+def test_still_entailed_rules() -> None:
+    specs = {s.name: s for s in cp.SPECS["fresh-train-regenerated"]}
+    response, labour = specs["response"], specs["labour"]
+    assert cp.still_entailed(response, 24, 72)  # a looser bound is still supported
+    assert not cp.still_entailed(response, 24, 4)
+    assert not cp.still_entailed(labour, 16, 10) and cp.still_entailed(labour, 16, 16)
+
+
+@pytest.mark.parametrize("claim_type", ["decision", "start-year", "response"])
+def test_validation_rejects_unsupported_variants_the_evidence_still_entails(
+    training: loader.LoadResult, batch: list[dict[str, Any]], claim_type: str
+) -> None:
+    pairs = copy.deepcopy(batch)
+    p = next(
+        p for p in pairs
+        if p["claim_type"] == claim_type and p["variant"] in ("swap", "shift")
+    )  # fmt: skip
+    looser = p["evidence_value"] + 1 if claim_type == "response" else p["evidence_value"]
+    p["claim_value"] = looser
+    assert any("its evidence still entails it" in x for x in cp.validate(pairs, training))
+
+
+def _activate_newer_manifest(tmp_path: Path) -> Path:
+    """A copy of the M7 metadata in which a v4 manifest (moving a train family to
+    held-out) is active and v3 is superseded."""
+
+    m7 = tmp_path / "m7"
+    m7.mkdir()
+    for name in ("frozen-snapshots.json", "split-manifest-v3.toml", "split-manifest-v3.lock.json"):
+        shutil.copy(M7 / name, m7 / name)
+    v4_text = V3_TEXT.replace(
+        'version = 3\nname = "m7-split-v3"', 'version = 4\nname = "m7-split-v4"'
+    ).replace(
+        'id = "fresh-train-incident-review"\nsplit = "train"',
+        'id = "fresh-train-incident-review"\nsplit = "heldout"',
+    )
+    v4 = _parse(v4_text)
+    lock_text = mf.lock_text(mf.build_lock(v4, "split-manifest-v4.toml"))
+    (m7 / "split-manifest-v4.toml").write_text(v4_text)
+    (m7 / "split-manifest-v4.lock.json").write_text(lock_text)
+    snaps = json.loads((m7 / "frozen-snapshots.json").read_text())
+    snaps["manifests"]["m7-split-v3"].update(
+        status="superseded", superseded_by="m7-split-v4", reason="test"
+    )
+    snaps["manifests"]["m7-split-v4"] = {
+        "manifest": "split-manifest-v4.toml",
+        "lock": "split-manifest-v4.lock.json",
+        "manifest_sha256": freeze._sha(v4_text),
+        "lock_sha256": freeze._sha(lock_text),
+        "frozen_at": "2026-12-01",
+        "status": "active",
+    }
+    snaps["active"] = "m7-split-v4"
+    (m7 / "frozen-snapshots.json").write_text(json.dumps(snaps))
+    return m7
+
+
+def test_batch_001_rebuilds_byte_for_byte_after_a_newer_manifest_is_activated(
+    tmp_path: Path,
+) -> None:
+    m7 = _activate_newer_manifest(tmp_path)
+    active = loader.load("training", m7_dir=m7)  # unpinned: follows the newer manifest
+    assert active.manifest == "m7-split-v4" and len(active.documents) == 40
+    pinned = cp.load_pinned(m7)
+    assert pinned.manifest == "m7-split-v3" and len(pinned.documents) == 60
+    for name, text in cp.render(pinned).items():
+        assert text == (cp.OUT_DIR / name).read_text("utf-8"), name
+    assert cp.check(m7_dir=m7) == []
+    with pytest.raises(ValueError, match="must be built from m7-split-v3"):
+        cp.render(active)
+
+
+def test_pinned_load_rejects_a_snapshot_entry_that_differs_from_the_pin(tmp_path: Path) -> None:
+    m7 = _activate_newer_manifest(tmp_path)
+    snaps = json.loads((m7 / "frozen-snapshots.json").read_text())
+    snaps["manifests"]["m7-split-v3"]["lock_sha256"] = "0" * 64
+    (m7 / "frozen-snapshots.json").write_text(json.dumps(snaps))
+    with pytest.raises(loader.LoaderError, match="differs from the pin"):
+        cp.load_pinned(m7)
+
+
+def test_index_records_the_pinned_manifest_hashes() -> None:
+    index = json.loads((cp.OUT_DIR / cp.INDEX_FILE).read_text())
+    assert (index["manifest"], index["manifest_sha256"], index["lock_sha256"]) == (
+        cp.PIN.name, cp.PIN.manifest_sha256, cp.PIN.lock_sha256
+    )  # fmt: skip
+    snaps = json.loads((M7 / "frozen-snapshots.json").read_text())
+    entry = snaps["manifests"][cp.PIN.name]
+    assert (entry["manifest_sha256"], entry["lock_sha256"]) == (
+        cp.PIN.manifest_sha256, cp.PIN.lock_sha256
+    )  # fmt: skip

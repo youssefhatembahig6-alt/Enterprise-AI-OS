@@ -36,7 +36,9 @@ exclude = ["app/db/migrations/versions/"]
 
 [[tool.mypy.overrides]]
 module = ["celery.*", "kombu.*", "argon2.*", "openpyxl.*", "pdfplumber.*", "pdfminer.*",
-          "boto3.*", "botocore.*"]
+          "boto3.*", "botocore.*",
+          # Only in the isolated checker-tokenizer environment (app/evaluation/token_lengths.py).
+          "transformers.*", "transformers"]
 ignore_missing_imports = true
 
 # pglast's generated AST node classes are untyped; these two modules walk them.

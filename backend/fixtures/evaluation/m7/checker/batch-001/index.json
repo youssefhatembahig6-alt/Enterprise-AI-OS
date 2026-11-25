@@ -1,0 +1,45 @@
+{
+  "batch": "batch-001",
+  "batch_seed": 20261127,
+  "by_family": {
+    "fresh-train-incident-review": {
+      "supported": 160,
+      "unsupported": 448
+    },
+    "fresh-train-regenerated": {
+      "supported": 220,
+      "unsupported": 644
+    },
+    "fresh-train-supplier-due-diligence": {
+      "supported": 180,
+      "unsupported": 439
+    }
+  },
+  "by_label": {
+    "supported": 560,
+    "unsupported": 1531
+  },
+  "by_variant": {
+    "distractor": 110,
+    "original": 560,
+    "polarity": 20,
+    "shift": 306,
+    "swap": 535,
+    "wrong_evidence": 560
+  },
+  "duplicates_removed": 22,
+  "gap_to_target_lower_bound": 909,
+  "generated_before_dedup": 2113,
+  "generator": "app/evaluation/checker_pairs.py",
+  "generator_version": "1.0.0",
+  "label_conflicts": 0,
+  "label_quality": "silver",
+  "loader_purpose": "training",
+  "lock_sha256": "39456f467ea6108a32089ca70543ce80f3af2c238d26f4606ed858f63eaa4e5a",
+  "manifest": "m7-split-v3",
+  "manifest_sha256": "be2205dbe8bb909500efc3680e7eb7934c02cbd3bfa267c57a7cedacee6e02a7",
+  "pairs": 2091,
+  "pairs_sha256": "c98fbcd55811f34baa16492c1cf2524341030a1f7b59bdbdfafc38fdac581b1b",
+  "roadmap_target": "3,000-5,000 checker training pairs",
+  "source_documents": 60
+}
