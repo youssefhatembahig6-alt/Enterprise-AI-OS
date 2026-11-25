@@ -572,3 +572,88 @@ def test_label_files_are_validated(tmp_path: Path) -> None:
     assert any("only one annotator's labels are imported" in p for p in problems)
     assert any("no adjudicator" in p for p in problems)
     assert any("not a recorded disagreement" in p for p in problems)
+
+
+# ------------------------------------- re-review: content, completeness, atomic publish
+@pytest.mark.parametrize("field", ["claim", "evidence_title", "evidence"])
+def test_edited_sheet_content_is_rejected(
+    two_sheets: list[tuple[Path, Path]], tmp_path: Path, field: str
+) -> None:
+    sheet, _ = two_sheets[1]
+    rows = _rows(sheet)
+    rows[3][field] = rows[3][field].replace("e", "E", 1) + " (edited)"
+    _write_rows(sheet, rows)
+    with pytest.raises(lab.LabelError, match=f"has edited {field}; only label and note"):
+        lab.import_sheets(two_sheets, tmp_path / "labels")
+    assert not (tmp_path / "labels").exists()  # the other, valid sheet is not published
+
+
+def test_content_swapped_between_rows_is_rejected(
+    two_sheets: list[tuple[Path, Path]], tmp_path: Path
+) -> None:
+    sheet, _ = two_sheets[0]
+    rows = _rows(sheet)
+    rows[0]["claim"], rows[1]["claim"] = rows[1]["claim"], rows[0]["claim"]
+    _write_rows(sheet, rows)
+    with pytest.raises(lab.LabelError, match="has edited claim"):
+        lab.import_sheets(two_sheets, tmp_path / "labels")
+
+
+def test_blank_sheet_is_rejected_and_nothing_is_published(tmp_path: Path) -> None:
+    sa, ka = lab.export_sheet("alice", tmp_path / "sheets")
+    sb, kb = lab.export_sheet("bob", tmp_path / "sheets")
+    _fill(sa, ka, lambda _pid: "supported")  # alice complete, bob untouched
+    n = len(lab.gold_pairs())
+    with pytest.raises(lab.LabelError, match=f"{n} of {n} item\\(s\\) have no label"):
+        lab.import_sheets([(sa, ka), (sb, kb)], tmp_path / "labels")
+    assert not (tmp_path / "labels").exists()
+
+
+def test_incomplete_sheet_is_rejected_and_nothing_is_published(
+    two_sheets: list[tuple[Path, Path]], tmp_path: Path
+) -> None:
+    sheet, _ = two_sheets[0]
+    rows = _rows(sheet)
+    rows[-1]["label"] = "  "
+    _write_rows(sheet, rows)
+    n = len(rows)
+    with pytest.raises(lab.LabelError, match=f"1 of {n} item\\(s\\) have no label"):
+        lab.import_sheets(two_sheets, tmp_path / "labels")
+    assert not (tmp_path / "labels").exists()
+
+
+def _published(label_dir: Path) -> list[str]:
+    return sorted(p.name for p in label_dir.iterdir()) if label_dir.exists() else []
+
+
+@pytest.mark.parametrize("fail_on_call", [1, 2])
+def test_write_failure_leaves_nothing_and_a_retry_succeeds(
+    two_sheets: list[tuple[Path, Path]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fail_on_call: int,
+) -> None:
+    label_dir = tmp_path / "labels"
+    real_publish = lab._publish
+    calls = {"n": 0}
+
+    def flaky(src: Path, dst: Path) -> None:
+        calls["n"] += 1
+        if calls["n"] == fail_on_call:
+            raise OSError("simulated disk failure")
+        real_publish(src, dst)
+
+    monkeypatch.setattr(lab, "_publish", flaky)
+    with pytest.raises(lab.LabelError, match="rolled back; nothing was published"):
+        lab.import_sheets(two_sheets, label_dir)
+    assert calls["n"] == fail_on_call
+    assert _published(label_dir) == []  # no label file, no staging directory
+    assert lab.status(label_dir)["human_reviewed_pair_ids"] == []
+
+    monkeypatch.setattr(lab, "_publish", real_publish)
+    written = lab.import_sheets(two_sheets, label_dir)
+    assert _published(label_dir) == ["gold-alice.csv", "gold-bob.csv"]
+    assert set(written) == {"alice", "bob"}
+    status = lab.status(label_dir)
+    assert status["problems"] == []
+    assert status["double_labelled"] == len(lab.gold_pairs())

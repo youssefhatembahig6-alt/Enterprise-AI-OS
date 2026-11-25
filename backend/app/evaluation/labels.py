@@ -10,8 +10,10 @@ must not open ``pilot/generated/``, which holds the proposals.
 
 Privacy until both finish. ``import_sheets`` accepts exactly two sheets from two different
 annotators in one call, and refuses if either annotator's labels are already in the
-repository. No single submission can land in the repository, or be seen by the other
-annotator, before both are complete.
+repository. Every item on both sheets must carry a valid label. The claim, evidence
+title and evidence must match the pair behind each opaque id; only label and note may
+be edited. Both files are staged and then published together; a failure rolls back, so
+no single or partial submission is ever published and the import can be retried.
 
 Files (backend/fixtures/evaluation/m7/pilot/labels/):
   gold-<annotator>.csv   pair_id,label,note,dataset_revision. Written only by import.
@@ -24,8 +26,10 @@ import csv
 import hashlib
 import io
 import json
+import os
 import re
 import secrets
+import shutil
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
@@ -49,6 +53,8 @@ SHEET_COLUMNS = (
     "dataset_revision",
 )
 LABEL_COLUMNS = ("pair_id", "label", "note", "dataset_revision")
+# Shown to the annotator and verified on import: only `label` and `note` may change.
+CONTENT_COLUMNS = ("claim", "evidence_title", "evidence")
 _ANNOTATOR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$")
 
 
@@ -138,7 +144,16 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
     return list(csv.DictReader(io.StringIO(path.read_text("utf-8-sig"))))
 
 
-def _decode(sheet: Path, key: Path, revision: str) -> tuple[str, list[dict[str, str]]]:
+def _same_text(a: str, b: str) -> bool:
+    # Spreadsheet tools may save CRLF line endings; nothing else may differ.
+    return a.replace("\r\n", "\n") == b.replace("\r\n", "\n")
+
+
+def _decode(
+    sheet: Path, key: Path, revision: str, pairs: dict[str, dict[str, Any]]
+) -> tuple[str, list[dict[str, str]]]:
+    """Validate one complete, unmodified sheet and map its opaque ids back to pairs."""
+
     keydata = json.loads(key.read_text("utf-8"))
     annotator: str = keydata["annotator"]
     mapping: dict[str, str] = keydata["items"]
@@ -151,6 +166,7 @@ def _decode(sheet: Path, key: Path, revision: str) -> tuple[str, list[dict[str, 
     if not rows or set(SHEET_COLUMNS) - set(rows[0]):
         raise LabelError(f"{sheet.name}: not a label sheet (columns {SHEET_COLUMNS})")
     seen: set[str] = set()
+    unlabelled: list[str] = []
     out = []
     for row in rows:
         item = row["item_id"].strip()
@@ -161,13 +177,23 @@ def _decode(sheet: Path, key: Path, revision: str) -> tuple[str, list[dict[str, 
             )
         if row["annotator"].strip() != annotator:
             raise LabelError(f"{sheet.name}: row {item} belongs to {row['annotator']!r}")
-        if item not in mapping:
+        if item not in mapping or mapping[item] not in pairs:
             raise LabelError(f"{sheet.name}: unknown item {item!r} (wrong key or edited id)")
         if item in seen:
             raise LabelError(f"{sheet.name}: item {item} appears twice")
         seen.add(item)
+        pair = pairs[mapping[item]]
+        changed = [c for c in CONTENT_COLUMNS if not _same_text(row[c], pair[c])]
+        if changed:
+            raise LabelError(
+                f"{sheet.name}: item {item} has edited {', '.join(changed)}; only label "
+                "and note may change"
+            )
         label = row["label"].strip().lower()
-        if label and label not in LABELS:
+        if not label:
+            unlabelled.append(item)
+            continue
+        if label not in LABELS:
             raise LabelError(f"{sheet.name}: item {item} has invalid label {label!r}")
         out.append(
             {
@@ -180,14 +206,30 @@ def _decode(sheet: Path, key: Path, revision: str) -> tuple[str, list[dict[str, 
     missing = set(mapping) - seen
     if missing:
         raise LabelError(f"{sheet.name}: {len(missing)} item(s) were deleted from the sheet")
+    if unlabelled:
+        raise LabelError(
+            f"{sheet.name}: {len(unlabelled)} of {len(seen)} item(s) have no label "
+            f"(first: {unlabelled[0]}); every item needs supported or unsupported"
+        )
     out.sort(key=lambda r: r["pair_id"])
     return annotator, out
+
+
+def _publish(src: Path, dst: Path) -> None:
+    """Move one staged label file into place (atomic per file; a hook for tests)."""
+
+    os.replace(src, dst)
 
 
 def import_sheets(
     submissions: list[tuple[Path, Path]], label_dir: Path = LABEL_DIR
 ) -> dict[str, Path]:
-    """Validate both (sheet, key) submissions, then write both label files, or neither."""
+    """Validate both complete submissions, then publish both label files, or neither.
+
+    Both files are written to a private staging directory first and then moved into
+    place. If anything fails, files already moved are removed and the staging directory
+    is deleted, so no partial submission remains and the same import can be retried.
+    """
 
     if len(submissions) != 2:
         raise LabelError(
@@ -195,23 +237,45 @@ def import_sheets(
             "visible before both have finished"
         )
     revision = dataset_revision()
-    decoded = [_decode(sheet, key, revision) for sheet, key in submissions]
+    pairs = {p["id"]: p for p in gold_pairs()}
+    decoded = [_decode(sheet, key, revision, pairs) for sheet, key in submissions]
     names = [a for a, _ in decoded]
     if names[0] == names[1]:
         raise LabelError("the two submissions must come from different annotators")
-    for name in names:
-        if (label_dir / f"gold-{name}.csv").exists():
+    targets = {name: label_dir / f"gold-{name}.csv" for name in names}
+    for name, path in targets.items():
+        if path.exists():
             raise LabelError(f"labels for {name} are already imported; never overwrite them")
-    written: dict[str, Path] = {}
     label_dir.mkdir(parents=True, exist_ok=True)
-    for name, rows in decoded:
-        path = label_dir / f"gold-{name}.csv"
-        with path.open("w", newline="", encoding="utf-8") as fh:
-            writer = csv.DictWriter(fh, fieldnames=LABEL_COLUMNS)
-            writer.writeheader()
-            writer.writerows(rows)
-        written[name] = path
-    return written
+    staging = label_dir / f".import-staging-{secrets.token_hex(4)}"
+    published: list[Path] = []
+    try:
+        staging.mkdir()
+        staged = {}
+        for name, rows in decoded:
+            staged[name] = staging / f"gold-{name}.csv"
+            with staged[name].open("w", newline="", encoding="utf-8") as fh:
+                writer = csv.DictWriter(fh, fieldnames=LABEL_COLUMNS)
+                writer.writeheader()
+                writer.writerows(rows)
+                fh.flush()
+                os.fsync(fh.fileno())
+        for name in names:
+            if targets[name].exists():
+                raise LabelError(f"labels for {name} appeared during the import")
+            _publish(staged[name], targets[name])
+            published.append(targets[name])
+    except Exception as exc:
+        for path in published:
+            path.unlink(missing_ok=True)
+        if isinstance(exc, LabelError):
+            raise
+        raise LabelError(
+            f"import failed and was rolled back; nothing was published ({exc})"
+        ) from exc
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return targets
 
 
 # --------------------------------------------------------------------------- status

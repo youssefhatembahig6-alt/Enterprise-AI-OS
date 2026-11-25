@@ -93,7 +93,10 @@ Claims are atomic: one sentence, no semicolons, at most 30 words. Evidence is an
 See [m7-labelling.md](m7-labelling.md). In short:
 - A coordinator exports a blind sheet per annotator. Sheets carry opaque random item ids, their own order, no pair id, no perturbation type and no proposed label.
 - The id-to-pair key stays with the coordinator (`var/`, git-ignored).
-- `labels import` needs **both** filled sheets with their keys in one call and maps the ids back to pairs. It rejects any sheet or key from another dataset revision, edited or deleted items, foreign rows, invalid labels, and re-imports.
+- `labels import` needs **both** filled sheets with their keys in one call and maps the ids back to pairs.
+  - It requires a valid label on every item of both sheets.
+  - It rejects any change to the claim, evidence title or evidence, any sheet or key from another dataset revision, edited or deleted items, foreign rows, invalid labels and re-imports.
+  - It publishes both files or neither: staged writes with rollback, so a failed import can be retried cleanly.
 - `labels status` reports per-pair states, disagreements, Cohen's kappa, adjudications and the ids of human-reviewed pairs.
 
 ## 7. Reproduction

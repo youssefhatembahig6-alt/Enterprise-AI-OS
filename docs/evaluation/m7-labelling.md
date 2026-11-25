@@ -45,8 +45,10 @@ When unsure, still choose one label and explain in `note`. Do not change `item_i
      --sheet ann-b.sheet.csv --key var/m7-labels/gold-ann-b.key.json
    ```
    - Import maps the opaque ids back to pair ids and writes `pilot/labels/gold-ann-a.csv` and `gold-ann-b.csv`.
-   - It writes both files or neither.
+   - It publishes both files or neither. They are staged in a private directory and then moved into place. If any step fails, files already moved are removed and the staging directory is deleted, so no partial submission remains and the same command can be retried.
    - It refuses:
+     - a sheet with any blank or missing label: every item on both sheets needs `supported` or `unsupported`;
+     - any edit to `claim`, `evidence_title` or `evidence`, which are checked against the pair behind each opaque id (only `label` and `note` may change; CRLF line endings are tolerated);
      - fewer or more than two submissions, or two from the same annotator;
      - a sheet or key from another dataset revision (for example, after the pilot was regenerated);
      - unknown, duplicated or deleted items;
