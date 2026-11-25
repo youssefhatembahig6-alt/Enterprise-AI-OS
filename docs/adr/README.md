@@ -26,3 +26,5 @@ meeting. Repository ADRs start at 0101 so they never collide with the source lis
 | [0501](0501-legal-pack.md) | Legal pack: clause comparison and expiry answers | Accepted for M5 (pending planning review) | FR-06, FR-03, FR-09 |
 | [0502](0502-github-repositories-and-code.md) | GitHub repositories and the code pack | Accepted for M5 (pending planning review) | FR-10, FR-02, FR-06 |
 | [0503](0503-desktop-local-folder.md) | Electron shell and the local-folder connector | Accepted for M5 (pending planning review) | ADR 0009, FR-13, NFR-07 |
+| [0601](0601-email-approval-and-outbox.md) | Email drafts, human approval and the Mailpit outbox | Accepted for M6 (pending planning review) | FR-08, FR-10 (Mailpit), roadmap M6 delivery semantics |
+| [0602](0602-scheduled-briefings.md) | Scheduled briefings produce drafts for review | Accepted for M6 (pending planning review) | FR-08, roadmap scheduled monitoring |

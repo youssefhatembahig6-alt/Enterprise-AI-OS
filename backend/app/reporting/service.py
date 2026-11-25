@@ -194,6 +194,37 @@ def dispatch_due_jobs(app_engine: Engine, dispatcher: Dispatcher, limit: int = 2
     return len(due)
 
 
+def content_decision(conn: Any, user_id: UUID, run: store.RunRow) -> Decision:
+    """Current authorization of ``user_id`` for a run's published content.
+
+    Reports: ``dataset.query`` on the report's dataset. Document answers:
+    ``resource.read`` on every cited document, which must not be deleted. Used for the
+    run owner (replay, evidence) and, in M6, for email recipients of that content.
+    """
+
+    if run.kind not in DOCUMENT_RUN_KINDS:
+        return authorize_dataset(conn, user_id, run.resource_id)
+    from app.documents import access as doc_access  # noqa: PLC0415 - avoid cycle
+    from app.documents import store as doc_store  # noqa: PLC0415
+
+    cited = (
+        conn.execute(
+            text("SELECT DISTINCT document_id FROM answer_sources WHERE run_id = :r"),
+            {"r": run.id},
+        )
+        .scalars()
+        .all()
+    )
+    for document_id in cited:
+        doc = doc_store.load_document(conn, document_id)
+        if doc is None or doc.deleted_at is not None:
+            return Decision.deny(Reason.RESOURCE_INACTIVE)
+        decision = doc_access.can_read(conn, user_id, document_id)
+        if not decision.allowed:
+            return decision
+    return Decision.allow()
+
+
 def sse_frame(seq: int | None, event: str, payload: dict[str, Any]) -> str:
     data = json.dumps(payload, separators=(",", ":"), sort_keys=True)
     head = f"id: {seq}\n" if seq is not None else ""
@@ -228,16 +259,41 @@ class ReportService:
     def create_run(
         self, ctx: AccessContext, question: str, client_request_id: str, kind: str = "report"
     ) -> store.RunRow:
-        with tenant_transaction(self._engine, ctx.tenant_id, ctx.user_id) as conn:
+        return self.create_run_for(
+            ctx.tenant_id,
+            ctx.user_id,
+            ctx.policy_epoch,
+            question,
+            client_request_id,
+            kind,
+            request_id=ctx.request_id,
+        )
+
+    def create_run_for(
+        self,
+        tenant_id: UUID,
+        user_id: UUID,
+        policy_epoch: int,
+        question: str,
+        client_request_id: str,
+        kind: str = "report",
+        *,
+        request_id: str | None = None,
+    ) -> store.RunRow:
+        """Create (idempotently, by ``client_request_id``) and dispatch a run owned by a
+        trusted, server-identified user. Request handlers pass the session's identity;
+        scheduled briefings (M6) pass the schedule owner after reloading them."""
+
+        with tenant_transaction(self._engine, tenant_id, user_id) as conn:
             require_pack(conn, RUN_KIND_PACK[kind])  # M4: backend-enforced tenant packs
             run, created = store.create_run(
                 conn,
-                tenant_id=ctx.tenant_id,
-                owner_user_id=ctx.user_id,
+                tenant_id=tenant_id,
+                owner_user_id=user_id,
                 question=question,
                 client_request_id=client_request_id,
                 inference_mode=self.inference_mode,
-                policy_epoch=ctx.policy_epoch,
+                policy_epoch=policy_epoch,
                 kind=kind,
             )
             if created:
@@ -250,12 +306,12 @@ class ReportService:
                 }
                 if self.inference_mode == ModelMode.FAKE.value:
                     payload["inference_label"] = FAKE_LABEL
-                store.append_event(conn, run.id, ctx.tenant_id, EventType.STATUS, payload)
+                store.append_event(conn, run.id, tenant_id, EventType.STATUS, payload)
                 record_audit_event(
                     conn,
-                    request_id=ctx.request_id,
-                    tenant_id=ctx.tenant_id,
-                    user_id=ctx.user_id,
+                    request_id=request_id,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
                     event_type="report.run",
                     action="report.create",
                     decision="info",
@@ -263,7 +319,7 @@ class ReportService:
                     details={"run_id": str(run.id), "inference": self.inference_mode, "kind": kind},
                 )
         if created and self._dispatcher is not None:
-            self._dispatcher.dispatch(run.id, ctx.tenant_id)
+            self._dispatcher.dispatch(run.id, tenant_id)
         return run
 
     def get_run(self, ctx: AccessContext, run_id: UUID) -> tuple[store.RunRow, bool]:
@@ -302,33 +358,7 @@ class ReportService:
 
     @staticmethod
     def _content_decision(conn: Any, user_id: UUID, run: store.RunRow) -> Decision:
-        """Current authorization for a run's published content.
-
-        Reports: ``dataset.query`` on the report's dataset. Document answers:
-        ``resource.read`` on every cited document, which must not be deleted.
-        """
-
-        if run.kind not in DOCUMENT_RUN_KINDS:
-            return authorize_dataset(conn, user_id, run.resource_id)
-        from app.documents import access as doc_access  # noqa: PLC0415 - avoid cycle
-        from app.documents import store as doc_store  # noqa: PLC0415
-
-        cited = (
-            conn.execute(
-                text("SELECT DISTINCT document_id FROM answer_sources WHERE run_id = :r"),
-                {"r": run.id},
-            )
-            .scalars()
-            .all()
-        )
-        for document_id in cited:
-            doc = doc_store.load_document(conn, document_id)
-            if doc is None or doc.deleted_at is not None:
-                return Decision.deny(Reason.RESOURCE_INACTIVE)
-            decision = doc_access.can_read(conn, user_id, document_id)
-            if not decision.allowed:
-                return decision
-        return Decision.allow()
+        return content_decision(conn, user_id, run)
 
     def _content_allowed(self, conn: Any, user_id: UUID, run: store.RunRow) -> bool:
         return self._content_decision(conn, user_id, run).allowed

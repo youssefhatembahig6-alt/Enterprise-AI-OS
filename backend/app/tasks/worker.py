@@ -33,6 +33,7 @@ celery_app = Celery(
         "app.tasks.reports",
         "app.tasks.documents",
         "app.tasks.connectors",
+        "app.tasks.actions",
     ],
 )
 celery_app.conf.update(
@@ -65,6 +66,12 @@ celery_app.conf.update(
         "dispatch-due-connector-syncs": {
             "task": "app.tasks.connectors.dispatch_due_syncs",
             "schedule": 60.0,
+        },
+        # M6: outbox re-dispatch, crash recovery (expired claims -> uncertain),
+        # reconciliation against Mailpit, and scheduled briefings.
+        "process-due-actions": {
+            "task": "app.tasks.actions.process_due_actions",
+            "schedule": 30.0,
         },
     },
 )

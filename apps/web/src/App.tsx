@@ -1,6 +1,7 @@
 import { Alert, Button, Card, Field, StatusPill, type StatusTone } from "@eaios/ui";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { admin, type TenantSettings } from "./admin";
+import { ActionsPanel, type ReportSource } from "./ActionsPanel";
 import { AdminPanel } from "./AdminPanel";
 import { api, ApiError, type Identity } from "./api";
 import { desktop } from "./desktop";
@@ -181,6 +182,8 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [settings, setSettings] = useState<TenantSettings | null>(null);
   const [desktopSession, setDesktopSession] = useState<{ session: Session; ready: boolean } | null>(null);
+  const [reportSource, setReportSource] = useState<ReportSource | null>(null);
+  const onReportPublished = useCallback((runId: string, title: string) => setReportSource({ runId, title }), []);
 
   useEffect(() => {
     let current = true;
@@ -191,6 +194,7 @@ export function App() {
     );
     setDesktopSession(null);
     setSettings(null);
+    setReportSource(null);
     if (session) {
       void admin.tenantSettings(session.token).then(
         (value) => { if (current) setSettings(value); },
@@ -223,7 +227,14 @@ export function App() {
       {notice && !session ? <p className="text-sm text-muted-fg">{notice}</p> : null}
       {session ? (
         <>
-          <ReportPanel token={session.token} packs={settings?.enabled_packs ?? null} />
+          <ReportPanel
+            token={session.token}
+            packs={settings?.enabled_packs ?? null}
+            onReportPublished={onReportPublished}
+          />
+          {settings?.enabled_packs.includes("actions") ? (
+            <ActionsPanel token={session.token} source={reportSource} />
+          ) : null}
           <DocumentsPanel
             token={session.token}
             canUpload={

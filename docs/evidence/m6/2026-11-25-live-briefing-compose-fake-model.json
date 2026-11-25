@@ -1,0 +1,52 @@
+{
+  "created": {
+    "schedule_id": "10428562-8649-461e-b72a-b60552303616",
+    "question": "What were NileTech's net (tax-exclusive) fulfilled sales for Q1 2026, in USD?",
+    "recipient": {
+      "user_id": "e8ac7b67-c507-5d2d-8803-cbc6bf03b5b8",
+      "display_name": "Finance Reader",
+      "email": "finance.reader@niletech.example"
+    },
+    "interval_seconds": 86400,
+    "next_run_at": "2026-11-25T17:42:31.124492Z",
+    "active": true,
+    "created_at": "2026-11-25T17:42:32.141912Z",
+    "occurrences": []
+  },
+  "schedule": {
+    "schedule_id": "10428562-8649-461e-b72a-b60552303616",
+    "question": "What were NileTech's net (tax-exclusive) fulfilled sales for Q1 2026, in USD?",
+    "recipient": {
+      "user_id": "e8ac7b67-c507-5d2d-8803-cbc6bf03b5b8",
+      "display_name": "Finance Reader",
+      "email": "finance.reader@niletech.example"
+    },
+    "interval_seconds": 86400,
+    "next_run_at": "2026-11-26T17:42:31.124492Z",
+    "active": true,
+    "created_at": "2026-11-25T17:42:32.141912Z",
+    "occurrences": [
+      {
+        "occurrence_id": "d9ed7737-1640-4ac0-b31b-0a3a91d19aa6",
+        "due_at": "2026-11-25T17:42:31.124492Z",
+        "status": "review",
+        "status_reason": "awaiting_human_approval",
+        "run_id": "f658a4f1-1544-4841-a317-40d78e0c3706",
+        "action_id": "83dd64c1-07c5-4360-b6c9-2a59a5bbcede"
+      }
+    ]
+  },
+  "draft": {
+    "action_id": "83dd64c1-07c5-4360-b6c9-2a59a5bbcede",
+    "status": "draft",
+    "origin": "briefing",
+    "version": 1,
+    "delivery": null,
+    "approval_expires_at": null
+  },
+  "draft_after_more_beat_passes": {
+    "status": "draft",
+    "delivery": null,
+    "approval_expires_at": null
+  }
+}

@@ -321,7 +321,16 @@ function DocumentCitationPanel({
   );
 }
 
-export function ReportPanel({ token, packs }: { token: string; packs: string[] | null }) {
+export function ReportPanel({
+  token,
+  packs,
+  onReportPublished,
+}: {
+  token: string;
+  packs: string[] | null;
+  /** M6: a verified sales report was published (it can be emailed after approval). */
+  onReportPublished?: (runId: string, title: string) => void;
+}) {
   // Menus follow the tenant's packs; the backend refuses disabled packs regardless.
   const docsOn = packs === null || packs.includes("documents");
   const legalOn = packs !== null && packs.includes("legal");
@@ -342,6 +351,12 @@ export function ReportPanel({ token, packs }: { token: string; packs: string[] |
   }, []);
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (view.table && view.done?.outcome === "published" && view.runId) {
+      onReportPublished?.(view.runId, view.title ?? "Verified report");
+    }
+  }, [view.table, view.done, view.runId, view.title, onReportPublished]);
 
   const run = async (event: FormEvent) => {
     event.preventDefault();

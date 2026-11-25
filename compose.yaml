@@ -1,6 +1,8 @@
-# Enterprise AI OS — development stack (M0 foundation, M2 reports, M3 documents, M4 Drive/admin).
+# Enterprise AI OS — development stack (M0 foundation, M2 reports, M3 documents, M4 Drive/admin,
+# M5 legal/code/desktop, M6 approved email through Mailpit).
 #   docker compose up --build        (see docs/runbook.md)
-# Only the API (8000) and frontend (3000) are published, bound to 127.0.0.1.
+# Only the API (8000), frontend (3000) and Mailpit's inbox UI (8025) are published, bound
+# to 127.0.0.1.
 # Data services are reachable only on the internal network. No model service
 # runs here: models are external (Colab GPU, ml/model-gateway). Without a gateway,
 # report runs end with a clear model_unavailable error (or set MODEL_MODE=fake for a
@@ -39,6 +41,12 @@ x-backend-env: &backend-env
   GITHUB_CONNECTOR_CONFIG: ${GITHUB_CONNECTOR_CONFIG:-}
   PASSWORD_VERIFY_CONCURRENCY: ${PASSWORD_VERIFY_CONCURRENCY:-2}
   PASSWORD_VERIFY_QUEUE_TIMEOUT_SECONDS: ${PASSWORD_VERIFY_QUEUE_TIMEOUT_SECONDS:-5}
+  # M6: approved email goes only to the local Mailpit (SMTP 1025, API 8025).
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  MAILPIT_API_URL: http://mailpit:8025
+  MAIL_FROM: ${MAIL_FROM:-Enterprise AI OS <no-reply@eaios.local>}
+  ACTION_APPROVAL_TTL_SECONDS: ${ACTION_APPROVAL_TTL_SECONDS:-900}
 
 services:
   postgres:
@@ -104,6 +112,25 @@ services:
     mem_limit: 256m
     restart: unless-stopped
 
+  # M6: development mail server. Approved emails are delivered here over SMTP (1025,
+  # internal network only); the web UI/API (8025) is published on 127.0.0.1 so the
+  # owner can inspect delivered messages. Nothing leaves this machine.
+  mailpit:
+    image: axllent/mailpit:v1.27.11
+    environment:
+      MP_MAX_MESSAGES: "5000"
+      MP_SMTP_AUTH_ACCEPT_ANY: "false"
+      MP_SMTP_REQUIRE_TLS: "false"
+    ports:
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 64m
+    restart: unless-stopped
+
   # One-shot: applies Alembic migrations with the privileged owner role.
   migrate:
     build:
@@ -159,6 +186,8 @@ services:
       migrate:
         condition: service_completed_successfully
       redis:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.tasks.worker:celery_app inspect ping -d celery@$$HOSTNAME --timeout 10 >/dev/null"]
@@ -217,6 +246,9 @@ services:
       TEST_DATABASE_ADMIN_URL: postgresql+psycopg://postgres:${POSTGRES_SUPERUSER_PASSWORD:?set in .env}@postgres:5432/postgres
       TEST_REDIS_URL: redis://:${REDIS_PASSWORD:?set in .env}@redis:6379/15
       TEST_QDRANT_URL: http://qdrant:6333
+      TEST_MAILPIT_SMTP_HOST: mailpit
+      TEST_MAILPIT_SMTP_PORT: "1025"
+      TEST_MAILPIT_API_URL: http://mailpit:8025
       EAIOS_REQUIRE_INTEGRATION: "1"
     depends_on:
       postgres:
@@ -224,6 +256,8 @@ services:
       redis:
         condition: service_healthy
       qdrant:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
     mem_limit: 512m
     restart: "no"
