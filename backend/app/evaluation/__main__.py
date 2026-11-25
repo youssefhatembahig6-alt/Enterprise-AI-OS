@@ -6,6 +6,7 @@ python -m app.evaluation check [--base REF] [--git-history]   deterministic CI s
 python -m app.evaluation build-pilot         regenerate the pilot datasets
 python -m app.evaluation build-corpus-v3     regenerate the v3 fresh corpus (deterministic)
 python -m app.evaluation overlap             fresh-vs-dev and cross-family overlap report
+python -m app.evaluation build-checker-batch silver checker pairs from the train split
 python -m app.evaluation report [--json]     dataset counts and label status
 python -m app.evaluation labels export --annotator ID [--out-dir DIR]
 python -m app.evaluation labels import --sheet A.csv --key A.key.json --sheet B.csv --key B.key.json
@@ -19,7 +20,7 @@ import json
 import sys
 from pathlib import Path
 
-from app.evaluation import corpus_v3, freeze, labels, overlap
+from app.evaluation import checker_pairs, corpus_v3, freeze, labels, overlap
 from app.evaluation import manifest as mf
 from app.evaluation.checks import counts_report, format_report, run_checks
 from app.evaluation.pilot import write_pilot
@@ -72,6 +73,28 @@ def cmd_build_corpus_v3(_: argparse.Namespace) -> int:
         f"wrote {count} documents to {corpus_v3.CORPUS_DIR} (seed {corpus_v3.SEED}, "
         f"generator {corpus_v3.GENERATOR_VERSION} sha256 {corpus_v3.generator_sha256()[:12]}…)"
     )
+    return 0
+
+
+def cmd_build_checker_batch(_: argparse.Namespace) -> int:
+    index = checker_pairs.write()
+    print(
+        json.dumps(
+            {
+                k: index[k]
+                for k in (
+                    "batch",
+                    "pairs",
+                    "by_label",
+                    "by_family",
+                    "duplicates_removed",
+                    "gap_to_target_lower_bound",
+                )
+            },
+            indent=2,
+        )
+    )
+    print("Recount token lengths with the pinned tokenizer (see ml/checker-tokenizer).")
     return 0
 
 
@@ -138,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("build-pilot").set_defaults(func=cmd_build_pilot)
     sub.add_parser("build-corpus-v3").set_defaults(func=cmd_build_corpus_v3)
     sub.add_parser("overlap").set_defaults(func=cmd_overlap)
+    sub.add_parser("build-checker-batch").set_defaults(func=cmd_build_checker_batch)
     report = sub.add_parser("report")
     report.add_argument("--json", action="store_true")
     report.set_defaults(func=cmd_report)

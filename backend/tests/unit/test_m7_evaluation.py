@@ -970,3 +970,202 @@ def test_loader_use_passes_the_audit(monkeypatch: pytest.MonkeyPatch) -> None:
     code = "from app.evaluation import loader\ndocs = loader.load('training').documents\n"
     monkeypatch.setattr(mf, "_artifact_texts", lambda: (*real, ("ml/train_checker.py", code)))
     assert mf.audit_exposure(_parse(V3_TEXT)) == []
+
+
+# ------------------------------------------------------ checker pairs, batch 001
+from app.evaluation import checker_pairs as cp  # noqa: E402
+
+_BUILD_PROBE = r"""
+import json, sys
+events = []
+def hook(event, args):
+    if event == "open":
+        events.append(("open", str(args[0])))
+    elif event in ("os.listdir", "os.scandir", "glob.glob", "os.walk"):
+        events.append(("list", str(args[0])))
+sys.addaudithook(hook)
+from app.evaluation import checker_pairs
+pairs, stats = checker_pairs.build_pairs()
+print(json.dumps({"events": events, "splits": sorted({p["split"] for p in pairs}),
+                  "sources": sorted({p["source"] for p in pairs} | {p["evidence_source"] for p in pairs})}))
+"""
+
+
+@pytest.fixture(scope="module")
+def training() -> loader.LoadResult:
+    return loader.load("training")
+
+
+@pytest.fixture(scope="module")
+def batch(training: loader.LoadResult) -> list[dict[str, Any]]:
+    pairs, _ = cp.build_pairs(training)
+    return pairs
+
+
+def test_committed_batch_matches_a_fresh_build_and_validates() -> None:
+    assert cp.check() == []
+    assert cp.token_report_problems() == []
+
+
+def test_batch_counts_match_the_index(batch: list[dict[str, Any]]) -> None:
+    index = json.loads((cp.OUT_DIR / cp.INDEX_FILE).read_text())
+    assert index["pairs"] == len(batch) == 2088
+    assert index["by_label"] == {"supported": 560, "unsupported": 1528}
+    assert index["label_conflicts"] == 0 and index["duplicates_removed"] == 25
+    assert index["gap_to_target_lower_bound"] == 3000 - 2088
+    assert index["loader_purpose"] == "training" and index["manifest"] == "m7-split-v3"
+    assert {p["label_quality"] for p in batch} == {"silver"}
+
+
+def test_building_the_batch_never_opens_dev_or_heldout_material() -> None:
+    done = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", _BUILD_PROBE], cwd=mf.REPO / "backend", capture_output=True,
+        check=True,
+    )  # fmt: skip
+    out = json.loads(done.stdout)
+    assert out["splits"] == ["train"]
+    assert all(
+        s.startswith(("fresh:v3-wo-", "fresh:v3-sdr-", "fresh:v3-pir-")) for s in out["sources"]
+    )
+    touched = [p for _, p in out["events"]]
+    assert not [p for p in touched if any(k in p for k in HELDOUT_KEYS)]
+    dev_dirs = ("fixtures/documents/files", "fixtures/legal/files", "fixtures/github-acceptance")
+    assert not [p for p in touched if any(d in p for d in dev_dirs)]
+    assert not [p for p in touched if p.endswith("corpus-v3/corpus.toml")]
+    assert not [p for kind, p in out["events"] if kind == "list" and "fixtures" in p]
+
+
+def test_only_the_training_loader_can_feed_the_batch() -> None:
+    with pytest.raises(ValueError, match="training loader"):
+        cp.build_pairs(loader.load("tuning"))
+
+
+def test_a_dev_or_heldout_document_smuggled_into_the_training_result_is_refused(
+    training: loader.LoadResult,
+) -> None:
+    for split, ref, family in (
+        ("dev", "doc:hr-leave-policy", "hr-leave-policy"),
+        ("heldout", "fresh:v3-ps-001", "fresh-heldout-regenerated-a"),
+    ):
+        smuggled = loader.LoadedDocument(ref, family, split, "Title\n\nText.", {"reference": "X"})
+        tainted = loader.LoadResult(
+            training.purpose, training.manifest, [*training.documents, smuggled]
+        )
+        with pytest.raises(ValueError, match=f"{ref} is not a train document"):
+            cp.build_pairs(tainted)
+
+
+@pytest.mark.parametrize(
+    ("ref", "family", "split"),
+    [
+        ("doc:hr-leave-policy", "hr-leave-policy", "dev"),
+        ("fresh:v3-ps-001", "fresh-heldout-regenerated-a", "heldout"),
+    ],
+)
+def test_validation_rejects_dev_and_heldout_pairs(
+    training: loader.LoadResult, batch: list[dict[str, Any]], ref: str, family: str, split: str
+) -> None:
+    pairs = copy.deepcopy(batch)
+    pairs[0].update(source=ref, evidence_source=ref, family=family, split=split)
+    problems = cp.validate(pairs, training)
+    assert any(f"{ref} is not a train document" in p for p in problems)
+    assert any(f"split {split} / family {family} is not train" in p for p in problems)
+
+
+def test_every_variant_keeps_its_parents_family_split_and_source(
+    training: loader.LoadResult, batch: list[dict[str, Any]]
+) -> None:
+    by_id = {p["id"]: p for p in batch}
+    for p in batch:
+        if p["parent"] is None:
+            assert p["variant"] == "original" and p["label"] == "supported"
+            continue
+        parent = by_id[p["parent"]]
+        assert (parent["family"], parent["split"], parent["source"]) == (
+            p["family"], p["split"], p["source"]
+        )  # fmt: skip
+        assert p["label"] == "unsupported"
+    pairs = copy.deepcopy(batch)
+    variant = next(p for p in pairs if p["variant"] == "swap")
+    variant["source"] = next(p["source"] for p in pairs if p["source"] != variant["source"])
+    assert any("variant left its parent" in p for p in cp.validate(pairs, training))
+
+
+def test_wrong_evidence_stays_in_family_and_is_another_document(
+    batch: list[dict[str, Any]],
+) -> None:
+    wrong = [p for p in batch if p["variant"] == "wrong_evidence"]
+    assert len(wrong) == 560
+    assert all(p["evidence_source"] != p["source"] for p in wrong)
+    assert all(p["evidence_source"].split("-")[1] == p["source"].split("-")[1] for p in wrong)
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (lambda p: p.update(evidence_start=p["evidence_start"] + 1), "not the exact span"),
+        (lambda p: p.update(premise=p["evidence"]), "premise is not title + evidence"),
+        (lambda p: p.update(claim="It is late; the fee rose."), "not atomic"),
+        (lambda p: p.update(label="supported"), "only the original claim may be supported"),
+        (lambda p: p.update(label_quality="gold"), "labels must be silver"),
+    ],
+)
+def test_validation_catches_broken_pairs(
+    training: loader.LoadResult, batch: list[dict[str, Any]], edit: Any, message: str
+) -> None:
+    pairs = copy.deepcopy(batch)
+    edit(next(p for p in pairs if p["variant"] == "shift"))
+    assert any(message in p for p in cp.validate(pairs, training))
+
+
+def test_every_evidence_span_is_exact_and_claims_are_atomic(
+    training: loader.LoadResult, batch: list[dict[str, Any]]
+) -> None:
+    texts = {d.ref: d.text for d in training.documents}
+    for p in batch:
+        assert texts[p["evidence_source"]][p["evidence_start"] : p["evidence_end"]] == p["evidence"]
+        assert p["claim"].count(". ") == 0 and ";" not in p["claim"]
+
+
+def test_bound_claims_are_only_perturbed_to_stricter_values(batch: list[dict[str, Any]]) -> None:
+    def hours(text: str) -> int:
+        return int(re.search(r"within (\d+) hours", text).group(1))  # type: ignore[union-attr]
+
+    for p in batch:
+        if p["claim_type"] == "response" and p["variant"] in ("swap", "shift"):
+            assert hours(p["claim"]) < hours(p["evidence"])
+
+
+def test_batch_build_is_deterministic(training: loader.LoadResult) -> None:
+    assert cp.render(training) == cp.render(training)
+
+
+def test_train_claims_share_no_text_with_dev_pilot_records(batch: list[dict[str, Any]]) -> None:
+    from app.evaluation.checks import load_data, normalise
+
+    dev = {
+        normalise(t)
+        for recs in load_data(freeze.disk_reader()).values()
+        for r in recs
+        for t in [r.get("claim", ""), r.get("question", ""), r.get("query", "")]
+        if t
+    }
+    assert not {normalise(p["claim"]) for p in batch} & dev
+
+
+def test_token_report_matches_the_pins_and_has_no_over_length_pairs() -> None:
+    report = json.loads((cp.OUT_DIR / cp.LENGTHS_FILE).read_text())
+    assert report["tokenizer"]["revision"] == "6f5cf0a2b59cabb106aca4c287eed12e357e90eb"
+    assert report["tokenizer"]["class"] == "DebertaV2TokenizerFast"
+    assert report["overall"]["over_limit"] == 0 and report["over_limit_ids"] == []
+    assert report["overall"]["max"] <= report["limit"] == 512
+
+
+def test_token_report_for_other_pairs_is_rejected(tmp_path: Path) -> None:
+    for name in (cp.PAIRS_FILE, cp.LENGTHS_FILE):
+        shutil.copy(cp.OUT_DIR / name, tmp_path / name)
+    lines = (tmp_path / cp.PAIRS_FILE).read_text().splitlines(keepends=True)
+    (tmp_path / cp.PAIRS_FILE).write_text("".join(lines[:-1]))
+    problems = cp.token_report_problems(tmp_path)
+    assert any("measured on different pairs" in p for p in problems)
+    assert any("does not cover exactly" in p for p in problems)

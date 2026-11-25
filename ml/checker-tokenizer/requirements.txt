@@ -1,0 +1,23 @@
+# Exact pins for the isolated checker-tokenizer environment (no torch: tokenization only).
+# transformers matches ml/gpu-feasibility/vllm-env-pins.txt. Used by CI job checker-tokenizer
+# and by backend/app/evaluation/token_lengths.py. One "name==version" per line.
+certifi==2026.11.20
+charset-normalizer==3.5.3
+filelock==4.3.1
+fsspec==2026.9.0
+hf-xet==1.8.0
+huggingface_hub==0.36.2
+idna==3.20
+numpy==2.5.5
+packaging==26.4
+protobuf==7.36.2
+PyYAML==6.0.4
+regex==2026.11.24
+requests==2.34.2
+safetensors==0.8.0
+sentencepiece==0.2.3
+tokenizers==0.22.2
+tqdm==4.70.1
+transformers==4.56.2
+typing_extensions==4.16.0
+urllib3==2.8.0

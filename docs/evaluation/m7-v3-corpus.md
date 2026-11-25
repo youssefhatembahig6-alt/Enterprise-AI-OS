@@ -142,6 +142,8 @@ git fetch origin main && .venv/bin/python -m app.evaluation check --base origin/
 
 ## 8. Gaps
 
+**Update:** the first checker training batch (2,088 silver pairs from the train split) is in [m7-checker-batch-001.md](m7-checker-batch-001.md).
+
 0. **Blind release data does not exist yet:** v3 held-out is a public benchmark split (section 7). A coordinator still has to be chosen, and must create, freeze and publish metadata for blind data before release scoring.
 1. **No derived data for the fresh families yet:** QA cases, retrieval pairs, checker training pairs and gold pairs are the next, separately reviewed step.
 2. **Scale.** 60 train documents (about 6–10 facts each) will not reach 3,000–5,000 checker pairs without many perturbations per fact. 24 held-out documents can support roughly 200–250 gold claims, below the 300–500 target. Reaching the targets needs a v4 manifest with more documents or families, frozen the same way. Growing v3 in place is not allowed.
