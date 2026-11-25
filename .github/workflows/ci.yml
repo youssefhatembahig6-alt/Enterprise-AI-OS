@@ -61,6 +61,8 @@ jobs:
       EAIOS_REQUIRE_INTEGRATION: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # M7: freeze-before-pilot order and base-branch freeze comparison
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13.7"
@@ -72,10 +74,14 @@ jobs:
         run: .venv/bin/ruff check . && .venv/bin/ruff format --check .
       - name: Mypy
         run: .venv/bin/mypy app tests
-      - name: M7 evaluation smoke (frozen split, leakage, pilot determinism)
-        # Deterministic: no network, database or model. Fails on any family or derived
-        # example crossing splits, an edited frozen manifest, or a non-reproducible build.
-        run: .venv/bin/python -m app.evaluation check
+      - name: M7 evaluation smoke (reviewed freeze, provenance, leakage, determinism)
+        # Deterministic: no database or model. Fails on any family, evidence source or
+        # derived example crossing splits; a manifest, lock or snapshot that differs from
+        # the reviewed snapshot or from main; a pilot not derived after the freeze; or a
+        # non-reproducible build.
+        run: |
+          git fetch --no-tags origin main
+          .venv/bin/python -m app.evaluation check --base origin/main --git-history
       - name: Pytest (unit + real PostgreSQL/Redis/Mailpit integration)
         # The receipt-persistence test restarts the Mailpit service container (the
         # job context is only available at step level).

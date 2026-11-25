@@ -1,88 +1,120 @@
 # M7 evaluation foundation (pilot)
 
-Status: **foundation and pilot only.** No model was fine-tuned and no threshold was selected. Every dataset here is a small, clearly labelled **pilot**; none of it is the release evaluation, and the roadmap's dataset sizes remain targets.
+Status: **foundation and pilot only.** No model was fine-tuned, no threshold was chosen and no human labels exist yet. Every dataset is a clearly labelled **pilot**, kept separate from the release evaluation. The roadmap's dataset sizes are targets.
+
+Revision 2 (2026-11-26) addresses the four PR #10 review findings: blind annotation, evidence and provenance validation, the corrected split inventory, and an enforceable freeze.
 
 ## 1. Inventory of what existed before M7
 
 | Asset | Location | What it is | Reuse in M7 |
 | --- | --- | --- | --- |
-| Frozen M1 SQL cases | `backend/fixtures/evaluation/sales-q1-2026.toml` | 2 cases (Q1 2026 net fulfilled sales; isolation-tenant abstention) with independently computed values, distractors and a 10-order worked subset. `split = "dev"`. | Registered as a dev legacy fixture of family `q1-2026-sales-figures`. Values cited by pilot QA claims. |
-| M2 generalization SQL cases | `backend/fixtures/evaluation/sales-generalization-m2.toml` | 3 more periods of the same question template. `split = "dev"`. | Same family and template (`sql:sales-period-net-fulfilled`). |
-| M3 retrieval dev cases | `backend/fixtures/evaluation/documents-dev-m3.toml` | 22 query → document + exact expected substring. Dev split. | Converted into 22 pilot retrieval pairs (`ret-m3-*`). |
-| M3 relevance study | `backend/fixtures/evaluation/relevance-study-m3.toml` | 24 hand-labelled question/passage pairs (paraphrase, trap, match, unrelated). | Converted into 24 pilot retrieval pairs (`ret-m3rel-*`), including 12 negatives. |
-| Retrieval harness | `backend/app/documents/evaluate.py`, `python -m app.cli retrieval-eval`, `tests/integration/test_retrieval_eval.py` | Production parser → chunker → embeddings → temporary Qdrant collection; dense vs hybrid (RRF); recall@1/5, MRR@5, document recall@5; labels fake runs. Real BGE-M3 result recorded in `docs/evidence/m3/`. | Reusable as is for metrics. **Gap:** its case file path is hard-coded to `documents-dev-m3.toml` and it only scores positive cases; it must be parameterized to read `retrieval-pairs.jsonl` (and to use negatives) before M7 retrieval runs. |
-| Development checker | `ml/model-gateway/gateway.py` (`POST /check`, `NliChecker`), `backend/app/reporting/model_client.py` (`check`), `backend/app/config.py` | Public `MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli` at a pinned revision, refuses inputs over its token limit; `CHECKER_ENTAILMENT_THRESHOLD = 0.5`, documented as uncalibrated. | The baseline the fine-tuned checker will be compared to. Untouched here. |
-| Deterministic claim checks | `backend/app/reporting/claims.py`, M5 citation verifier | Exact-number and citation checks for SQL report sentences and legal values. | Complements the learned checker; the pilot QA claims use the same "exact value in the cited evidence" rule. |
-| GPU timing workload | `ml/gpu-feasibility` (`m1-gpu-workload-v1`) | 10 questions for latency only; explicitly not an evaluation set. | Not used as evaluation data. |
-| Parser gold | `ml/parser-benchmark/fixtures/gold` | Gold text/tables/reading order for 7 files. | Not evaluation data for QA; the newsletter/overview are dev-exposed through it. |
+| Frozen M1 SQL cases | `backend/fixtures/evaluation/sales-q1-2026.toml` | 2 cases (Q1 2026 net fulfilled sales; isolation-tenant abstention) with independently computed values. `split = "dev"`. | Dev legacy fixture of family `q1-2026-sales-figures`; its values are cited by pilot QA claims. |
+| M2 generalization SQL cases | `backend/fixtures/evaluation/sales-generalization-m2.toml` | 3 more periods of the same question template. Dev. | Same family/template (`sql:sales-period-net-fulfilled`). |
+| M3 retrieval dev cases | `backend/fixtures/evaluation/documents-dev-m3.toml` | 22 query → document + exact substring. Dev. | 22 pilot retrieval pairs (`ret-m3-*`), parent `legacy:<path>#<id>`. |
+| M3 relevance study | `backend/fixtures/evaluation/relevance-study-m3.toml` | 24 hand-labelled question/passage pairs. Dev. | 24 pilot retrieval pairs (`ret-m3rel-*`), 12 of them negatives. |
+| Retrieval harness | `backend/app/documents/evaluate.py`, `app.cli retrieval-eval` | Production parser → chunker → embeddings → temporary Qdrant collection. Compares dense with hybrid on recall@1/5 and MRR@5. | Reusable for metrics. **Gap:** its case file is hard-coded and it scores positives only. |
+| Development checker | `ml/model-gateway/gateway.py` (`/check`), `app/reporting/model_client.py`, `app/config.py` | Public `MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli`, pinned revision; `CHECKER_ENTAILMENT_THRESHOLD = 0.5` (uncalibrated). | The baseline for the later fine-tuned checker. Unchanged. |
+| Deterministic claim checks | `app/reporting/claims.py`, M5 citation verifier | Exact-number and citation checks. | The pilot uses the same "exact value in cited evidence" rule. |
 
-### What data was missing (and still is)
+**Missing data (still missing):**
+- No source is free of development use: every current document, contract and code fixture was used by M1–M6 tests, runs or evidence (section 2).
+- There is no train data and no release-grade held-out data.
+- No checker training data at the planned scale exists.
+- No human-labelled checker gold exists.
 
-* **No split manifest existed.** Every pre-M7 file was labelled "dev", and nothing prevented the same document family appearing in a later train or test set. M7 adds it (section 2).
-* **No held-out data of release quality.** Of the 16 source files, all but two were already used for development. The remaining family (board minutes + draft strategy) is tiny and is the only held-out family in v1. The release held-out set needs the regenerated NileTech documents (roadmap section 10).
-* **No checker training data and no human-labelled checker gold.** Nothing existed. The pilot adds 78 silver training pairs and 37 gold candidates. None has a human label.
-* **QA cases** had numeric expectations but no atomic claims with cited evidence spans.
-* **Retrieval pairs** existed only as "the expected substring appears in top-k". They had no graded negatives outside the relevance study and no pairs for contracts or code.
+## 2. Split manifests: v1 (superseded audit record) and v2 (active)
 
-## 2. Frozen split manifest
+* **The family is the unit of splitting.** A family groups sources that share a template or restate the same facts. Every document, contract, code fixture and SQL question template belongs to exactly one family.
+* **v1** (`split-manifest-v1.toml`, frozen in `57ed79c`) is kept **byte-identical** as an audit record. Its lock must still verify. The review showed that v1 misplaced three families:
+  - `code-config-constants` → train. In fact it was used by the M5 GitHub acceptance runs, including the real-model Colab run.
+  - `board-governance` → held-out. In fact it was indexed in the M3 Colab retrieval evaluation that chose dense retrieval, and used by M3 answer tests.
+  - `contract-template` → train. The re-audit found it drove the M5 legal extractor tests.
+* **v2** (`split-manifest-v2.toml`, frozen in `ba6e9c8` **before** the pilot was regenerated) puts all **9 families in dev**. Each family lists its `exposure` evidence.
+  - It reserves fresh families with no members yet: `fresh-train-regenerated` (train), and `fresh-heldout-regenerated-a` and `-b` (held-out, sealed).
+  - Their members will be regenerated NileTech documents, added in a v3 manifest that is frozen before any claim is written.
+* **Automatic exposure audit.** The check scans `backend/tests`, `backend/app`, `backend/fixtures/evaluation`, `scripts`, `ml` and `docs/evidence` (excluding M7's own files) for every member's key, file name or path.
+  - Any hit for a train or held-out family fails CI. A future test that touches a held-out document is therefore caught.
+  - Every listed exposure path must exist and mention a member.
+  - Run against v1, the audit flags exactly the three misassigned families. A regression test keeps it that way.
 
-* `backend/fixtures/evaluation/m7/split-manifest-v1.toml` assigns **every** corpus document, contract, code fixture and SQL question template to exactly one family. Each family has exactly one split and a recorded reason.
-* Families group sources that share a **template** or restate the **same facts**. For example, the Q1 commentary, Q1 sales tables, Q1 workbook, a Q1 delivery note, the isolation tenant's copy of the commentary's revenue sentence, and the SQL template that computes those figures form one family.
-* Rule: anything used by an M1–M6 development fixture or decision is `dev` and can never become held-out. Unexposed multi-member template families are `train`. The remaining family is `heldout` and **sealed**: no pilot record may use it.
-* Result: 6 dev families, 2 train families (`contract-template`, `code-config-constants`), and 1 held-out family (`board-governance`).
-* `split-manifest-v1.lock.json` records the SHA-256 of the manifest and of every member source. The manifest and lock were committed in their own commit (`57ed79c`) **before** any seed claim or derived dataset existed. Changing the manifest or any member file fails the check. A change needs `split-manifest-v2`.
-* Disclosure: while taking the inventory, the author (an AI assistant) read the full text of every fixture file, including the two held-out documents. No question, claim or pair was written from them. This exposure is a further reason that v1 held-out is not release-grade.
+## 3. Enforceable freeze
 
-## 3. Pilot datasets
+Regenerating a lock and the pilot after editing a manifest must not pass. Three anchors that tools cannot rewrite:
 
-Source: `backend/fixtures/evaluation/m7/pilot/seeds.toml` (authored after the freeze) plus the frozen pre-M7 fixtures. Generated by `python -m app.evaluation build-pilot` into `pilot/generated/*.jsonl`, with `pilot/datasets.json` as the index (manifest SHA, seed SHA, per-file SHA, counts). Every record carries `pilot: true`, `release: false`, its family, split, sources and `derived_from`.
+1. **Reviewed snapshot**: `backend/fixtures/evaluation/m7/frozen-snapshots.json`.
+   - Written by hand, never by a tool. `freeze` only *prints* the entry.
+   - Pins every manifest and lock by SHA-256, with status `active` or `superseded`.
+   - The check verifies every registered manifest (v1 too) against the snapshot and against its own lock.
+2. **Base branch.** CI runs `check --base origin/main`.
+   - Every manifest, lock and snapshot entry that already exists on `main` must be unchanged. The only allowed transition is `active` → `superseded`.
+   - Rewriting a manifest, its lock and its snapshot hash together still fails once the snapshot is on `main`.
+   - Before merge, the snapshot is what the reviewer checks in this PR.
+3. **Freeze before derive.** CI runs `check --git-history`. The commit that added the active lock must be a strict ancestor of the latest commit that changed `pilot/datasets.json`.
 
-| Dataset | Pilot count | train | dev | held-out | Roadmap target | Label source |
-| --- | ---: | ---: | ---: | ---: | --- | --- |
-| Question–answer cases | 12 (14 atomic claims; 2 abstentions) | 0 | 12 | 0 | 100–200 | AI author draft, not human-reviewed. SQL claim values come from frozen, independently computed fixtures. |
-| Retrieval query–chunk pairs | 57 (42 relevant, 15 not) | 11 | 46 | 0 | 200–300 | 46 from frozen M3 fixtures (reviewer not recorded); 11 AI author drafts |
-| Checker training pairs | 78 (24 supported, 54 unsupported) | 78 | 0 | 0 | 3,000–5,000 | Silver: authored seed claim, authored perturbation (number, unit, entity, scope, polarity) or automatic wrong-evidence pairing |
-| Gold checker pairs | 37 (18 proposed supported, 19 proposed unsupported) | 0 | 37 | 0 | 300–500, each double-labelled | **No human labels yet.** The AI author's `proposed_label` is stored but never shown on sheets and never counted. |
+`test_changed_manifest_with_regenerated_lock_and_pilot_still_fails` edits v2, regenerates its lock and the whole pilot consistently, and shows that the check still fails, and only on the freeze. `test_rewriting_manifest_lock_and_snapshot_together_fails_against_base` does the same and also rewrites the snapshot, in a real git repository; the base-branch comparison catches it.
 
-**Human review actually received: 0 of 37 gold pairs; 0 of all other pilot records.** Cohen's kappa is therefore not yet computable. `python -m app.evaluation report` prints the live status.
+## 4. Evidence and provenance validation
 
-Claims are atomic: one sentence, no semicolons, at most 30 words. Each claim is backed by an evidence span that is an exact substring of the application's own canonical text for that source, or for SQL claims by a frozen fixture value that the claim must state exactly. A checker pair's evidence is one span plus the source title (`evidence_title`). The title is needed because contract clauses say "this Agreement". Checker inputs must include both.
+For every pilot record the check:
+- gathers **every source actually used**: `source`, `evidence_source`, `claim_about`, `allowed_sources`, and each QA claim's `source`;
+- rejects any source not declared in the record's `sources`, any source not in the manifest, and any record whose sources span several families;
+- requires the record's split to equal its family's split;
+- resolves `derived_from` against the manifest.
+  - `seed:<id>` must name a seed in `seeds.toml`, and the family is computed from the seed's own sources.
+  - `legacy:<path>#<id>` must name a manifest legacy fixture and an item that exists in it.
+  - Unknown parents fail. A parent in another family or split fails.
 
-## 4. Two-annotator labelling, kappa and adjudication
+Regression tests use a test-only copy of v2 with the code family moved to train, because no train family exists in v2:
+- a dev claim with undeclared train evidence fails;
+- a dev claim with the train evidence declared still fails (two families);
+- a train record whose parent is a real dev seed (`seed:gold-hr-egypt-days`) fails;
+- a train record whose parent is a real dev legacy item (`legacy:…documents-dev-m3.toml#fin-net-q1`) fails;
+- four kinds of unknown parent fail.
 
-See [m7-labelling.md](m7-labelling.md). In short: blind per-annotator sheets (own item order, no proposal shown) → `labels/gold-<annotator>.csv` → `labels status` reports per-pair state (unlabelled / single-label / agreed / disagreement-pending / adjudicated), the disagreement list, Cohen's kappa over double-labelled pairs, and the list of pairs that received any human review. Only agreed or adjudicated pairs count as gold.
+## 5. Pilot datasets (actual counts under v2)
 
-## 5. Deterministic CI smoke check
+Source: `pilot/seeds.toml` plus the frozen pre-M7 fixtures. Regenerate with `python -m app.evaluation build-pilot`. Every record has `pilot: true` and `release: false`.
 
-`python -m app.evaluation check` (CI step "M7 evaluation smoke"; no network, database or model) fails if:
+| Dataset | Count | train | dev | held-out | In intended split | Roadmap target | Label source |
+| --- | ---: | ---: | ---: | ---: | --- | --- | --- |
+| Question–answer cases | 12 (14 atomic claims, 2 abstentions) | 0 | 12 | 0 | 0 (held-out) | 100–200 | AI author draft; SQL values come from frozen fixtures |
+| Retrieval query–chunk pairs | 57 (42 relevant, 15 not) | 0 | 57 | 0 | 0 (held-out) | 200–300 | 46 frozen M3 fixtures (reviewer not recorded), 11 AI drafts |
+| Checker training pairs | 78 (24 supported, 54 unsupported) | 0 | 78 | 0 | **0 (train)** | 3,000–5,000 | Silver; a **format exercise only**, because dev families must not train a model whose thresholds are chosen on dev |
+| Gold checker pairs | 37 (proposed 18 / 19) | 0 | 37 | 0 | 0 (held-out) | 300–500, double-labelled | **No human labels** |
 
-* the manifest is malformed, a source is unassigned or in two families, or the manifest or a member source changed after freezing;
-* a pre-M7 fixture item or a pilot record is outside its family's split, cites several families, uses the sealed held-out family, or is derived from a seed in another family/split;
-* the same question/claim/query text (case and digits normalised) occurs in two splits;
-* an evidence span is not exact, an SQL claim does not state its fixture value, or a claim is not atomic;
-* the generated files differ from a fresh rebuild, or the index does not point at the frozen manifest;
-* a label or adjudication file is malformed.
+Changes from revision 1: all 11 former train retrieval pairs and all 78 former train checker pairs are now dev. **No record is usable for training or for held-out evaluation.**
 
-`backend/tests/unit/test_m7_evaluation.py` mutates copies to prove each failure is detected, checks kappa against a textbook value, and checks the full two-annotator workflow.
+**Human review actually received: 0 of 37 gold pairs, and 0 of every other record.** Cohen's kappa is n/a.
 
-## 6. Reproduction
+Claims are atomic: one sentence, no semicolons, at most 30 words. Evidence is an exact span of the app's canonical parser text, or an exact frozen SQL fixture value.
+
+## 6. Blind two-annotator labelling
+
+See [m7-labelling.md](m7-labelling.md). In short:
+- A coordinator exports a blind sheet per annotator. Sheets carry opaque random item ids, their own order, no pair id, no perturbation type and no proposed label.
+- The id-to-pair key stays with the coordinator (`var/`, git-ignored).
+- `labels import` needs **both** filled sheets with their keys in one call and maps the ids back to pairs. It rejects any sheet or key from another dataset revision, edited or deleted items, foreign rows, invalid labels, and re-imports.
+- `labels status` reports per-pair states, disagreements, Cohen's kappa, adjudications and the ids of human-reviewed pairs.
+
+## 7. Reproduction
 
 ```bash
 cd backend
-.venv/bin/python -m app.evaluation check          # the CI smoke check
-.venv/bin/python -m app.evaluation build-pilot    # regenerate; `git diff` must be empty
-.venv/bin/python -m app.evaluation report --json  # counts and label status
+.venv/bin/python -m app.evaluation check                                   # local
+git fetch origin main && .venv/bin/python -m app.evaluation check --base origin/main --git-history   # as CI
+.venv/bin/python -m app.evaluation build-pilot && git status --short fixtures/evaluation/m7          # must be empty
+.venv/bin/python -m app.evaluation report --json
 .venv/bin/pytest -q tests/unit/test_m7_evaluation.py
 ```
 
-## 7. Remaining gaps (before the release evaluation)
+## 8. Remaining gaps (before the release evaluation)
 
-1. **Release held-out split:** regenerate NileTech documents into new families. Freeze them as `split-manifest-v2` (held-out families sealed, nobody tuning on them reads them) before writing claims.
-2. **Scale:** every dataset is roughly 3.5–40× below the lower bound of its roadmap target (table above).
-3. **Human labels:** two independent annotators must label the 37 pilot gold pairs to exercise the workflow and measure kappa. Then the real 300–500 gold pairs come from the release families.
-4. **Train-split QA and SQL templates:** no train-split QA exists. Only one SQL question template exists, and it is dev.
-5. **Retrieval harness:** parameterize `run_retrieval_eval` to read `retrieval-pairs.jsonl`, including negatives and contracts/code.
-6. **Checker token budget:** pair lengths are not yet counted with the DeBERTa tokenizer (the roadmap requires counting with each actual tokenizer). Do this in the Colab gateway environment.
-7. **Label scheme:** binary supported/unsupported. A neutral vs contradicted split and a multi-passage evidence policy are not defined. Compound claims are excluded rather than tested.
-8. **Language:** English only until the owner confirms Arabic scope (two Arabic retrieval cases are inherited from M3).
-9. **Out of scope here by instruction:** fine-tuning, calibration, threshold choice (dev only, later), false-support rate, latency, and baseline comparisons.
+1. **Fresh data:** generate the NileTech documents for the reserved families. Freeze them as v3 (reviewed snapshot entry included) before writing claims. Nothing usable for train or held-out exists yet.
+2. **Human labels:** two annotators label the 37 pilot gold pairs through the blind workflow to measure kappa. The real 300–500 gold pairs come from the held-out families.
+3. **Scale:** every dataset is roughly 3.5–40× below the lower bound of its target.
+4. **Train-split QA and further SQL templates** (only one SQL template exists, and it is dev).
+5. **Retrieval harness:** read `retrieval-pairs.jsonl`, including negatives, contracts and code.
+6. **Checker token budget:** count pair lengths with the real DeBERTa tokenizer (Colab). Define neutral vs contradicted and a multi-passage evidence policy.
+7. **Arabic scope** decision.
+8. **Branch protection:** the base-branch anchor is only as strong as the rule that `main` changes through reviewed PRs. Enable branch protection and require the `backend` check.
+9. **Out of scope by instruction:** human labelling itself, fine-tuning, calibration, dev-only thresholds, false-support rate, latency, baselines.

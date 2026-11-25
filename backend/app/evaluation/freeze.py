@@ -25,13 +25,13 @@ from pathlib import Path
 from typing import Any
 
 from app.evaluation.manifest import (
-    M7,
     REPO,
     Manifest,
     audit_exposure,
     parse_manifest,
     verify_lock,
 )
+from app.evaluation.sources import M7
 
 M7_REL = M7.relative_to(REPO).as_posix()
 SNAPSHOT_FILE = "frozen-snapshots.json"

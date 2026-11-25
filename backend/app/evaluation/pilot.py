@@ -41,6 +41,16 @@ TARGETS = {
     "checker-train-pairs": "3,000-5,000",
     "gold-checker-pairs": "300-500 (each independently double-labelled)",
 }
+# The split each dataset is meant for in a release; pilot records outside it are a
+# format exercise only (e.g. checker "training" pairs from dev families must not train).
+INTENDED_SPLIT = {
+    "qa-cases": "heldout",
+    "retrieval-pairs": "heldout",
+    "checker-train-pairs": "train",
+    "gold-checker-pairs": "heldout",
+}
+M3_CASES = "fixtures/evaluation/documents-dev-m3.toml"
+M3_RELEVANCE = "fixtures/evaluation/relevance-study-m3.toml"
 AUTHOR_LABEL = "author draft (AI, claude-opus-5-5); not human-reviewed"
 
 Record = dict[str, Any]
@@ -70,6 +80,24 @@ def _base(manifest: Manifest, dataset: str, rid: str, sources: list[str]) -> Rec
         "pilot": True,
         "release": False,
     }
+
+
+def seed_sources(seeds: dict[str, Any]) -> dict[str, set[str]]:
+    """seed id -> every source the seed itself cites (its provenance for derived records)."""
+
+    out: dict[str, set[str]] = {}
+    for qa in seeds.get("qa", []):
+        refs = set(qa["allowed_sources"]) | {c["source"] for c in qa.get("claims", [])}
+        if "family_source" in qa:
+            refs.add(qa["family_source"])
+        out[qa["id"]] = refs
+    for seed in seeds.get("retrieval", []) + seeds.get("claims", []):
+        out[seed["id"]] = {seed["source"]}
+    return out
+
+
+def load_seeds() -> dict[str, Any]:
+    return tomllib.loads(SEEDS.read_text("utf-8"))
 
 
 def _sql_value(fixture_case: str, field: str) -> str:
@@ -142,7 +170,7 @@ def locate_passage(passage: str) -> str:
 
 def _retrieval(manifest: Manifest, seeds: dict[str, Any]) -> list[Record]:
     out = []
-    m3 = tomllib.loads((BACKEND / "fixtures/evaluation/documents-dev-m3.toml").read_text("utf-8"))
+    m3 = tomllib.loads((BACKEND / M3_CASES).read_text("utf-8"))
     for case in m3["cases"]:
         source = f"doc:{case['document']}"
         rec = _base(manifest, "retrieval-pairs", f"ret-m3-{case['id']}", [source])
@@ -151,13 +179,11 @@ def _retrieval(manifest: Manifest, seeds: dict[str, Any]) -> list[Record]:
             source=source,
             quote=case["expect"],
             relevant=True,
-            derived_from=f"legacy:documents-dev-m3.toml#{case['id']}",
+            derived_from=f"legacy:{M3_CASES}#{case['id']}",
             label_source="frozen M3 dev fixture (2026-11-21); reviewer not recorded",
         )
         out.append(rec)
-    rel = tomllib.loads(
-        (BACKEND / "fixtures/evaluation/relevance-study-m3.toml").read_text("utf-8")
-    )
+    rel = tomllib.loads((BACKEND / M3_RELEVANCE).read_text("utf-8"))
     for pair in rel["pairs"]:
         source = locate_passage(pair["passage"])
         rec = _base(manifest, "retrieval-pairs", f"ret-m3rel-{pair['id']}", [source])
@@ -167,7 +193,7 @@ def _retrieval(manifest: Manifest, seeds: dict[str, Any]) -> list[Record]:
             quote=pair["passage"],
             relevant=bool(pair["relevant"]),
             note=f"M3 relevance-study kind: {pair['kind']}",
-            derived_from=f"legacy:relevance-study-m3.toml#{pair['id']}",
+            derived_from=f"legacy:{M3_RELEVANCE}#{pair['id']}",
             label_source="frozen M3 relevance study (2026-11-21), labelled by hand per its "
             "header; reviewer not recorded",
         )
@@ -316,7 +342,9 @@ def render(manifest: Manifest | None = None) -> dict[str, str]:
         "pilot": True,
         "release": False,
         "notice": "PILOT. Not the release evaluation; sizes are far below the roadmap "
-        "targets; no label here is human-reviewed unless labels/ says so.",
+        "targets; no label here is human-reviewed unless labels/ says so. Under the active "
+        "manifest every current family is development-exposed, so every record is dev: none "
+        "may be used for training or as held-out evaluation (see in_intended_split).",
         "manifest": manifest.name,
         "manifest_sha256": manifest.sha256,
         "seeds_sha256": hashlib.sha256(_seed_text().encode("utf-8")).hexdigest(),
@@ -327,6 +355,8 @@ def render(manifest: Manifest | None = None) -> dict[str, str]:
                 "count": len(recs),
                 "by_split": {s: sum(1 for r in recs if r["split"] == s) for s in manifest.splits},
                 "roadmap_target": TARGETS[name],
+                "intended_split": INTENDED_SPLIT[name],
+                "in_intended_split": sum(1 for r in recs if r["split"] == INTENDED_SPLIT[name]),
             }
             for name, recs in data.items()
         },
