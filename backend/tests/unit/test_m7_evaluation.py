@@ -1306,3 +1306,281 @@ def test_index_records_the_pinned_manifest_hashes() -> None:
     assert (entry["manifest_sha256"], entry["lock_sha256"]) == (
         cp.PIN.manifest_sha256, cp.PIN.lock_sha256
     )  # fmt: skip
+
+
+# ----------------------------------------------------------- checker baseline runner
+from app.evaluation import checker_baselines as cb  # noqa: E402
+from app.evaluation import checker_metrics as cm  # noqa: E402
+from app.reporting.model_client import ChatResult, CheckResult, FakeModelClient  # noqa: E402
+
+S, U = cm.SUPPORTED, cm.UNSUPPORTED
+
+
+def _synthetic_rows() -> list[cm.Scored]:
+    scorer = cb.SyntheticScorer()
+    out = []
+    for pair in cb.synthetic_pairs():
+        p, label, ms, _ = scorer.score(pair)
+        out.append(cm.Scored(pair.pair_id, pair.gold, p, label, ms, pair.change_type))
+    return out
+
+
+def test_unsupported_precision_recall_f1_and_false_support_rate_by_hand() -> None:
+    rows = _synthetic_rows()
+    assert cm.confusion(rows) == {"tp": 5, "fp": 1, "fn": 2, "tn": 4}
+    prf = cm.unsupported_prf(rows)
+    assert prf["precision"] == pytest.approx(5 / 6)
+    assert prf["recall"] == pytest.approx(5 / 7)
+    assert prf["f1"] == pytest.approx(2 * (5 / 6) * (5 / 7) / (5 / 6 + 5 / 7))
+    fsr = cm.false_support_rate(rows)
+    assert fsr["rate"] == pytest.approx(2 / 7)
+    assert (fsr["passed_wrong_claims"], fsr["gold_unsupported"]) == (2, 7)
+    assert fsr["wilson95"] == pytest.approx([0.0822, 0.6411], abs=1e-4)
+
+
+def test_calibration_by_hand() -> None:
+    cal = cm.calibration(_synthetic_rows())
+    # Ten equal-width bins; gaps .05, 2x.125, .2, .7, .4, .55, .6, .3, .2, 2x.075 over 12.
+    assert cal["ece"] == pytest.approx(3.4 / 12)
+    assert cal["mce"] == pytest.approx(0.7)
+    golds = [1] * 5 + [0] * 7
+    expected_brier = (
+        sum((p - g) ** 2 for p, g in zip(cb.SyntheticScorer.P, golds, strict=True)) / 12
+    )
+    assert cal["brier"] == pytest.approx(expected_brier)
+    assert sum(b["n"] for b in cal["bins"]) == 12 and cal["hard_labels"] is False
+    hard = [cm.Scored("a", S, 1.0, S, 1, "x"), cm.Scored("b", U, 1.0, S, 1, "x")]
+    hard_cal = cm.calibration(hard)
+    assert hard_cal["hard_labels"] is True and hard_cal["ece"] == pytest.approx(0.5)
+
+
+def test_accuracy_per_change_type_and_latency_by_hand() -> None:
+    rows = _synthetic_rows()
+    acc = {k: v["accuracy"] for k, v in cm.accuracy_by_change_type(rows).items()}
+    assert acc == {"entity": 1.0, "number": 0.5, "original": 0.8, "polarity": 0.0,
+                   "scope": 1.0, "wrong_evidence": 1.0}  # fmt: skip
+    lat = cm.latency(rows)
+    assert (lat["p50_ms"], lat["p95_ms"], lat["mean_ms"], lat["max_ms"]) == (11.0, 50.0, 16.0, 50.0)
+    assert cm.nearest_rank([3.0, 1.0, 2.0], 0.5) == 2.0 and cm.nearest_rank([], 0.5) is None
+
+
+def test_undefined_metrics_are_none_never_perfect() -> None:
+    only_supported = [cm.Scored("a", S, 0.9, S, 1, "x"), cm.Scored("b", S, 0.8, S, 1, "x")]
+    prf = cm.unsupported_prf(only_supported)
+    assert prf == {"precision": None, "recall": None, "f1": None}
+    assert cm.false_support_rate(only_supported)["rate"] is None
+    all_wrong = [cm.Scored("a", S, 0.1, U, 1, "x"), cm.Scored("b", U, 0.9, S, 1, "x")]
+    assert cm.unsupported_prf(all_wrong) == {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+    assert cm.wilson(0, 10) == pytest.approx((0.0, 0.2775), abs=1e-4)
+    assert cm.wilson(0, 0) is None
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        cm.Scored("a", "maybe", 0.5, S, 1, "x"),
+        cm.Scored("a", S, 0.5, "maybe", 1, "x"),
+        cm.Scored("a", S, 1.5, S, 1, "x"),
+    ],
+)
+def test_summarize_rejects_invalid_rows(row: cm.Scored) -> None:
+    with pytest.raises(ValueError):
+        cm.summarize([row])
+
+
+def test_scoring_is_blocked_without_human_dev_labels_and_never_creates_a_scorer() -> None:
+    pairs, dataset = cb.dev_eval_set()
+    assert pairs == [] and dataset["candidate_pairs"] == 37
+    assert dataset["human_reviewed_pairs"] == 0
+
+    def must_not_be_called() -> cb.Scorer:
+        raise AssertionError("the model gateway must not be contacted when blocked")
+
+    report = cb.run(must_not_be_called, pairs, dataset)
+    assert report["status"] == "blocked" and "0 of 37" in report["reason"]
+    assert "metrics" not in report and "scorer" not in report
+
+
+def test_cli_reports_blocked_with_a_distinct_exit_code() -> None:
+    from app.evaluation.__main__ import main
+
+    assert main(["checker-baselines", "--scorer", "deberta"]) == cb.EXIT_BLOCKED
+
+
+def _write_human_labels(label_dir: Path, decide: Callable[[dict[str, Any]], str]) -> None:
+    label_dir.mkdir(parents=True, exist_ok=True)
+    rev = lab.dataset_revision()
+    for name in ("ann-a", "ann-b"):
+        with (label_dir / f"gold-{name}.csv").open("w", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=lab.LABEL_COLUMNS)
+            writer.writeheader()
+            for pair in lab.gold_pairs():
+                writer.writerow({"pair_id": pair["id"], "label": decide(pair), "note": "",
+                                 "dataset_revision": rev})  # fmt: skip
+
+
+def test_eval_set_uses_human_labels_only_never_proposals(tmp_path: Path) -> None:
+    # Test-only synthetic "human" labels: the opposite of every AI proposal.
+    flip = {S: U, U: S}
+    _write_human_labels(tmp_path, lambda p: flip[p["proposed_label"]])
+    pairs, dataset = cb.dev_eval_set(tmp_path)
+    proposals = {p["id"]: p["proposed_label"] for p in lab.gold_pairs()}
+    assert len(pairs) == dataset["human_reviewed_pairs"] == 37
+    assert all(p.gold == flip[proposals[p.pair_id]] for p in pairs)
+    assert dataset["label_files_sha256"].keys() == {"gold-ann-a.csv", "gold-ann-b.csv"}
+
+
+def test_single_labels_and_open_disagreements_are_never_scored(tmp_path: Path) -> None:
+    ids = [p["id"] for p in lab.gold_pairs()]
+    rev = lab.dataset_revision()
+    _write_rows(tmp_path / "gold-ann-a.csv", [
+        {"pair_id": ids[0], "label": "supported", "note": "", "dataset_revision": rev},
+        {"pair_id": ids[1], "label": "supported", "note": "", "dataset_revision": rev},
+        {"pair_id": ids[2], "label": "supported", "note": "", "dataset_revision": rev},
+    ])  # fmt: skip
+    _write_rows(tmp_path / "gold-ann-b.csv", [
+        {"pair_id": ids[0], "label": "supported", "note": "", "dataset_revision": rev},
+        {"pair_id": ids[1], "label": "unsupported", "note": "", "dataset_revision": rev},
+    ])  # fmt: skip
+    pairs, _ = cb.dev_eval_set(tmp_path)
+    assert [p.pair_id for p in pairs] == [ids[0]]  # agreed only; ids[1] pending, ids[2] single
+
+
+@pytest.mark.parametrize(
+    ("split", "sources", "message"),
+    [
+        ("train", None, "not a dev pilot pair"),
+        ("dev", ["fresh:v3-wo-001"], "cites non-dev sources"),
+        ("dev", ["fresh:v3-ps-001"], "cites non-dev sources"),
+    ],
+)
+def test_eval_set_refuses_non_dev_pairs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, split: str, sources: Any, message: str
+) -> None:
+    real = lab.gold_pairs()
+    tainted = copy.deepcopy(real)
+    tainted[0]["split"] = split
+    if sources:
+        tainted[0]["sources"] = sources
+    monkeypatch.setattr(lab, "gold_pairs", lambda: tainted)
+    with pytest.raises(cb.SplitViolation, match=message):
+        cb.dev_eval_set(tmp_path)
+
+
+def test_eval_set_follows_the_frozen_dev_selection(tmp_path: Path) -> None:
+    m7 = tmp_path / "m7"
+    m7.mkdir()
+    for name in ("frozen-snapshots.json", "split-manifest-v3.toml", "split-manifest-v3.lock.json"):
+        shutil.copy(M7 / name, m7 / name)
+    v4_text = V3_TEXT.replace(
+        'version = 3\nname = "m7-split-v3"', 'version = 4\nname = "m7-split-v4"'
+    ).replace('id = "hr-leave-policy"\nsplit = "dev"', 'id = "hr-leave-policy"\nsplit = "heldout"')
+    v4 = mf.parse_manifest(v4_text)[0]
+    lock_text = mf.lock_text(mf.build_lock(v4, "split-manifest-v4.toml"))
+    (m7 / "split-manifest-v4.toml").write_text(v4_text)
+    (m7 / "split-manifest-v4.lock.json").write_text(lock_text)
+    snaps = json.loads((m7 / "frozen-snapshots.json").read_text())
+    snaps["manifests"]["m7-split-v4"] = {
+        "manifest": "split-manifest-v4.toml", "lock": "split-manifest-v4.lock.json",
+        "manifest_sha256": freeze._sha(v4_text), "lock_sha256": freeze._sha(lock_text),
+        "frozen_at": "2026-12-01", "status": "active",
+    }  # fmt: skip
+    snaps["active"] = "m7-split-v4"
+    (m7 / "frozen-snapshots.json").write_text(json.dumps(snaps))
+    with pytest.raises(cb.SplitViolation, match="doc:hr-leave-policy"):
+        cb.dev_eval_set(tmp_path / "labels", m7)
+
+
+_EVAL_PROBE = r"""
+import json, sys
+events = []
+sys.addaudithook(lambda e, a: events.append(str(a[0])) if e in ("open", "os.listdir", "os.scandir") else None)
+from app.evaluation import checker_baselines as cb
+pairs, dataset = cb.dev_eval_set()
+report = cb.run(lambda: None, pairs, dataset)
+print(json.dumps({"events": events, "status": report["status"]}))
+"""
+
+
+def test_the_runner_never_opens_train_heldout_or_corpus_files() -> None:
+    done = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", _EVAL_PROBE], cwd=mf.REPO / "backend", capture_output=True,
+        check=True,
+    )  # fmt: skip
+    out = json.loads(done.stdout)
+    assert out["status"] == "blocked"
+    touched = out["events"]
+    assert not [p for p in touched if "corpus-v3" in p or "/checker/" in p]
+    assert not [p for p in touched if any(k in p for k in HELDOUT_KEYS)]
+    assert not [p for p in touched if "blind" in p.lower()]
+
+
+def test_deberta_scorer_uses_the_gateway_check_at_the_configured_threshold() -> None:
+    client = FakeModelClient(checker=lambda premise, claim: CheckResult(0.62, 0.3, 0.08))
+    scorer = cb.DebertaGatewayScorer(client, threshold=0.7)
+    pair = cb.synthetic_pairs()[0]
+    p, label, ms, extra = scorer.score(pair)
+    assert (p, label) == (0.62, U) and ms >= 0 and extra["contradiction"] == 0.08
+    desc = scorer.describe()
+    assert desc["operating_point"]["threshold"] == 0.7
+    assert "not selected" in desc["operating_point"]["provenance"]
+
+
+class _JudgeStub:
+    def __init__(self, answers: list[str]) -> None:
+        self.answers = answers
+
+    def describe(self) -> dict[str, Any]:
+        return {"chat": {"model": "Qwen/Qwen3-8B-AWQ", "revision": "pinned"}}
+
+    def served_models(self) -> Any:
+        return type("S", (), {"summary": lambda self: {"stub": True}})()
+
+    def chat(self, messages: list[dict[str, str]], **_: Any) -> ChatResult:
+        return ChatResult(self.answers.pop(0), "stop", 1, 0.01, 0.02)
+
+
+@pytest.mark.parametrize(
+    ("answer", "label", "unparseable"),
+    [("SUPPORTED", S, False), ("Unsupported.", U, False), ("NOT supported", U, False),
+     ("maybe", U, True), ("", U, True)],
+)  # fmt: skip
+def test_qwen_judge_parses_one_word_answers_and_fails_closed(
+    answer: str, label: str, unparseable: bool
+) -> None:
+    scorer = cb.QwenJudgeScorer(_JudgeStub([answer]))  # type: ignore[arg-type]
+    p, got, _, extra = scorer.score(cb.synthetic_pairs()[0])
+    assert (got, extra["unparseable"], p) == (label, unparseable, 1.0 if label == S else 0.0)
+
+
+def test_predictions_file_must_name_its_model_and_cover_exactly_the_pairs(tmp_path: Path) -> None:
+    ids = [p.pair_id for p in cb.synthetic_pairs()]
+    header = {
+        "model": "vectara/hallucination_evaluation_model",
+        "revision": "abc",
+        "runtime": {"gpu": "T4"},
+    }
+    rows = [{"pair_id": i, "p_supported": 0.5, "predicted": S, "latency_ms": 5} for i in ids]
+    good = tmp_path / "good.jsonl"
+    good.write_text("\n".join(json.dumps(x) for x in [header, *rows]))
+    assert cb.PredictionsScorer(good, ids).describe()["model"]["revision"] == "abc"
+    bad = tmp_path / "bad.jsonl"
+    bad.write_text("\n".join(json.dumps(x) for x in [{"model": "m"}, *rows]))
+    with pytest.raises(ValueError, match="header lacks"):
+        cb.PredictionsScorer(bad, ids)
+    short = tmp_path / "short.jsonl"
+    short.write_text("\n".join(json.dumps(x) for x in [header, *rows[:-1]]))
+    with pytest.raises(ValueError, match="exactly the evaluation pairs"):
+        cb.PredictionsScorer(short, ids)
+
+
+def test_synthetic_selftest_is_marked_and_matches_the_hand_computed_metrics() -> None:
+    report = cb.synthetic_selftest()
+    assert (
+        report["status"] == "synthetic-selftest" and "no model was scored" in report["not_a_result"]
+    )
+    m = report["metrics"]
+    assert m["unsupported"]["recall"] == pytest.approx(5 / 7)
+    assert m["false_support_rate"]["rate"] == pytest.approx(2 / 7)
+    assert m["calibration"]["ece"] == pytest.approx(3.4 / 12)
+    assert len(report["predictions"]) == 12 and report["runtime"]["python"]
