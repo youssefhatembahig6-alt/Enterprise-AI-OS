@@ -1419,7 +1419,11 @@ def test_migration_0012_upgrades_and_downgrades_cleanly() -> None:
         )
         config = Config("alembic.ini")
         config.attributes["url"] = db.owner_url
-        command.downgrade(config, "0011_m5_wave2")
+        # Downgrades grant to this database's own app role, as upgrades do.
+        with pytest.MonkeyPatch.context() as env:
+            env.setenv("EAIOS_APP_DB_ROLE", db.app_role)
+            env.setenv("EAIOS_REPORT_DB_ROLE", db.report_role)
+            command.downgrade(config, "0011_m5_wave2")
         assert (
             owner_exec(
                 db, "SELECT count(*) FROM pg_tables WHERE tablename LIKE 'email_%'"
