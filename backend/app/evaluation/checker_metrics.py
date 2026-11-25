@@ -56,11 +56,9 @@ def unsupported_prf(rows: Sequence[Scored]) -> dict[str, float | None]:
     c = confusion(rows)
     precision = _ratio(c["tp"], c["tp"] + c["fp"])
     recall = _ratio(c["tp"], c["tp"] + c["fn"])
-    f1 = (
-        None
-        if precision is None or recall is None
-        else (0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall))
-    )
+    # F1 = 2TP / (2TP + FP + FN): 0 when every unsupported claim is missed (TP = 0, FN > 0),
+    # None only when there is nothing to measure (no gold and no predicted unsupported).
+    f1 = _ratio(2 * c["tp"], 2 * c["tp"] + c["fp"] + c["fn"])
     return {"precision": precision, "recall": recall, "f1": f1}
 
 

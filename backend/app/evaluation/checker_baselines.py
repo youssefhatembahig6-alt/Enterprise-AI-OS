@@ -37,8 +37,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar, Protocol
 
+from app.config import ModelMode
 from app.evaluation import labels, loader
 from app.evaluation.checker_metrics import SUPPORTED, UNSUPPORTED, Scored, summarize
+from app.evaluation.checks import evidence_refs
 from app.evaluation.pilot import GENERATED
 from app.reporting.model_client import ModelClient
 
@@ -69,6 +71,40 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def input_digest(pair_id: str, claim: str, premise: str) -> str:
+    """SHA-256 of one scored input: the pair id, the claim and the premise, exactly."""
+
+    return _sha(json.dumps([pair_id, claim, premise], ensure_ascii=False).encode("utf-8"))
+
+
+def inputs_digest(pairs: Sequence[EvalPair]) -> str:
+    """SHA-256 over every pair's input digest, in pair-id order."""
+
+    return _sha(
+        "\n".join(sorted(f"{p.pair_id}:{input_digest(p.pair_id, p.claim, p.premise)}"
+                         for p in pairs)).encode()
+    )  # fmt: skip
+
+
+def export_inputs(pairs: Sequence[EvalPair]) -> str:
+    """JSONL for an external scorer (e.g. HHEM on Colab): a header with the inputs digest,
+    then one line per pair with its exact claim, premise and input digest."""
+
+    header = {
+        "kind": "m7-checker-inputs",
+        "pairs": len(pairs),
+        "inputs_sha256": inputs_digest(pairs),
+    }
+    rows = [
+        {"pair_id": p.pair_id, "claim": p.claim, "premise": p.premise,
+         "input_sha256": input_digest(p.pair_id, p.claim, p.premise)}
+        for p in sorted(pairs, key=lambda p: p.pair_id)
+    ]  # fmt: skip
+    return "".join(
+        json.dumps(x, ensure_ascii=False, sort_keys=True) + "\n" for x in [header, *rows]
+    )
+
+
 def premise_of(pair: dict[str, Any]) -> str:
     title, evidence = pair["evidence_title"], pair["evidence"]
     return title if evidence == title else f"{title}\n\n{evidence}"
@@ -88,7 +124,12 @@ def dev_eval_set(
     for rec in pairs:
         if rec["split"] != "dev" or rec.get("release") is not False:
             raise SplitViolation(f"{rec['id']} is {rec['split']}, not a dev pilot pair")
-        outside = sorted(set(rec["sources"]) - dev_refs)
+        declared = set(rec.get("sources", []))
+        used = evidence_refs(rec)  # the M7 check's validator: every reference actually used
+        undeclared = sorted(used - declared)
+        if undeclared:
+            raise SplitViolation(f"{rec['id']} uses undeclared evidence {undeclared}")
+        outside = sorted((declared | used) - dev_refs)
         if outside:
             raise SplitViolation(f"{rec['id']} cites non-dev sources {outside}")
         if rec["id"] not in gold:
@@ -128,8 +169,16 @@ def dev_eval_set(
 
 
 # ---------------------------------------------------------------------- scorers
+class BackendRejected(RuntimeError):
+    """The scoring backend is fake, unconfigured or not the pinned model and revision."""
+
+
 class Scorer(Protocol):
     name: str
+
+    def verify(self) -> None:
+        """Called before any example is sent; raises ``BackendRejected``."""
+        ...
 
     def describe(self) -> dict[str, Any]: ...
 
@@ -143,12 +192,17 @@ class DebertaGatewayScorer:
 
     def __init__(self, client: ModelClient, threshold: float) -> None:
         self.client, self.threshold = client, threshold
+        self.served: dict[str, Any] | None = None
+
+    def verify(self) -> None:
+        self.served = _verify_gateway(self.client, "checker")
 
     def describe(self) -> dict[str, Any]:
         return {
             "baseline": "zero-shot NLI checkpoint (current pinned checker, no fine-tuning)",
+            "inference": self.client.mode.value,
             "model": self.client.describe().get("checker"),
-            "served": self.client.served_models().summary(),
+            "served": self.served,
             "operating_point": {
                 "rule": "supported if P(entailment) >= CHECKER_ENTAILMENT_THRESHOLD",
                 "threshold": self.threshold,
@@ -166,6 +220,29 @@ class DebertaGatewayScorer:
         return p, label, ms, {"neutral": result.neutral, "contradiction": result.contradiction}
 
 
+def _verify_gateway(client: ModelClient, role: str) -> dict[str, Any]:
+    """Refuse fake or unconfigured inference, then require the gateway to serve exactly the
+    pinned model and revision for ``role`` ("checker" or "chat"). Returns the health body."""
+
+    if client.mode is not ModelMode.GATEWAY:
+        raise BackendRejected(
+            f"baseline runs need MODEL_MODE=gateway, got {client.mode.value}; fake scoring is "
+            "only available as --synthetic-selftest"
+        )
+    pinned = client.describe().get(role) or {}
+    try:
+        served = client.served_models().summary()
+    except Exception as exc:
+        raise BackendRejected(f"gateway health check failed: {exc}") from exc
+    model = (served.get("models") or {}).get(role) or {}
+    if (model.get("model"), model.get("revision")) != (pinned.get("model"), pinned.get("revision")):
+        raise BackendRejected(
+            f"gateway serves {role} {model.get('model')}@{model.get('revision')}, not the pinned "
+            f"{pinned.get('model')}@{pinned.get('revision')}"
+        )
+    return served
+
+
 def parse_judge(text: str) -> str | None:
     word = text.strip().split()[0].strip(".:,*").upper() if text.strip() else ""
     if word in ("UNSUPPORTED", "NOT"):
@@ -180,12 +257,17 @@ class QwenJudgeScorer:
 
     def __init__(self, client: ModelClient) -> None:
         self.client = client
+        self.served: dict[str, Any] | None = None
+
+    def verify(self) -> None:
+        self.served = _verify_gateway(self.client, "chat")
 
     def describe(self) -> dict[str, Any]:
         return {
             "baseline": "Qwen3-8B as a judge (prompted, no fine-tuning)",
+            "inference": self.client.mode.value,
             "model": self.client.describe().get("chat"),
-            "served": self.client.served_models().summary(),
+            "served": self.served,
             "prompt_version": JUDGE_PROMPT_VERSION,
             "prompt_sha256": _sha(JUDGE_SYSTEM.encode()),
             "decoding": "temperature 0, thinking off, max 8 tokens",
@@ -209,29 +291,52 @@ class QwenJudgeScorer:
 
 
 class PredictionsScorer:
-    """Scores computed elsewhere (HHEM-2.1-open on Colab). First line: a header object with
-    ``model``, ``revision`` and ``runtime``; then one object per pair with ``pair_id``,
-    ``p_supported``, ``predicted`` and ``latency_ms``."""
+    """Scores computed elsewhere (HHEM-2.1-open on Colab), bound to the exact inputs.
+
+    Produce the inputs with ``checker-baselines --export-inputs FILE``. The predictions file
+    starts with a header object: ``model``, ``revision``, ``runtime`` and ``inputs_sha256``
+    (copied from the export). Then it has one object per pair: ``pair_id``, ``input_sha256``
+    (copied from the export), ``p_supported``, ``predicted`` and ``latency_ms``. A file
+    scored on different claims or premises, even under the same ids, is rejected.
+    """
 
     name = "predictions-file"
 
-    def __init__(self, path: Path, expected_ids: Sequence[str]) -> None:
+    def __init__(self, path: Path, pairs: Sequence[EvalPair]) -> None:
         lines = [json.loads(x) for x in path.read_text("utf-8").splitlines() if x.strip()]
         if not lines:
             raise ValueError(f"{path} is empty")
         self.header, rows = lines[0], lines[1:]
-        missing_meta = [k for k in ("model", "revision", "runtime") if not self.header.get(k)]
+        missing_meta = [
+            k for k in ("model", "revision", "runtime", "inputs_sha256") if not self.header.get(k)
+        ]
         if missing_meta:
             raise ValueError(f"{path} header lacks {missing_meta}")
+        if str(self.header.get("inference", "")).lower() == "fake":
+            raise BackendRejected(f"{path} was produced by fake inference")
         self.rows = {r["pair_id"]: r for r in rows}
-        if set(self.rows) != set(expected_ids) or len(rows) != len(self.rows):
+        expected = {p.pair_id: p for p in pairs}
+        if set(self.rows) != set(expected) or len(rows) != len(self.rows):
             raise ValueError(f"{path} must score exactly the evaluation pairs, once each")
+        if self.header["inputs_sha256"] != inputs_digest(pairs):
+            raise ValueError(f"{path} was scored on different inputs (inputs_sha256 is stale)")
+        stale = sorted(
+            pid for pid, p in expected.items()
+            if self.rows[pid].get("input_sha256") != input_digest(pid, p.claim, p.premise)
+        )  # fmt: skip
+        if stale:
+            raise ValueError(f"{path} has stale or missing input_sha256 for {stale[:5]}")
         self.sha256 = _sha(path.read_bytes())
+
+    def verify(self) -> None:
+        return None  # inputs and model metadata were verified when the file was read
 
     def describe(self) -> dict[str, Any]:
         return {"baseline": self.header.get("baseline", "external predictions"),
+                "inference": "external predictions file",
                 "model": {"model": self.header["model"], "revision": self.header["revision"]},
                 "runtime": self.header["runtime"], "file_sha256": self.sha256,
+                "inputs_sha256": self.header["inputs_sha256"],
                 "operating_point": self.header.get("operating_point")}  # fmt: skip
 
     def score(self, pair: EvalPair) -> tuple[float, str, float, dict[str, Any]]:
@@ -295,6 +400,11 @@ def run(
         )
         return report
     scorer = scorer_factory()
+    if isinstance(scorer, SyntheticScorer):
+        if not synthetic:
+            raise BackendRejected("the synthetic fake scorer is only for --synthetic-selftest")
+    else:
+        scorer.verify()  # before any example is sent
     scored = score_all(scorer, pairs)
     report.setdefault("status", "scored")
     report["scorer"] = {"name": scorer.name, **scorer.describe()}
@@ -343,8 +453,15 @@ class SyntheticScorer:
     def __init__(self) -> None:
         self.calls = 0
 
+    def verify(self) -> None:
+        raise BackendRejected("the synthetic fake scorer is only for --synthetic-selftest")
+
     def describe(self) -> dict[str, Any]:
-        return {"model": None, "operating_point": {"threshold": 0.5, "provenance": "synthetic"}}
+        return {
+            "model": None,
+            "inference": "fake (synthetic self-test)",
+            "operating_point": {"threshold": 0.5, "provenance": "synthetic"},
+        }
 
     def score(self, pair: EvalPair) -> tuple[float, str, float, dict[str, Any]]:
         i = int(pair.pair_id.rsplit("-", 1)[1])

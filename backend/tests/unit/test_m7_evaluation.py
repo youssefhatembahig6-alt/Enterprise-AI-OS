@@ -1388,8 +1388,12 @@ def test_summarize_rejects_invalid_rows(row: cm.Scored) -> None:
         cm.summarize([row])
 
 
-def test_scoring_is_blocked_without_human_dev_labels_and_never_creates_a_scorer() -> None:
-    pairs, dataset = cb.dev_eval_set()
+def test_scoring_is_blocked_without_human_dev_labels_and_never_creates_a_scorer(
+    tmp_path: Path,
+) -> None:
+    empty = tmp_path / "no-labels"
+    empty.mkdir()
+    pairs, dataset = cb.dev_eval_set(empty)
     assert pairs == [] and dataset["candidate_pairs"] == 37
     assert dataset["human_reviewed_pairs"] == 0
 
@@ -1401,10 +1405,13 @@ def test_scoring_is_blocked_without_human_dev_labels_and_never_creates_a_scorer(
     assert "metrics" not in report and "scorer" not in report
 
 
-def test_cli_reports_blocked_with_a_distinct_exit_code() -> None:
+def test_cli_reports_blocked_with_a_distinct_exit_code(tmp_path: Path) -> None:
     from app.evaluation.__main__ import main
 
-    assert main(["checker-baselines", "--scorer", "deberta"]) == cb.EXIT_BLOCKED
+    empty = tmp_path / "no-labels"
+    empty.mkdir()
+    argv = ["checker-baselines", "--scorer", "deberta", "--label-dir", str(empty)]
+    assert main(argv) == cb.EXIT_BLOCKED
 
 
 def _write_human_labels(label_dir: Path, decide: Callable[[dict[str, Any]], str]) -> None:
@@ -1450,8 +1457,8 @@ def test_single_labels_and_open_disagreements_are_never_scored(tmp_path: Path) -
     ("split", "sources", "message"),
     [
         ("train", None, "not a dev pilot pair"),
-        ("dev", ["fresh:v3-wo-001"], "cites non-dev sources"),
-        ("dev", ["fresh:v3-ps-001"], "cites non-dev sources"),
+        ("dev", ["fresh:v3-wo-001"], "undeclared evidence|cites non-dev sources"),
+        ("dev", ["fresh:v3-ps-001"], "undeclared evidence|cites non-dev sources"),
     ],
 )
 def test_eval_set_refuses_non_dev_pairs(
@@ -1495,16 +1502,18 @@ _EVAL_PROBE = r"""
 import json, sys
 events = []
 sys.addaudithook(lambda e, a: events.append(str(a[0])) if e in ("open", "os.listdir", "os.scandir") else None)
+from pathlib import Path
 from app.evaluation import checker_baselines as cb
-pairs, dataset = cb.dev_eval_set()
+pairs, dataset = cb.dev_eval_set(Path(sys.argv[1]))
 report = cb.run(lambda: None, pairs, dataset)
 print(json.dumps({"events": events, "status": report["status"]}))
 """
 
 
-def test_the_runner_never_opens_train_heldout_or_corpus_files() -> None:
+def test_the_runner_never_opens_train_heldout_or_corpus_files(tmp_path: Path) -> None:
     done = subprocess.run(  # noqa: S603
-        [sys.executable, "-c", _EVAL_PROBE], cwd=mf.REPO / "backend", capture_output=True,
+        [sys.executable, "-c", _EVAL_PROBE, str(tmp_path)], cwd=mf.REPO / "backend",
+        capture_output=True,
         check=True,
     )  # fmt: skip
     out = json.loads(done.stdout)
@@ -1553,27 +1562,6 @@ def test_qwen_judge_parses_one_word_answers_and_fails_closed(
     assert (got, extra["unparseable"], p) == (label, unparseable, 1.0 if label == S else 0.0)
 
 
-def test_predictions_file_must_name_its_model_and_cover_exactly_the_pairs(tmp_path: Path) -> None:
-    ids = [p.pair_id for p in cb.synthetic_pairs()]
-    header = {
-        "model": "vectara/hallucination_evaluation_model",
-        "revision": "abc",
-        "runtime": {"gpu": "T4"},
-    }
-    rows = [{"pair_id": i, "p_supported": 0.5, "predicted": S, "latency_ms": 5} for i in ids]
-    good = tmp_path / "good.jsonl"
-    good.write_text("\n".join(json.dumps(x) for x in [header, *rows]))
-    assert cb.PredictionsScorer(good, ids).describe()["model"]["revision"] == "abc"
-    bad = tmp_path / "bad.jsonl"
-    bad.write_text("\n".join(json.dumps(x) for x in [{"model": "m"}, *rows]))
-    with pytest.raises(ValueError, match="header lacks"):
-        cb.PredictionsScorer(bad, ids)
-    short = tmp_path / "short.jsonl"
-    short.write_text("\n".join(json.dumps(x) for x in [header, *rows[:-1]]))
-    with pytest.raises(ValueError, match="exactly the evaluation pairs"):
-        cb.PredictionsScorer(short, ids)
-
-
 def test_synthetic_selftest_is_marked_and_matches_the_hand_computed_metrics() -> None:
     report = cb.synthetic_selftest()
     assert (
@@ -1584,3 +1572,285 @@ def test_synthetic_selftest_is_marked_and_matches_the_hand_computed_metrics() ->
     assert m["false_support_rate"]["rate"] == pytest.approx(2 / 7)
     assert m["calibration"]["ece"] == pytest.approx(3.4 / 12)
     assert len(report["predictions"]) == 12 and report["runtime"]["python"]
+
+
+# ------------------------------------------------- baseline runner re-review (PR #13)
+import httpx  # noqa: E402
+
+from app.config import Settings  # noqa: E402
+from app.reporting.model_client import GatewayModelClient  # noqa: E402
+
+_PINNED_HEALTH: dict[str, Any] = {
+    "models": {
+        "chat": {
+            "model": "Qwen/Qwen3-8B-AWQ",
+            "revision": "4da05a8edb55c6046cce958586c33b61da07bb79",
+        },
+        "checker": {
+            "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+            "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb",
+        },
+    },
+    "engine": {"gpu_memory_utilization": 0.75, "max_model_len": 4096},
+}
+
+
+def _gateway_settings() -> Settings:
+    return Settings(
+        DATABASE_URL="postgresql+psycopg://x@localhost/none",
+        REDIS_URL="redis://localhost:6379/0",
+        QDRANT_URL="http://localhost:6333",
+        S3_ENDPOINT_URL="http://localhost:8333",
+        JWT_SECRET="unit-test-secret-unit-test-secret-0000",
+        LLM_BASE_URL="https://gpu-gateway.example.test/eaios",
+        MODEL_GATEWAY_TOKEN="service-token-for-tests-only",
+        MODEL_MODE="gateway",
+    )
+
+
+class _MockGateway:
+    """An in-process gateway (httpx.MockTransport): no network, records every request."""
+
+    def __init__(self, health: dict[str, Any]) -> None:
+        self.health = health
+        self.paths: list[str] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path.removeprefix("/eaios")
+        self.paths.append(path)
+        if path == "/health":
+            return httpx.Response(200, json=self.health)
+        if path == "/check":
+            n = len(json.loads(request.content)["pairs"])
+            return httpx.Response(
+                200,
+                json={"results": [{"entailment": 0.7, "neutral": 0.2, "contradiction": 0.1}] * n},
+            )
+        return httpx.Response(404)
+
+    def client(self) -> GatewayModelClient:
+        return GatewayModelClient(_gateway_settings(), transport=httpx.MockTransport(self))
+
+
+@pytest.fixture
+def agreed(tmp_path: Path) -> Path:
+    """Test-only agreeing labels from two annotators (the AI proposals, copied)."""
+
+    label_dir = tmp_path / "labels"
+    _write_human_labels(label_dir, lambda p: p["proposed_label"])
+    return label_dir
+
+
+# 1. fake inference is rejected before any example is sent
+def test_fake_inference_is_rejected_before_any_example(agreed: Path) -> None:
+    pairs, dataset = cb.dev_eval_set(agreed)
+    calls: list[str] = []
+
+    def checker(premise: str, claim: str) -> CheckResult:
+        calls.append(claim)
+        return CheckResult(0.9, 0.05, 0.05)
+
+    fake = FakeModelClient(checker=checker)
+    with pytest.raises(cb.BackendRejected, match="MODEL_MODE=gateway, got fake"):
+        cb.run(lambda: cb.DebertaGatewayScorer(fake, 0.5), pairs, dataset)
+    with pytest.raises(cb.BackendRejected, match="got fake"):
+        cb.run(lambda: cb.QwenJudgeScorer(fake), pairs, dataset)
+    with pytest.raises(cb.BackendRejected, match="only for --synthetic-selftest"):
+        cb.run(cb.SyntheticScorer, pairs, dataset)
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "health",
+    [
+        {**_PINNED_HEALTH, "models": {"chat": _PINNED_HEALTH["models"]["chat"]}},  # no checker
+        {**_PINNED_HEALTH, "models": {**_PINNED_HEALTH["models"],
+                                      "checker": {"model": "other/nli", "revision": "abc"}}},
+    ],
+)  # fmt: skip
+def test_wrong_or_missing_served_checker_is_rejected_before_any_example(
+    agreed: Path, health: dict[str, Any]
+) -> None:
+    pairs, dataset = cb.dev_eval_set(agreed)
+    gateway = _MockGateway(health)
+    with pytest.raises(cb.BackendRejected):
+        cb.run(lambda: cb.DebertaGatewayScorer(gateway.client(), 0.5), pairs, dataset)
+    assert "/check" not in gateway.paths
+
+
+def test_cli_rejects_fake_mode_with_its_own_exit_code(
+    agreed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.evaluation import __main__ as cli
+
+    monkeypatch.setenv("MODEL_MODE", "fake")
+    assert cli.main(["checker-baselines", "--scorer", "deberta", "--label-dir", str(agreed)]) == 4
+
+
+# 5. agreed labels reach the scoring path, with no real gateway
+def test_agreed_labels_are_scored_through_the_gateway_path_without_a_real_gateway(
+    agreed: Path,
+) -> None:
+    pairs, dataset = cb.dev_eval_set(agreed)
+    assert len(pairs) == 37
+    gateway = _MockGateway(_PINNED_HEALTH)
+    report = cb.run(lambda: cb.DebertaGatewayScorer(gateway.client(), 0.5), pairs, dataset)
+    assert report["status"] == "scored" and report["metrics"]["pairs"] == 37
+    assert gateway.paths[0] == "/health" and gateway.paths.count("/check") == 37
+    assert report["scorer"]["inference"] == "gateway"
+    assert report["scorer"]["served"]["models"]["checker"]["revision"].startswith("6f5cf0a2")
+
+
+def test_cli_scores_agreed_labels_through_a_mock_gateway(
+    agreed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.evaluation import __main__ as cli
+
+    gateway = _MockGateway(_PINNED_HEALTH)
+    monkeypatch.setattr(cli, "build_model_client", lambda settings: gateway.client())
+    out = tmp_path / "report.json"
+    argv = [
+        "checker-baselines",
+        "--scorer",
+        "deberta",
+        "--label-dir",
+        str(agreed),
+        "--out",
+        str(out),
+    ]
+    assert cli.main(argv) == 0
+    report = json.loads(out.read_text())
+    assert report["status"] == "scored" and report["dataset"]["human_reviewed_pairs"] == 37
+    assert gateway.paths.count("/check") == 37
+
+
+# 2. evidence references
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("evidence_source", "fresh:v3-ps-001", "undeclared evidence ['fresh:v3-ps-001']"),
+        ("claim_about", "fresh:v3-wo-001", "undeclared evidence ['fresh:v3-wo-001']"),
+        ("evidence_source", "doc:it-security-handbook", "undeclared evidence"),
+    ],
+)
+def test_eval_set_validates_actual_evidence_references(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str, value: str, message: str
+) -> None:
+    tainted = copy.deepcopy(lab.gold_pairs())
+    tainted[0][field] = value  # `sources` still lists only valid dev documents
+    monkeypatch.setattr(lab, "gold_pairs", lambda: tainted)
+    with pytest.raises(cb.SplitViolation, match=re.escape(message)):
+        cb.dev_eval_set(tmp_path)
+
+
+def test_declared_heldout_evidence_is_still_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tainted = copy.deepcopy(lab.gold_pairs())
+    tainted[0]["evidence_source"] = "fresh:v3-ps-001"
+    tainted[0]["sources"] = sorted({*tainted[0]["sources"], "fresh:v3-ps-001"})
+    monkeypatch.setattr(lab, "gold_pairs", lambda: tainted)
+    with pytest.raises(cb.SplitViolation, match="cites non-dev sources"):
+        cb.dev_eval_set(tmp_path)
+
+
+# 3. predictions bound to exact inputs
+def _predictions(path: Path, export: str, header: dict[str, Any] | None = None) -> Path:
+    lines = [json.loads(x) for x in export.splitlines()]
+    head = {"model": "vectara/hallucination_evaluation_model", "revision": "abc",
+            "runtime": {"gpu": "T4"}, "inputs_sha256": lines[0]["inputs_sha256"], **(header or {})}  # fmt: skip
+    rows = [{"pair_id": r["pair_id"], "input_sha256": r["input_sha256"], "p_supported": 0.4,
+             "predicted": U, "latency_ms": 7} for r in lines[1:]]  # fmt: skip
+    path.write_text("\n".join(json.dumps(x) for x in [head, *rows]))
+    return path
+
+
+def test_predictions_matching_the_exported_inputs_are_accepted(
+    agreed: Path, tmp_path: Path
+) -> None:
+    pairs, dataset = cb.dev_eval_set(agreed)
+    path = _predictions(tmp_path / "p.jsonl", cb.export_inputs(pairs))
+    report = cb.run(lambda: cb.PredictionsScorer(path, pairs), pairs, dataset)
+    assert report["status"] == "scored" and report["scorer"]["inputs_sha256"] == cb.inputs_digest(
+        pairs
+    )
+
+
+def test_stale_predictions_for_changed_inputs_under_the_same_ids_are_rejected(
+    agreed: Path, tmp_path: Path
+) -> None:
+    pairs, _ = cb.dev_eval_set(agreed)
+    path = _predictions(tmp_path / "p.jsonl", cb.export_inputs(pairs))
+    changed = list(pairs)
+    changed[0] = cb.EvalPair(pairs[0].pair_id, pairs[0].claim + " Edited.", pairs[0].premise,
+                             pairs[0].gold, pairs[0].change_type, pairs[0].family)  # fmt: skip
+    with pytest.raises(ValueError, match="inputs_sha256 is stale"):
+        cb.PredictionsScorer(path, changed)
+
+
+@pytest.mark.parametrize(
+    ("header", "message"),
+    [
+        ({"inputs_sha256": "0" * 64}, "inputs_sha256 is stale"),
+        ({"inputs_sha256": ""}, "header lacks"),
+        ({"revision": ""}, "header lacks"),
+    ],
+)
+def test_predictions_header_must_bind_model_and_inputs(
+    agreed: Path, tmp_path: Path, header: dict[str, Any], message: str
+) -> None:
+    pairs, _ = cb.dev_eval_set(agreed)
+    path = _predictions(tmp_path / "p.jsonl", cb.export_inputs(pairs), header)
+    with pytest.raises(ValueError, match=message):
+        cb.PredictionsScorer(path, pairs)
+
+
+def test_per_pair_input_digests_are_required(agreed: Path, tmp_path: Path) -> None:
+    pairs, _ = cb.dev_eval_set(agreed)
+    path = _predictions(tmp_path / "p.jsonl", cb.export_inputs(pairs))
+    lines = path.read_text().splitlines()
+    row = json.loads(lines[1])
+    row["input_sha256"] = cb.input_digest(row["pair_id"], "a different claim", "a premise")
+    path.write_text("\n".join([lines[0], json.dumps(row), *lines[2:]]))
+    with pytest.raises(ValueError, match="stale or missing input_sha256"):
+        cb.PredictionsScorer(path, pairs)
+
+
+def test_predictions_from_fake_inference_are_rejected(agreed: Path, tmp_path: Path) -> None:
+    pairs, _ = cb.dev_eval_set(agreed)
+    path = _predictions(tmp_path / "p.jsonl", cb.export_inputs(pairs), {"inference": "fake"})
+    with pytest.raises(cb.BackendRejected, match="fake inference"):
+        cb.PredictionsScorer(path, pairs)
+
+
+def test_cli_exports_inputs_with_digests(agreed: Path, tmp_path: Path) -> None:
+    from app.evaluation.__main__ import main
+
+    out = tmp_path / "inputs.jsonl"
+    assert main(["checker-baselines", "--export-inputs", str(out), "--label-dir", str(agreed)]) == 0
+    lines = [json.loads(x) for x in out.read_text().splitlines()]
+    assert lines[0]["pairs"] == 37 and len(lines) == 38
+    assert all(r["input_sha256"] == cb.input_digest(r["pair_id"], r["claim"], r["premise"])
+               for r in lines[1:])  # fmt: skip
+
+
+# 4. unsupported-class F1
+def test_f1_is_zero_when_every_unsupported_claim_is_missed() -> None:
+    rows = [cm.Scored("a", U, 0.9, S, 1, "x"), cm.Scored("b", U, 0.8, S, 1, "x"),
+            cm.Scored("c", S, 0.9, S, 1, "x")]  # fmt: skip
+    prf = cm.unsupported_prf(rows)
+    assert prf == {"precision": None, "recall": 0.0, "f1": 0.0}
+
+
+def test_f1_uses_two_tp_over_two_tp_plus_fp_plus_fn() -> None:
+    c = cm.confusion(_synthetic_rows())
+    expected = 2 * c["tp"] / (2 * c["tp"] + c["fp"] + c["fn"])
+    assert (
+        cm.unsupported_prf(_synthetic_rows())["f1"]
+        == pytest.approx(expected)
+        == pytest.approx(10 / 13)
+    )
+    only_supported = [cm.Scored("a", S, 0.9, S, 1, "x")]
+    assert cm.unsupported_prf(only_supported)["f1"] is None  # denominator zero
+    over_flag = [cm.Scored("a", S, 0.1, U, 1, "x")]  # TP = 0, FP = 1: F1 is 0, not None
+    assert cm.unsupported_prf(over_flag)["f1"] == 0.0

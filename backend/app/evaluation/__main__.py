@@ -108,13 +108,21 @@ def cmd_checker_baselines(args: argparse.Namespace) -> int:
     if args.synthetic_selftest:
         report = cb.synthetic_selftest()
     else:
-        pairs, dataset = cb.dev_eval_set()
+        label_dir = Path(args.label_dir) if args.label_dir else labels.LABEL_DIR
+        pairs, dataset = cb.dev_eval_set(label_dir)
+        if args.export_inputs:
+            if not pairs:
+                print("blocked: no human-reviewed dev pairs to export", file=sys.stderr)
+                return cb.EXIT_BLOCKED
+            Path(args.export_inputs).write_text(cb.export_inputs(pairs), "utf-8")
+            print(f"wrote {len(pairs)} inputs, inputs_sha256 {cb.inputs_digest(pairs)}")
+            return 0
 
         def factory() -> cb.Scorer:
             if args.scorer == "predictions":
                 if not args.predictions:
                     raise SystemExit("--predictions FILE is required for --scorer predictions")
-                return cb.PredictionsScorer(Path(args.predictions), [p.pair_id for p in pairs])
+                return cb.PredictionsScorer(Path(args.predictions), pairs)
             settings = Settings(
                 DATABASE_URL=os.environ.get("DATABASE_URL", "postgresql+psycopg://unused@x/none"),
                 REDIS_URL=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
@@ -127,7 +135,13 @@ def cmd_checker_baselines(args: argparse.Namespace) -> int:
                 return cb.DebertaGatewayScorer(client, settings.checker_entailment_threshold)
             return cb.QwenJudgeScorer(client)
 
-        report = cb.run(factory, pairs, dataset)
+        if not args.scorer:
+            raise SystemExit("--scorer is required (or use --synthetic-selftest)")
+        try:
+            report = cb.run(factory, pairs, dataset)
+        except cb.BackendRejected as exc:
+            print(f"rejected: {exc}", file=sys.stderr)
+            return 4
     text = json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
@@ -216,6 +230,8 @@ def main(argv: list[str] | None = None) -> int:
     base.add_argument("--scorer", choices=["deberta", "qwen-judge", "predictions"])
     base.add_argument("--predictions", help="JSONL scores (e.g. HHEM-2.1-open from Colab)")
     base.add_argument("--out", help="write the full JSON report here")
+    base.add_argument("--label-dir", help="human label directory (default: the pilot labels)")
+    base.add_argument("--export-inputs", help="write the exact scored inputs (with digests)")
     base.add_argument(
         "--synthetic-selftest",
         action="store_true",
