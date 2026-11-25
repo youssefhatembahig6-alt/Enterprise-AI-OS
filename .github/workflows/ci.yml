@@ -58,9 +58,6 @@ jobs:
       TEST_MAILPIT_SMTP_HOST: 127.0.0.1
       TEST_MAILPIT_SMTP_PORT: "1025"
       TEST_MAILPIT_API_URL: http://127.0.0.1:8025
-      # The receipt-persistence test restarts the Mailpit service container.
-      TEST_MAILPIT_RESTART_CMD: docker restart ${{ job.services.mailpit.id }}
-      EAIOS_REQUIRE_MAILPIT_RESTART: "1"
       EAIOS_REQUIRE_INTEGRATION: "1"
     steps:
       - uses: actions/checkout@v4
@@ -75,7 +72,12 @@ jobs:
         run: .venv/bin/ruff check . && .venv/bin/ruff format --check .
       - name: Mypy
         run: .venv/bin/mypy app tests
-      - name: Pytest (unit + real PostgreSQL/Redis integration)
+      - name: Pytest (unit + real PostgreSQL/Redis/Mailpit integration)
+        # The receipt-persistence test restarts the Mailpit service container (the
+        # job context is only available at step level).
+        env:
+          TEST_MAILPIT_RESTART_CMD: docker restart ${{ job.services.mailpit.id }}
+          EAIOS_REQUIRE_MAILPIT_RESTART: "1"
         run: .venv/bin/pytest -q
 
   frontend:
