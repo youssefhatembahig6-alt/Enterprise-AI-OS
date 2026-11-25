@@ -116,3 +116,15 @@ Integration tests run on real PostgreSQL (RLS, non-owner app role), Redis and a 
 | FR-12 Configuration | `actions` pack and `mailpit` connector; enforced at draft, approval, send and dispatch | `::test_permission_revocation_before_send_blocks_it[pack_disabled]` |
 | NFR-07 UI | "Email and briefings" card: draft from a published report, recipient choice, edit, approve, re-approve after expiry, send, cancel, delivery state including uncertain, briefing schedules | `apps/web/src/ActionsPanel.tsx`; lint/typecheck/build; browser run `docs/evidence/m6/2026-11-25-browser-check-compose-fake-model.json` |
 
+
+## M7 — Evaluation foundation (pilot; no fine-tuning or thresholds yet)
+
+Deterministic checks only (no network, database or model). Details, counts and gaps: [`docs/evaluation/m7-foundation.md`](evaluation/m7-foundation.md).
+
+| Requirement | Implementation | Evidence |
+| --- | --- | --- |
+| FR-14 Frozen family splits | `split-manifest-v1` assigns every document, contract, code fixture and SQL template to one family/split; SHA-256 lock committed before any derived data ([ADR 0701](adr/0701-evaluation-splits-and-pilot.md)) | `python -m app.evaluation check`; `unit/test_m7_evaluation.py::test_unassigned_source_fails`, `::test_source_in_two_families_fails`, `::test_editing_the_frozen_manifest_fails_the_lock`, `::test_moving_a_dev_exposed_family_to_heldout_is_caught_via_legacy_fixtures` |
+| FR-14 No split leakage | Records and pre-M7 fixtures checked against family splits; derived examples follow their parent; sealed held-out; cross-split text collisions | `::test_record_in_the_wrong_split_fails`, `::test_derived_example_in_another_family_fails`, `::test_derived_example_in_another_split_fails`, `::test_mixed_family_evidence_fails`, `::test_sealed_heldout_family_fails`, `::test_same_text_in_two_splits_fails` |
+| FR-09 / FR-14 Atomic claims with cited evidence | Exact canonical-text spans or exact SQL fixture values; one-sentence claims | `::test_evidence_must_be_an_exact_span`, `::test_sql_claim_must_state_its_fixture_value`, `::test_non_atomic_claims_fail[*]` |
+| FR-14 Human labels | Blind sheets, two annotators, disagreement tracking, Cohen's kappa, adjudication; 0 of 37 pilot pairs human-reviewed so far | `::test_cohen_kappa_known_value`, `::test_two_annotator_workflow_tracks_disagreement_and_adjudication`, `::test_label_files_are_validated`, `::test_blind_sheet_hides_proposals_and_orders_per_annotator`, [labelling guide](evaluation/m7-labelling.md) |
+| FR-14 Reproducibility | Byte-identical rebuild compared in CI | `::test_pilot_build_is_byte_identical_across_runs`, CI step "M7 evaluation smoke" |

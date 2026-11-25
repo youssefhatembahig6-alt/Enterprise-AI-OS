@@ -72,6 +72,10 @@ jobs:
         run: .venv/bin/ruff check . && .venv/bin/ruff format --check .
       - name: Mypy
         run: .venv/bin/mypy app tests
+      - name: M7 evaluation smoke (frozen split, leakage, pilot determinism)
+        # Deterministic: no network, database or model. Fails on any family or derived
+        # example crossing splits, an edited frozen manifest, or a non-reproducible build.
+        run: .venv/bin/python -m app.evaluation check
       - name: Pytest (unit + real PostgreSQL/Redis/Mailpit integration)
         # The receipt-persistence test restarts the Mailpit service container (the
         # job context is only available at step level).

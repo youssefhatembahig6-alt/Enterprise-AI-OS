@@ -1,0 +1,54 @@
+{
+  "datasets": {
+    "checker-train-pairs": {
+      "by_split": {
+        "dev": 0,
+        "heldout": 0,
+        "train": 78
+      },
+      "count": 78,
+      "file": "generated/checker-train-pairs.jsonl",
+      "roadmap_target": "3,000-5,000",
+      "sha256": "b93f1e56246fbd4be0fdabbac9afd434fcfa4ba2d268df6a018e60591704587a"
+    },
+    "gold-checker-pairs": {
+      "by_split": {
+        "dev": 37,
+        "heldout": 0,
+        "train": 0
+      },
+      "count": 37,
+      "file": "generated/gold-checker-pairs.jsonl",
+      "roadmap_target": "300-500 (each independently double-labelled)",
+      "sha256": "cc05512a3fc4ed6a50823846f7f058bd5386b52875198706bc7345e979db32c6"
+    },
+    "qa-cases": {
+      "by_split": {
+        "dev": 12,
+        "heldout": 0,
+        "train": 0
+      },
+      "count": 12,
+      "file": "generated/qa-cases.jsonl",
+      "roadmap_target": "100-200",
+      "sha256": "f239139147195bff74e5e2a82e8a3d660b6d526bffe5e111e5d4f283a2f7ee59"
+    },
+    "retrieval-pairs": {
+      "by_split": {
+        "dev": 46,
+        "heldout": 0,
+        "train": 11
+      },
+      "count": 57,
+      "file": "generated/retrieval-pairs.jsonl",
+      "roadmap_target": "200-300",
+      "sha256": "749a2115f49ef6ef623e18218cc1b3a91edecce36a8135f7654c76d9a0822357"
+    }
+  },
+  "manifest": "m7-split-v1",
+  "manifest_sha256": "9f832f523d51a265801eb70981dfab154462a786a4a945ef92ce3411e6ba78b4",
+  "notice": "PILOT. Not the release evaluation; sizes are far below the roadmap targets; no label here is human-reviewed unless labels/ says so.",
+  "pilot": true,
+  "release": false,
+  "seeds_sha256": "384bb131e5469f583b35b99fad4634936bd0b7a6c3b02a21c93025cbb1321a9b"
+}
