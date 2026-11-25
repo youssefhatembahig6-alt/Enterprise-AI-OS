@@ -66,7 +66,7 @@ These are not model results.
 cd backend
 .venv/bin/python -m app.evaluation checker-baselines --scorer deberta --out ../var/m7-baseline-deberta.json   # blocked today (exit 3)
 .venv/bin/python -m app.evaluation checker-baselines --synthetic-selftest                                 # runner self-test, not a result
-.venv/bin/pytest -q tests/unit/test_m7_evaluation.py -k "baseline or metric or calibration or judge or predictions or eval_set or blocked or synthetic or false_support or change_type or summarize or undefined"
+.venv/bin/pytest -q tests/unit/test_m7_evaluation.py   # 135 tests; 24 cover the metrics and the runner
 # Once human labels exist and the Colab gateway is up (MODEL_MODE=gateway, LLM_BASE_URL, token):
 .venv/bin/python -m app.evaluation checker-baselines --scorer deberta    --out ../var/m7-baseline-deberta.json
 .venv/bin/python -m app.evaluation checker-baselines --scorer qwen-judge --out ../var/m7-baseline-qwen.json
