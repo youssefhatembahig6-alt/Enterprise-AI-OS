@@ -30,6 +30,7 @@ COPY scripts /repo/scripts
 COPY ml /repo/ml
 COPY docs /repo/docs
 COPY --chown=app:app backend /repo/backend
-RUN mkdir -p /app/var && chown app:app /app/var
+# WORKDIR created /repo/backend as root; the tests write caches and temp files there.
+RUN chown app:app /repo/backend && mkdir -p /app/var && chown app:app /app/var
 USER app
 CMD ["pytest", "-q"]

@@ -1019,13 +1019,21 @@ def test_receipt_deleted_after_acceptance_stays_uncertain_and_is_never_resent(
         )
 
 
-def _restart_mailpit(api: str) -> None:
+def _restart_command() -> str:
+    """The configured Mailpit restart command, or skip/fail. Called before the test
+    creates any state: skipping after a crashed delivery would leave a stale
+    ``dispatching`` row that later reconciliation passes in this module pick up."""
+
     command = os.environ.get("TEST_MAILPIT_RESTART_CMD")
     if not command:
         message = "TEST_MAILPIT_RESTART_CMD is required for the Mailpit restart test"
         if os.environ.get("EAIOS_REQUIRE_MAILPIT_RESTART") == "1":
             pytest.fail(message)
         pytest.skip(message)
+    return command
+
+
+def _restart_mailpit(api: str, command: str) -> None:
     subprocess.run(shlex.split(command), check=True, capture_output=True, timeout=60)  # noqa: S603
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
@@ -1047,6 +1055,7 @@ def test_mailpit_restart_after_acceptance_keeps_the_receipt(
     """Mailpit accepts the message, the worker dies before recording it, Mailpit and the
     application both restart: the persisted receipt is found and nothing is re-sent."""
 
+    restart = _restart_command()
     client = make_client()
     _, draft, row = queued(client, actions_db, recipient)
     delivery = app_state(client).email_delivery
@@ -1056,7 +1065,7 @@ def test_mailpit_restart_after_acceptance_keeps_the_receipt(
     assert len(mailpit_messages(mailpit[2], row.message_id)) == 1
     assert outbox(actions_db, draft["action_id"]).status == "dispatching"
 
-    _restart_mailpit(mailpit[2])
+    _restart_mailpit(mailpit[2], restart)
     restarted = make_client()  # a new application process
     time.sleep(1.2)
     worker = app_state(restarted).action_worker
