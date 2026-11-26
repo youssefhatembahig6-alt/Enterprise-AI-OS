@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -2196,3 +2197,259 @@ def test_backend_refuses_load_dirs_with_unexpected_files(
     monkeypatch.setattr(hhem, "FLAN_FILES", flan_pins)
     with pytest.raises(hhem.PinError, match=r"unexpected \['added_tokens.json'\]"):
         hhem.HhemBackend(tmp_path / "hhem", tmp_path / "flan", "cuda")  # before torch import
+
+
+# ------------------------------------------------------ HHEM Colab T4 smoke test (pending)
+def _load_smoke() -> Any:
+    spec = importlib.util.spec_from_file_location(
+        "smoke_model_card", mf.REPO / "ml" / "hhem-baseline" / "smoke_model_card.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["smoke_model_card"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+smoke = _load_smoke()
+_T4 = {"colab": True, "torch": "2.8.0", "cuda": True, "device_name": "Tesla T4"}
+_PUBLISHED = [e[2] for e in smoke.EXAMPLES]
+
+
+def test_smoke_uses_the_seven_published_model_card_examples() -> None:
+    assert len(smoke.EXAMPLES) == 7
+    assert _PUBLISHED[0] == 0.011061512865126133 and _PUBLISHED[-1] == 0.05432349815964699
+    assert smoke.hhem is hhem  # the merged scorer, not a copy
+    assert smoke.REQUIRED_VERSIONS["transformers"] == "4.56.2"
+
+
+def test_smoke_comparison_passes_within_tolerance_and_fails_outside() -> None:
+    exact = smoke.compare(_PUBLISHED)
+    assert exact["passed"] and exact["max_abs_diff"] == 0.0
+    near = smoke.compare([p + 0.004 for p in _PUBLISHED])
+    assert near["passed"] and near["max_abs_diff"] == pytest.approx(0.004)
+    off = smoke.compare([_PUBLISHED[0] + 0.02, *_PUBLISHED[1:]])
+    assert not off["passed"] and not off["examples"][0]["within_tolerance"]
+    flipped = list(_PUBLISHED)
+    flipped[1] = 0.49  # published 0.647: decision flips (and is far outside tolerance)
+    assert not smoke.compare(flipped)["examples"][1]["decision_matches"]
+    nonfinite = smoke.compare([float("nan"), *_PUBLISHED[1:]])
+    assert not nonfinite["passed"] and nonfinite["examples"][0]["actual"] is None
+    json.dumps(nonfinite, allow_nan=False)
+    with pytest.raises(ValueError):
+        smoke.compare(_PUBLISHED[:6])
+
+
+def test_smoke_requires_the_pinned_library_versions() -> None:
+    good = dict(smoke.REQUIRED_VERSIONS)
+    assert smoke.check_versions(good.get) == good
+    with pytest.raises(hhem.RuntimeUnsupported, match=re.escape("4.56.2")):
+        smoke.check_versions({**good, "transformers": "5.0.0"}.get)
+    with pytest.raises(hhem.RuntimeUnsupported):
+        smoke.check_versions({**good, "tokenizers": None}.get)
+
+
+def test_smoke_latency_summary() -> None:
+    s = smoke.latency_summary([10.0, 30.0, 20.0, 40.0])
+    assert (s["n"], s["p50_ms"], s["p95_ms"], s["mean_ms"], s["max_ms"]) == (
+        4,
+        25.0,
+        40.0,
+        25.0,
+        40.0,
+    )
+
+
+def test_smoke_stops_before_download_off_colab(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(hhem, "fetch", _no_fetch)
+    code, report = smoke.run(tmp_path)  # this machine: not Colab
+    assert code == 2 and report["status"] == "unsupported" and "Colab" in report["reason"]
+
+
+def test_smoke_stops_before_download_on_wrong_transformers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(hhem, "probe_runtime", lambda: _T4)
+    monkeypatch.setattr(smoke, "installed_version", lambda name: "5.0.0")
+    monkeypatch.setattr(hhem, "fetch", _no_fetch)
+    code, report = smoke.run(tmp_path)
+    assert code == 2 and "4.56.2" in report["reason"]
+
+
+class _CardBackend:
+    """Stands in for HhemBackend: returns given scores per premise (synthetic only)."""
+
+    inference = "synthetic"
+    offset = 0.0
+
+    def __init__(self, hhem_dir: Path, flan_dir: Path, device: str) -> None:
+        self.table: dict[str, float] = {p: float(s) + self.offset for p, _, s in smoke.EXAMPLES}
+
+    def describe(self) -> dict[str, Any]:
+        return {"torch": "2.8.0", "cuda": "12.6", "device": "cuda", "device_name": "Tesla T4"}
+
+    def score(self, premise: str, claim: str) -> float:
+        return self.table[premise]
+
+
+@pytest.mark.parametrize(("offset", "code", "status"), [(0.0, 0, "passed"), (0.05, 1, "failed")])
+def test_smoke_run_records_versions_latency_and_comparison(
+    stub_t4: Path, monkeypatch: pytest.MonkeyPatch, offset: float, code: int, status: str
+) -> None:
+    backend = type("B", (_CardBackend,), {"offset": offset})
+    monkeypatch.setattr(hhem, "HhemBackend", backend)
+    got_code, report = smoke.run(stub_t4)
+    assert (got_code, report["status"]) == (code, status)
+    assert report["runtime"]["device_name"] == "Tesla T4"
+    assert report["versions"]["transformers"] == "4.56.2" and report["load_seconds"] >= 0
+    assert report["latency_per_example"]["n"] == 7 * smoke.REPEATS
+    assert len(report["first_pass_latency_ms"]) == 7
+    assert (report["revision"], report["model_card_sha256"]) == (
+        hhem.HHEM_REVISION, smoke.MODEL_CARD_SHA256
+    )  # fmt: skip
+
+
+@pytest.fixture
+def stub_t4(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setattr(hhem, "probe_runtime", lambda: _T4)
+    monkeypatch.setattr(smoke, "installed_version", smoke.REQUIRED_VERSIONS.get)
+    monkeypatch.setattr(hhem, "fetch", lambda d: (tmp_path / "h", tmp_path / "f"))
+    monkeypatch.setattr(hhem, "stage_all", lambda d, h, f: (h, f))
+    return tmp_path
+
+
+def test_smoke_fails_when_only_a_timed_pass_disagrees(
+    stub_t4: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class DriftingBackend(_CardBackend):
+        calls = 0
+
+        def score(self, premise: str, claim: str) -> float:
+            actual = super().score(premise, claim)
+            self.calls += 1
+            return 0.01 if self.calls == smoke.REPEATS * len(smoke.EXAMPLES) + 2 else actual
+
+    monkeypatch.setattr(hhem, "HhemBackend", DriftingBackend)
+    code, report = smoke.run(stub_t4)
+    assert (code, report["status"]) == (1, "failed")
+    assert report["nondeterministic_scores"]
+    comparison = report["comparison"]
+    example = comparison["examples"][1]
+    assert example["within_tolerance"] and example["decision_matches"]  # warm-up
+    assert comparison["max_abs_diff"] == pytest.approx(_PUBLISHED[1] - 0.01)
+    for entry in comparison["examples"]:
+        assert [s["pass"] for s in entry["timed_passes"]] == list(range(1, smoke.REPEATS + 1))
+        assert all(s["latency_ms"] >= 0 for s in entry["timed_passes"])
+    last = example["timed_passes"][-1]
+    assert last["actual"] == 0.01 and not last["within_tolerance"] and not last["decision_matches"]
+
+
+def test_smoke_replaces_a_previous_pass_with_a_current_load_failure(
+    stub_t4: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = stub_t4 / "report.json"
+    out.write_text('{"status": "passed", "code_commit": "old"}')
+
+    def cannot_load(*_: Any) -> Any:
+        assert not out.exists()
+        raise RuntimeError("synthetic model-load failure")
+
+    monkeypatch.setattr(hhem, "HhemBackend", cannot_load)
+    monkeypatch.setattr(smoke, "_git_commit", lambda: "current")
+    assert smoke.main(["--out", str(out), "--cache-dir", str(stub_t4)]) == smoke.EXIT_RUN_ERROR
+    report = json.loads(out.read_text())
+    assert (report["status"], report["stage"], report["code_commit"]) == (
+        "error", "model-load", "current"
+    )  # fmt: skip
+    assert report["error_type"] == "RuntimeError" and "synthetic model-load" in report["reason"]
+    assert "comparison" not in report
+
+
+def _smoke_notebook() -> dict[str, Any]:
+    value: dict[str, Any] = json.loads(
+        (mf.REPO / "ml" / "hhem-baseline" / "hhem_smoke_t4.ipynb").read_text()
+    )
+    return value
+
+
+def _notebook_code(fragment: str) -> str:
+    for cell in _smoke_notebook()["cells"]:
+        source = "".join(cell["source"])
+        if cell["cell_type"] == "code" and fragment in source:
+            return source
+    raise AssertionError(f"no code cell contains {fragment}")
+
+
+def test_t4_notebook_is_clean_and_runs_the_pinned_smoke_test() -> None:
+    nb = _smoke_notebook()
+    assert nb["nbformat"] == 4 and nb["metadata"]["colab"]["gpuType"] == "T4"
+    text = "".join("".join(c["source"]) for c in nb["cells"])
+    assert "T4 GPU" in text
+    assert '"-m", "pip", "install", "-q", "-r", "requirements.txt"' in text
+    assert '"smoke_model_card.py", "--out", str(report_path)' in text
+    assert '"refs/pull/15/head"' in text
+    assert "https://github.com/youssefhatembahig6-alt/Enterprise-AI-OS.git" in text
+    code_cells = [c for c in nb["cells"] if c["cell_type"] == "code"]
+    assert all(c["outputs"] == [] and c["execution_count"] is None for c in code_cells)
+    for cell in code_cells:
+        compile("".join(cell["source"]), "hhem_smoke_t4.ipynb", "exec")
+
+
+def test_notebook_checkout_and_install_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(tempfile, "mkdtemp", lambda **_: str(tmp_path))
+    monkeypatch.setattr(subprocess, "check_output", lambda *_a, **_kw: "target\n")
+
+    def fail_command(command: list[str], *, check: bool, **_: Any) -> Any:
+        assert check
+        if "checkout" in command or "install" in command:
+            raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(subprocess, "run", fail_command)
+    context: dict[str, Any] = {
+        "verified_report": tmp_path / "stale.json",
+        "expected_commit": "previous",
+    }
+    with pytest.raises(subprocess.CalledProcessError):
+        exec(_notebook_code("Verified checkout:"), context)  # noqa: S102
+    assert context["expected_commit"] is None and context["verified_report"] is None
+    context.update(expected_commit="target", scorer_dir=tmp_path, dependencies_ready=True)
+    with pytest.raises(subprocess.CalledProcessError):
+        exec(_notebook_code('"-m", "pip", "install"'), context)  # noqa: S102
+    assert not context["dependencies_ready"]
+
+
+@pytest.mark.parametrize("writes_report", [False, True])
+def test_notebook_keeps_the_exit_code_and_never_reuses_a_report(
+    tmp_path: Path, writes_report: bool
+) -> None:
+    previous = tmp_path / "passing-report.json"
+    previous.write_text('{"status":"passed","code_commit":"target"}')
+    attempt = tmp_path / "attempt"
+    attempt.mkdir()
+
+    def run_command(command: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        destination = Path(command[-1])
+        assert destination != previous and not destination.exists()
+        if writes_report:
+            destination.write_text(
+                '{"kind":"m7-hhem-model-card-smoke","status":"error","code_commit":"target"}'
+            )
+        return subprocess.CompletedProcess(command, 3)
+
+    context = {
+        "verified_report": previous, "Path": Path, "json": json, "sys": sys,
+        "subprocess": type("Subprocess", (), {"run": staticmethod(run_command)}),
+        "tempfile": type("TempFiles", (), {"mkdtemp": staticmethod(lambda **_: str(attempt))}),
+        "scorer_dir": tmp_path, "dependencies_ready": True, "expected_commit": "target",
+        "git_commit": lambda _: "target",
+    }  # fmt: skip
+    with pytest.raises(subprocess.CalledProcessError) as error:
+        exec(_notebook_code("Smoke script exit code:"), context)  # noqa: S102
+    assert error.value.returncode == 3
+    assert context["verified_report"] == (
+        attempt / "hhem-smoke-report.json" if writes_report else None
+    )

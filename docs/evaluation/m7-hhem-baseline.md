@@ -1,7 +1,7 @@
 # M7 baseline: HHEM-2.1-open scorer
 
-Status: **scorer built, pinned and code-reviewed; round trip tested with synthetic data.**
-- **No real HHEM run yet.** Real scoring is blocked: no dev pair has human labels, so `--export-inputs` has nothing to export. HHEM also runs only on the Colab GPU (project rule: no models on laptops).
+**Status.** HHEM passed the model-card compatibility check on a Colab Tesla T4. The scorer is pinned and code-reviewed, and the export and import round trip is covered by synthetic tests.
+- **Dev scoring is blocked.** None of the 37 dev pairs has human gold labels, so `--export-inputs` has nothing to export. The project runs HHEM on a Colab T4.
 - **Out of scope:** no fine-tuning; no threshold was chosen.
 
 ## Revision 2 (PR #14 review)
@@ -20,7 +20,30 @@ Status: **scorer built, pinned and code-reviewed; round trip tested with synthet
    - **Private module cache:** `trust_remote_code` modules are imported from a private, empty `HF_MODULES_CACHE`, so only the verified code can be imported.
    - **Why it matters:** with the pinned transformers 4.56.2 tokenizer, an extra `added_tokens.json` beside the flan-t5-base files changes the token ids (28 → 30 tokens on the HHEM prompt). A real-tokenizer test shows that staging removes this effect.
 
-**Colab compatibility smoke test: not run.** No Colab GPU was available in this session. Loading under transformers 4.56.2 and reproducing the model card examples are still open (gap 2).
+## Colab T4 compatibility smoke test
+
+**Passed.** On November 26, 2026, Colab ran commit `4f06c2597628d376ae242bb3659aaabd63c25193`. All seven public examples matched their published scores within 0.005 and yielded the same decisions on the warm-up and all five timed passes. The [original JSON report](../evidence/m7/hhem-smoke-report.json) records every score and latency.
+
+| Measurement | Result |
+| --- | --- |
+| Runtime | Tesla T4, NVIDIA driver `580.82.07`, CUDA `13.0`, torch `2.14.1+cu130` |
+| Libraries | Python `3.13.16`, transformers `4.56.2`, tokenizers `0.22.2`, safetensors `0.8.0` |
+| Maximum absolute score deviation | `3.58 × 10⁻⁷` |
+| Model load time | 19.98 s |
+| Timed latency across 35 predictions | 21.44 ms median, 32.21 ms p95, 37.28 ms max |
+
+* **Notebook:** `ml/hhem-baseline/hhem_smoke_t4.ipynb`. Open it in Colab, choose *Runtime → Change runtime type → T4 GPU*, then *Run all*. To reproduce this result, set `REF` to the full commit above. The smoke cell preserves the exit code and checks that the report matches the current attempt and commit. If the smoke cell fails but produces a verified report, run the last two cells to inspect and download it.
+* **Script:** `ml/hhem-baseline/smoke_model_card.py`, which uses only the merged scorer (`hhem_score.py`):
+  1. requires Colab + torch + CUDA + a Tesla T4 (exit 2 otherwise, before any download);
+  2. requires `transformers==4.56.2`, `tokenizers==0.22.2` and `safetensors==0.8.0` (exit 2 otherwise);
+  3. downloads, verifies and stages the pinned files, then loads HHEM offline through the reviewed code;
+  4. scores the **7 public examples** from the model card at `de9a5e6b` (README SHA-256 `85f87c95…`). Each example must match the published `consistent` score within 0.005 and yield the same > 0.5 decision during warm-up and on all five timed passes;
+  5. records the GPU, NVIDIA driver, torch, CUDA, library versions, code commit, model load time, and each example's score and latency on every pass.
+
+  The script exits with 0 for a pass, 1 for a mismatch, 2 for an unsupported runtime or version, or 3 for a download, staging, load or scoring error. An execution error report includes the stage, exception type and reason.
+* **No M7 data:** only the public examples are used. Nothing is fine-tuned and no threshold is chosen.
+* **Local regressions** use synthetic stand-ins. They cover score drift on a timed pass after a passing warm-up, replacement of an earlier success report after a load error, failed notebook checkout or install, and missing or current failure reports. From `backend`, `pytest -q tests/unit/test_m7_evaluation.py -k 'smoke or notebook'` passed all 14 selected tests. The full backend unit suite passed 614 tests.
+* **Local run of the script:** status `unsupported` ("not a Google Colab runtime"), exit 2, nothing downloaded. This is the expected result off Colab.
 
 ## What it does
 
@@ -69,7 +92,7 @@ The model loads with `trust_remote_code`, so the two Python files run inside our
   - downloads them at a pinned revision and verifies them;
   - points `foundation` at that local copy;
   - loads with `HF_HUB_OFFLINE=1` and `local_files_only=True`, so nothing unpinned is fetched.
-* **Finding: version provenance.** `config.json` says it was saved with transformers 4.39.3, while the code has a `post_init()` added "for transformers>=5". Loading under 4.56.2 has **not been verified yet**. The first Colab run must confirm it, and should reproduce the model card's example scores as a smoke test.
+* **Finding: version provenance.** `config.json` says it was saved with transformers 4.39.3, while the code has a `post_init()` added "for transformers>=5". The Colab T4 smoke test confirmed loading under 4.56.2 and reproduced the model card's example scores.
 * **No truncation:** HHEM-2.1-open has no 512-token limit (per the model card), so long premises are scored in full.
 
 ## Tests (synthetic only; `backend/tests/unit/test_m7_evaluation.py`)
@@ -124,7 +147,6 @@ Once human labels exist:
 
 ## Gaps
 
-1. **Human labels:** real scoring is blocked until the 37 dev pairs are labelled.
-2. **First real Colab run:** confirm loading under transformers 4.56.2 and reproduce the model card's example scores. Then record the runtime the header captures (GPU, CUDA, torch) and latency per claim.
-3. **Latency** is measured around `predict()` per pair, CUDA-synchronised. Model load time is excluded and not yet reported.
-4. **Out of scope by instruction:** fine-tuning and threshold selection.
+1. **Human labels.** Dev scoring can proceed once the 37 pairs are independently reviewed and disagreements are resolved.
+2. **Dev latency.** The scorer records CUDA-synchronised inference time per pair. The smoke results above cover the model-card examples. Dev timings will come from the labelled-set run.
+3. **Out of scope.** Fine-tuning and threshold selection.
