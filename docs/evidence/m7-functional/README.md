@@ -4,11 +4,11 @@ This pass replaces the planned M7 dataset expansion. It checks what a user can s
 
 | Item | Value |
 | --- | --- |
-| Tested commit | `695ce8acb23209cc472e3f03c4ab52a935f0d131`, merged `main` (PR #16). This branch adds only acceptance tooling, fixtures and evidence. `git diff 695ce8a -- backend/app apps packages` is empty |
-| Date | 26 November 2026, 02:22–02:50 UTC. GitHub stand-in rerun at about 02:55 UTC |
+| Tested commit | `695ce8acb23209cc472e3f03c4ab52a935f0d131`, merged `main` (PR #16), for the Compose walkthrough. The real-model Colab smoke test ran on this branch at `4050f19363011d2c598e525052861f45bba0102a` (clean worktree), which differs from `695ce8a` only by acceptance tooling and evidence. `git diff 695ce8a 4050f19 -- backend/app apps packages` is empty |
+| Date | 26 November 2026. Compose walkthrough 02:22–02:50 UTC; GitHub stand-in rerun about 02:55 UTC; Colab real-model smoke test 03:14:07–03:16:38 UTC |
 | Host | Debian 13 (kernel 6.12), Docker Compose v5.7.0, Python 3.13.5, Node 20.19.2, Electron 39.8.10 |
 | Stack | Disposable Compose project `eaios-m7acc` with its own volumes, image tags and secrets. Web http://localhost:13000, API http://localhost:18000, Mailpit http://localhost:18025. The owner's `eaios` stack (3000/8000/8025) kept running and was not touched |
-| Model | **Labelled fake model** (`MODEL_MODE=fake`) for the whole walkthrough. The UI shows "FAKE INFERENCE" on every run. This is evidence of behaviour, not of model quality |
+| Model | **Labelled fake model** (`MODEL_MODE=fake`) for the Compose walkthrough; the UI shows "FAKE INFERENCE" on every run, so that part is evidence of behaviour, not model quality. **Real model** (Qwen3-8B-AWQ through the Colab gateway) for check 6 only |
 | UI driver | Claude desktop built-in browser (Chromium) at http://localhost:13000 |
 | Fixtures | `seed-dev` users, NileTech `niletech-0.1.6` business data, the M3 corpus (`backend/fixtures/documents`), the M5 legal contracts, and one new upload fixture, `backend/fixtures/m7-acceptance/sales-territory-memo.md` (synthetic, SHA-256 in `SHA256SUMS`) |
 
@@ -34,7 +34,7 @@ This pass replaces the planned M7 dataset expansion. It checks what a user can s
 | 5c | Google Drive | Not rerun | **BLOCKED**; prior **PASS** 21 Nov (live Drive, fake model) | [M4 evidence](../m4/README.md) |
 | 5d | Live GitHub | Not rerun | **BLOCKED**; prior **PASS** 24 Nov (22/22, live GitHub, fake model) and Colab real-model code run 24 Nov (22/22, GitHub double) | [M5 evidence](../m5/README.md) |
 | 5e | Electron desktop | `m5_desktop_smoke.py --api http://localhost:18000`: real Electron 39.8.10 app against the real disposable backend, fake model, simulated network outage | **PASS** (rerun, Debian). Windows: prior PASS 24 Nov | [desktop smoke](2026-11-26-desktop-smoke-compose-fake-model.json) |
-| 6 | Real-model smoke test (verified sales report → approved draft → Mailpit) in the approved Colab setup | Notebook [`ml/colab-m7-acceptance/m7_real_model_smoke.ipynb`](../../../ml/colab-m7-acceptance/m7_real_model_smoke.ipynb) runs `scripts/m6_demo.py` against the real Qwen3-8B-AWQ gateway, a Celery worker and Mailpit, all over loopback in one T4 runtime. It passes only if every report event says `gateway`, the run is published, the draft is delivered and Mailpit holds exactly one message | **BLOCKED — waiting for the owner to run it** (needs a Colab T4 session). Dry check: `checks()` correctly rejects the local fake-model output | — |
+| 6 | Real-model smoke test (verified sales report → approved draft → Mailpit) in the approved Colab setup | Owner ran [`ml/colab-m7-acceptance/m7_real_model_smoke.ipynb`](../../../ml/colab-m7-acceptance/m7_real_model_smoke.ipynb) on a Colab Tesla T4: `scripts/m6_demo.py` against the real gateway, everything over loopback. Report **published** in 149.6 s with `inference_mode: gateway` on every labelled event (status and done; token/citation events carry no label) and no `FAKE` anywhere; `figures_verified_narrative_dev_checked`, checker scores 0.9929 / 0.9972 / 0.9899 (development baseline, uncalibrated 0.5); net **USD 80,934,385.00**, 291 orders, tax 11,330,813.90, gross 92,265,198.90. Unauthorized recipient 422; pre-edit, forged and reused approvals 409. v2 approved and sent: `delivered`, 1 attempt; Mailpit total **1** message, Message-ID `<7ddd1fb8-6739-4207-b78b-432562e08993@eaios.local>`, body carries the verified figures. Independently re-verified from the raw demo JSON, not only from `checks.json` | **PASS** (real model, clean `4050f19`) | [Colab smoke folder](2026-11-26-colab-real-model-smoke/) |
 
 ### Blockers (exact)
 
@@ -42,7 +42,7 @@ This pass replaces the planned M7 dataset expansion. It checks what a user can s
 | --- | --- | --- |
 | 5b code lookup in the UI and 5d live GitHub | `var/connectors/github-token` is absent (the 24 November fine-grained token was removed; `github.json` still points at it). Using the owner's `gh` CLI OAuth token instead was deliberately not done: it is broad and not repository-scoped | A fine-grained, read-only token for `youssefhatembahig6-alt/eaios-m5-test` saved as `var/connectors/github-token` ([setup §1.3](../m5/OPEN-ITEMS-SETUP.md#1-dedicated-private-github-test-repository)). Then `python3 scripts/m5_github_acceptance.py --api http://localhost:18000 --credentials var/m7-acceptance/dev-credentials.json --repo youssefhatembahig6-alt/eaios-m5-test --login <second account> --mutate gh` with `GITHUB_CONNECTOR_CONFIG` set in `var/m7-acceptance/.env` |
 | 5c Drive | The service-account key and `drive.json` exist. The run needs a second Google account as the reader (`--reader`), and the owner has to remove that account's share in Drive by hand when the runner pauses | The reader's Google address (passed to `add-drive-reader` locally, never committed), a Viewer share of `niletech-travel-policy.md` with it, and someone present to remove the share at the pause. Command: [M4 README](../m4/README.md#drive-access-check-step-1) with `--api http://localhost:18000` |
-| 6 real-model smoke | A Colab T4 runtime (owner's Colab Pro account) | Run the notebook (see "Colab real-model smoke test" below) and return `m7-smoke-evidence-<stamp>.zip` |
+| ~~6 real-model smoke~~ | Resolved 26 November: the owner ran the notebook; result PASS (row 6) | — |
 
 ## Product bugs found (fix in a separate PR)
 
@@ -132,11 +132,23 @@ To restore only the revoked user without a full reset: as `access.admin`, open *
 
 ## Colab real-model smoke test
 
-Open the notebook from GitHub in Colab, choose **Runtime → Change runtime type → T4 GPU**, and run cells 1–5 in order:
+**Result: PASS** on clean commit `4050f19363011d2c598e525052861f45bba0102a`, run by the owner on 26 November 2026, 03:14:07–03:16:38 UTC.
 
-https://colab.research.google.com/github/youssefhatembahig6-alt/Enterprise-AI-OS/blob/feature/m7-functional-acceptance/ml/colab-m7-acceptance/m7_real_model_smoke.ipynb
+| Item | Value |
+| --- | --- |
+| Bundle | `m7-smoke-evidence-20261126T031638Z.zip`, SHA-256 `0c0a629afb3357a0ace218fd511befbef3b63959ee420cbd301ed21c8bd4aab4`, 15,741 bytes. **Kept local** (`var/m7-acceptance/`, git-ignored); not committed |
+| Committed from it | [`2026-11-26-colab-real-model-smoke/`](2026-11-26-colab-real-model-smoke/): `checks.json`, `versions.json`, `gateway-health.json`, `m6-demo-stdout.txt`, `m6-demo-real-model.json`, byte-identical to the bundle. `SHA256SUMS-bundle.txt` lists every file in the bundle, including the seven service logs that were not committed |
+| Runtime | Colab Tesla T4 (15,360 MiB, driver 580.82.07); API 127.0.0.1:18000, gateway 127.0.0.1:8100, Mailpit v1.27.11 on 127.0.0.1; no tunnel; no email left the runtime |
+| Models (gateway `/health`, pinned revisions accepted by the backend) | `Qwen/Qwen3-8B-AWQ@4da05a8edb55c6046cce958586c33b61da07bb79`, vLLM 0.11.0, AWQ, fp16, utilization 0.75, context 4096, seed 0; `BAAI/bge-m3@5617a9f6…`; checker `MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli@6f5cf0a2…` (**development baseline, not the final trained checker**; threshold 0.5 uncalibrated) |
+| Dispatch | `MODEL_MODE=gateway`, `REPORT_DISPATCH=inline`. With inline dispatch the **API** delivers through the durable outbox on its own thread pool (`backend/app/main.py`); the Celery worker and beat were running for recovery and reconciliation. The API log shows the `email.deliver` audit events at 03:16:37 and SMTP acceptance at 03:16:37.50. The bundle's `versions.json` labels delivery "celery worker + beat"; that label was imprecise and is corrected in the runner after this run (metadata only) |
 
-- Cell 2 installs the pinned vLLM environment (several minutes). Cell 3 launches the gateway on loopback. **Cell 4** runs `ml/colab-m7-acceptance/run_m7_smoke_colab.py all`: PostgreSQL 17, Redis, Qdrant, the hash-locked backend, the NileTech import, Mailpit v1.27.11, the API, a Celery worker and beat, then `scripts/m6_demo.py` and the independent checks. It prints `smoke test PASSED` or `FAILED` and `checks.json`.
-- Cell 5 downloads **`m7-smoke-evidence-<UTC stamp>.zip`** (secret-scanned before it is written). Return that file. It contains `m6-demo-real-model.json`, `checks.json`, `gateway-health.json`, `versions.json`, `m6-demo-stdout.txt` and the service logs.
-- No tunnel is opened and no email leaves the runtime, so the Colab remote-proxy question does not arise.
-- If cell 4 fails, the step that failed is the last `+ …` command or the `SystemExit` message in its output. Return that output (it holds no secrets) instead of the zip.
+**What was verified, from the raw demo JSON rather than only `checks.json`:**
+
+1. The report stream ends with exactly one `done` (outcome `published`). Every event that carries an inference label (10 `status`, 1 `done`) says `gateway`; the 4 `token` and 4 `citation` events carry none by design. The string `FAKE` appears nowhere in the demo output or the API and worker logs.
+2. Verification `figures_verified_narrative_dev_checked`: figures `exact_decimal_match_to_evidence`, query semantics `verified_against_report_definition`, join `verified_no_fan_out`, narrative `verified` with checker scores 0.9929 / 0.9972 / 0.9899.
+3. Figures: 291 fulfilled orders; net USD 80,934,385.00; tax USD 11,330,813.90; gross USD 92,265,198.90. This matches frozen case `m1-sales-q1-2026-net-fulfilled` and the M2 real-model run of 21 November.
+4. Action safety on the real-model report: a draft to `board.member` was refused `422 action_blocked`; sending with the pre-edit v1 approval, a forged approval and a reused approval each returned `409 approval_rejected`.
+5. Delivery: v2 approved and sent, final status `delivered` (`smtp_accepted`, 1 attempt). The fresh Mailpit database holds **exactly one** message in total, to `finance.reader@niletech.example`, subject "Verified report: Fulfilled sales, Q1 2026 (reviewed)", whose body carries the verified figures, the evidence id and the dataset fingerprint.
+6. Secret scan: the notebook's own scan passed before the bundle was written. A second scan here (JWT, bearer, GitHub/Hugging Face token patterns, passwords, non-fixture emails, non-loopback addresses) found only package version strings.
+
+Reproduce: open https://colab.research.google.com/github/youssefhatembahig6-alt/Enterprise-AI-OS/blob/feature/m7-functional-acceptance/ml/colab-m7-acceptance/m7_real_model_smoke.ipynb, choose **Runtime → Change runtime type → T4 GPU**, run cells 1–5 in order (cell 4 runs `ml/colab-m7-acceptance/run_m7_smoke_colab.py all`; cell 5 downloads `m7-smoke-evidence-<UTC stamp>.zip`). If cell 4 fails, the last `+ …` command or the `SystemExit` message names the failing step.

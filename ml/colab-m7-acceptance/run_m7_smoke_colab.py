@@ -10,8 +10,9 @@ Qdrant, the hash-locked backend venv, migrate, seed-dev) and adds what M6 needs:
   mailpit    Mailpit v1.27.11 (same version as compose.yaml), SMTP 127.0.0.1:1025,
              API 127.0.0.1:8025; nothing leaves the runtime
   api        uvicorn on 127.0.0.1:18000, MODEL_MODE=gateway, REPORT_DISPATCH=inline
-  worker     Celery worker + beat (delivery and reconciliation run in the worker, as in
-             Compose)
+  worker     Celery worker + beat for outbox recovery and reconciliation. With
+             REPORT_DISPATCH=inline the API itself delivers through the durable outbox
+             (app/main.py); in Compose the worker does
   demo       ``scripts/m6_demo.py`` (the M6 runner, unchanged)
   checks     independent checks on the demo output: every report event says
              ``inference_mode == "gateway"``, run published, and Mailpit holds exactly one
@@ -193,7 +194,7 @@ def bundle() -> Path:
         "settings": {
             "MODEL_MODE": "gateway",
             "REPORT_DISPATCH": "inline",
-            "delivery": "celery worker + beat",
+            "delivery": "API inline outbox dispatch; Celery worker + beat for recovery",
             "network": "loopback only",
         },
     }
