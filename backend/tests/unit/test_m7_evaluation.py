@@ -2453,3 +2453,33 @@ def test_notebook_keeps_the_exit_code_and_never_reuses_a_report(
     assert context["verified_report"] == (
         attempt / "hhem-smoke-report.json" if writes_report else None
     )
+
+
+# ------------------------------------------------ first real baseline run: Colab notebooks
+_INPUTS_SHA = "7ad97fc97b42ecc213315d452964dcf2bff00d12a5c46cfa3a22b8adcbf48f9b"
+_EXPORT_SHA = "97bd0387058b0d2aab006bee84b11a43fe4d38e20e85c5a32f2f9b205c59c1ec"
+
+
+def _notebook(rel: str) -> tuple[dict[str, Any], str]:
+    nb = json.loads((mf.REPO / rel).read_text())
+    return nb, "".join("".join(c["source"]) for c in nb["cells"])
+
+
+def test_gateway_baseline_notebook_runs_the_runner_over_loopback_with_private_labels() -> None:
+    nb, text = _notebook("ml/colab-m7/m7_baselines_gateway_t4.ipynb")
+    assert nb["metadata"]["colab"]["gpuType"] == "T4"
+    assert all(c.get("outputs", []) == [] for c in nb["cells"] if c["cell_type"] == "code")
+    assert 'LLM_BASE_URL="http://127.0.0.1:8100"' in text and "colab_launch.py" in text
+    assert '"--scorer", scorer' in text and '("deberta", "qwen-judge")' in text
+    assert '"--label-dir", LABEL_DIR' in text and 'LABEL_DIR = "/content/m7-labels"' in text
+    assert _INPUTS_SHA in text and _EXPORT_SHA in text
+    assert "assert token not in data" in text  # the bundle never carries the gateway token
+    bundled = re.search(r"for name in \(([^)]*)\)", text.split("# @title 7")[1])
+    assert bundled is not None and ".csv" not in bundled.group(1)
+
+
+def test_hhem_scoring_notebook_needs_no_labels_and_checks_the_export() -> None:
+    nb, text = _notebook("ml/hhem-baseline/hhem_score_t4.ipynb")
+    assert all(c.get("outputs", []) == [] for c in nb["cells"] if c["cell_type"] == "code")
+    assert "hhem_score.py" in text and "--inputs" in text and _EXPORT_SHA in text
+    assert _INPUTS_SHA in text and "gold-ann" not in text and "label-dir" not in text
