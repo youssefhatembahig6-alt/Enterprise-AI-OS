@@ -12,4 +12,4 @@ python hhem_score.py --inputs inputs.jsonl --out predictions.jsonl --cache-dir /
 # Requires a Colab GPU runtime with a Tesla T4; otherwise it exits (code 2) before downloading.
 ```
 
-**Colab T4 smoke test (pending):** open `hhem_smoke_t4.ipynb` in Colab with a T4 GPU runtime and *Run all*. It checks that HHEM loads under transformers 4.56.2, compares the model card's seven public examples with their published scores, records the GPU, versions and latency, and downloads `hhem-smoke-report.json`.
+**Colab T4 smoke test (pending).** Open `hhem_smoke_t4.ipynb` in Colab with a T4 GPU runtime and select *Run all*. The notebook verifies the checked-out commit and checks that HHEM loads under transformers 4.56.2. All seven examples must match the model card on the warm-up and five timed passes. The current `hhem-smoke-report.json` records every score and latency, the GPU and the library versions. If the smoke cell fails and produces a verified failure report, run the last two cells to inspect and download it.

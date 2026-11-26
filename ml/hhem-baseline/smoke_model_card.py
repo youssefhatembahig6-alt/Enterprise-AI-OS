@@ -8,14 +8,16 @@ What it checks, with the merged scorer (hhem_score.py) and nothing else:
   3. the pinned HHEM and flan-t5-base files download, verify by SHA-256, are staged into
      clean load directories and load offline through the reviewed code (``HhemBackend``);
   4. the seven public examples from the model card at the pinned revision score within
-     TOLERANCE of the published ``consistent`` scores, with the same > 0.5 decisions;
+     TOLERANCE of the published ``consistent`` scores on every pass, with the same > 0.5
+     decisions;
   5. the report records the GPU, driver, library versions, model load time and per-example
      latency (a warm-up pass, then REPEATS timed passes).
 
 Public examples only: no M7 data is read or sent. Nothing is fine-tuned and no threshold is
 chosen (0.5 is the model's own two-label argmax, as in the scorer).
 
-Exit codes: 0 passed, 1 scores or decisions differ, 2 unsupported runtime or versions.
+Exit codes: 0 passed, 1 scores or decisions differ, 2 unsupported runtime or versions,
+3 download, staging, model load or scoring error.
 """
 
 from __future__ import annotations
@@ -23,10 +25,12 @@ from __future__ import annotations
 import argparse
 import importlib.metadata
 import json
+import math
 import platform
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -35,7 +39,8 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hhem_score as hhem  # the merged scorer, next to this file
 
-SMOKE_VERSION = "1.0.0"
+SMOKE_VERSION = "1.1.0"
+EXIT_RUN_ERROR = 3
 # The model card (README.md) at hhem.HHEM_REVISION, SHA-256 below. "Using with `pipeline`"
 # publishes these consistent-label scores for these pairs (the `predict()` example shows the
 # same values rounded to 4 decimals).
@@ -91,19 +96,21 @@ def compare(actual: Sequence[float], tolerance: float = TOLERANCE) -> dict[str, 
         raise ValueError(f"expected {len(EXAMPLES)} scores, got {len(actual)}")
     rows = []
     for (premise, hypothesis, published), score in zip(EXAMPLES, actual, strict=True):
-        diff = abs(score - published)
+        valid_score = math.isfinite(score) and 0.0 <= score <= 1.0
+        diff = abs(score - published) if valid_score else None
         rows.append(
             {
                 "premise": premise,
                 "hypothesis": hypothesis,
                 "published": published,
-                "actual": score,
+                "actual": score if valid_score else None,
+                "valid_score": valid_score,
                 "abs_diff": diff,
-                "within_tolerance": diff <= tolerance,
-                "decision_matches": (score > 0.5) == (published > 0.5),
+                "within_tolerance": diff is not None and diff <= tolerance,
+                "decision_matches": valid_score and (score > 0.5) == (published > 0.5),
             }
         )
-    max_diff = max(r["abs_diff"] for r in rows)
+    max_diff = max((r["abs_diff"] for r in rows if r["abs_diff"] is not None), default=None)
     ok = all(r["within_tolerance"] and r["decision_matches"] for r in rows)
     return {"tolerance": tolerance, "max_abs_diff": max_diff, "passed": ok, "examples": rows}
 
@@ -146,6 +153,59 @@ def _git_commit() -> str | None:
 
 
 # ----------------------------------------------------------------------------- run
+def _score_pass(backend: hhem.Backend) -> tuple[list[float], list[float]]:
+    scores, times = [], []
+    for premise, hypothesis, _ in EXAMPLES:
+        hhem._sync(backend)
+        t0 = time.perf_counter()
+        scores.append(backend.score(premise, hypothesis))
+        hhem._sync(backend)
+        times.append((time.perf_counter() - t0) * 1000)
+    return scores, times
+
+
+def _summarize_passes(backend: hhem.Backend, report: dict[str, Any]) -> None:
+    first_scores, first_times = _score_pass(backend)  # warm-up (CUDA kernels, allocator)
+    report["first_pass_latency_ms"] = first_times
+    comparison = compare(first_scores)
+    report["comparison"] = comparison
+    for example, ms in zip(comparison["examples"], first_times, strict=True):
+        example["warmup_latency_ms"] = ms
+        example["timed_passes"] = []
+    timed_latencies = []
+    for attempt in range(1, REPEATS + 1):
+        scores, times = _score_pass(backend)
+        measured = compare(scores)
+        if scores != first_scores:
+            report["nondeterministic_scores"] = True
+        comparison["passed"] = comparison["passed"] and measured["passed"]
+        if measured["max_abs_diff"] is not None and (
+            comparison["max_abs_diff"] is None
+            or measured["max_abs_diff"] > comparison["max_abs_diff"]
+        ):
+            comparison["max_abs_diff"] = measured["max_abs_diff"]
+        for example, sample, ms in zip(
+            comparison["examples"], measured["examples"], times, strict=True
+        ):
+            example["timed_passes"].append(
+                {
+                    "pass": attempt,
+                    "latency_ms": ms,
+                    "actual": sample["actual"],
+                    "valid_score": sample["valid_score"],
+                    "abs_diff": sample["abs_diff"],
+                    "within_tolerance": sample["within_tolerance"],
+                    "decision_matches": sample["decision_matches"],
+                }
+            )
+        timed_latencies.extend(times)
+    report["latency_per_example"] = {
+        **latency_summary(timed_latencies),
+        "repeats": REPEATS,
+        "excludes": "warm-up pass and model load",
+    }
+
+
 def run(cache_dir: Path) -> tuple[int, dict[str, Any]]:
     report: dict[str, Any] = {
         "kind": "m7-hhem-model-card-smoke",
@@ -166,34 +226,21 @@ def run(cache_dir: Path) -> tuple[int, dict[str, Any]]:
         report.update(status="unsupported", reason=str(exc))
         return hhem.EXIT_UNSUPPORTED_RUNTIME, report
     report["nvidia_driver"] = _driver()
-    hhem_src, flan_src = hhem.fetch(cache_dir)
-    hhem_dir, flan_dir = hhem.stage_all(cache_dir, hhem_src, flan_src)
-    started = time.perf_counter()
-    backend = hhem.HhemBackend(hhem_dir, flan_dir, "cuda")
-    report["load_seconds"] = time.perf_counter() - started
-    report["backend"] = backend.describe()
-
-    def timed_pass() -> tuple[list[float], list[float]]:
-        scores, times = [], []
-        for premise, hypothesis, _ in EXAMPLES:
-            hhem._sync(backend)
-            t0 = time.perf_counter()
-            scores.append(backend.score(premise, hypothesis))
-            hhem._sync(backend)
-            times.append((time.perf_counter() - t0) * 1000)
-        return scores, times
-
-    first_scores, first_times = timed_pass()  # warm-up (CUDA kernels, allocator)
-    report["first_pass_latency_ms"] = first_times
-    timed: list[float] = []
-    for _ in range(REPEATS):
-        scores, times = timed_pass()
-        if scores != first_scores:
-            report["nondeterministic_scores"] = True
-        timed += times
-    report["latency_per_example"] = {**latency_summary(timed), "repeats": REPEATS,
-                                     "excludes": "warm-up pass and model load"}  # fmt: skip
-    report["comparison"] = compare(first_scores)
+    stage = "download"
+    try:
+        hhem_src, flan_src = hhem.fetch(cache_dir)
+        stage = "staging"
+        hhem_dir, flan_dir = hhem.stage_all(cache_dir, hhem_src, flan_src)
+        stage = "model-load"
+        started = time.perf_counter()
+        backend = hhem.HhemBackend(hhem_dir, flan_dir, "cuda")
+        report["load_seconds"] = time.perf_counter() - started
+        report["backend"] = backend.describe()
+        stage = "scoring"
+        _summarize_passes(backend, report)
+    except Exception as exc:
+        report.update(status="error", stage=stage, error_type=type(exc).__name__, reason=str(exc))
+        return EXIT_RUN_ERROR, report
     report["status"] = "passed" if report["comparison"]["passed"] else "failed"
     return (0 if report["status"] == "passed" else 1), report
 
@@ -203,10 +250,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--cache-dir", type=Path, default=Path("/content/hhem-pinned"))
     args = ap.parse_args(argv)
+    args.out.unlink(missing_ok=True)
     code, report = run(args.cache_dir)
-    args.out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", "utf-8")
-    summary = {k: report.get(k) for k in ("status", "reason", "load_seconds")}
-    if "comparison" in report:
+    with tempfile.TemporaryDirectory(dir=args.out.parent, prefix=".hhem-smoke-") as directory:
+        output = Path(directory) / "report.json"
+        output.write_text(
+            json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n", "utf-8"
+        )
+        output.replace(args.out)
+    summary = {k: report.get(k) for k in ("status", "stage", "reason", "load_seconds")}
+    if "latency_per_example" in report:
         summary["max_abs_diff"] = report["comparison"]["max_abs_diff"]
         summary["latency_p50_ms"] = report["latency_per_example"]["p50_ms"]
         summary["gpu"] = report["runtime"].get("device_name")

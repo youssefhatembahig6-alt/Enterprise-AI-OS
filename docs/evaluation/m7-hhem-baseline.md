@@ -24,26 +24,19 @@ Status: **scorer built, pinned and code-reviewed; round trip tested with synthet
 
 ## Colab T4 compatibility smoke test: **PENDING (not yet run)**
 
-No Colab T4 was available to me, so the run is pending. Everything needed to run it is ready:
+The compatibility result is pending a run on a Colab T4.
 
-* **Notebook:** `ml/hhem-baseline/hhem_smoke_t4.ipynb`. Open it in Colab, choose *Runtime → Change runtime type → T4 GPU*, then *Run all*. It takes about 3–5 minutes, mostly the 438 MB weights download, and ends by downloading `hhem-smoke-report.json`.
+* **Notebook:** `ml/hhem-baseline/hhem_smoke_t4.ipynb`. Open it in Colab, choose *Runtime → Change runtime type → T4 GPU*, then *Run all*. The default fetches PR #15 and verifies the checked-out commit. Set `REF` to a full commit SHA to reproduce a specific run, or use `main` after merge. Checkout and installation must succeed before scoring. The smoke cell preserves the exit code and checks that the report matches the current attempt and commit. If the smoke cell fails but produces a verified report, run the last two cells to inspect and download it.
 * **Script:** `ml/hhem-baseline/smoke_model_card.py`, which uses only the merged scorer (`hhem_score.py`):
   1. requires Colab + torch + CUDA + a Tesla T4 (exit 2 otherwise, before any download);
   2. requires `transformers==4.56.2`, `tokenizers==0.22.2` and `safetensors==0.8.0` (exit 2 otherwise);
   3. downloads, verifies and stages the pinned files, then loads HHEM offline through the reviewed code;
-  4. scores the **7 public examples** from the model card at `de9a5e6b` (README SHA-256 `85f87c95…`). It compares them with the published full-precision `consistent` scores (`0.011061…, 0.647363…, 0.129017…, 0.896942…, 0.184625…, 0.005031…, 0.054323…`), with an absolute tolerance of 0.005 and the same > 0.5 decisions;
-  5. records the GPU, NVIDIA driver, torch, CUDA, transformers, tokenizers and safetensors versions, the code commit, model load time, first-pass latency, and per-example latency over 5 timed passes after a warm-up.
+  4. scores the **7 public examples** from the model card at `de9a5e6b` (README SHA-256 `85f87c95…`). Each example must match the published `consistent` score within 0.005 and yield the same > 0.5 decision during warm-up and on all five timed passes;
+  5. records the GPU, NVIDIA driver, torch, CUDA, library versions, code commit, model load time, and each example's score and latency on every pass.
 
-  Exit codes: 0 passed, 1 mismatch, 2 unsupported runtime or versions.
+  The script exits with 0 for a pass, 1 for a mismatch, 2 for an unsupported runtime or version, or 3 for a download, staging, load or scoring error. An execution error report includes the stage, exception type and reason.
 * **No M7 data:** only the public examples are used. Nothing is fine-tuned and no threshold is chosen.
-* **Tested locally with synthetic stand-ins only (9 tests):**
-  - the published examples and pins;
-  - the tolerance and decision comparison;
-  - the version gate;
-  - the latency summary;
-  - stopping before download off Colab or with the wrong transformers;
-  - the full report shape for passing and failing scores;
-  - the notebook being clean (no stored outputs) and running the pinned commands.
+* **Local regressions** use synthetic stand-ins. They cover score drift on a timed pass after a passing warm-up, replacement of an earlier success report after a load error, failed notebook checkout or install, and missing or current failure reports. From `backend`, `pytest -q tests/unit/test_m7_evaluation.py -k 'smoke or notebook'` passed all 14 selected tests. The full backend unit suite passed 614 tests.
 * **Local run of the script:** status `unsupported` ("not a Google Colab runtime"), exit 2, nothing downloaded. This is the expected result off Colab.
 
 When the run is done, add the report under `docs/evidence/m7/` and replace this section with the actual numbers.
