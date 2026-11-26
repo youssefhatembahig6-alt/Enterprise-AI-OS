@@ -17,7 +17,8 @@
     "lint": "eslint .",
     "typecheck": "tsc -p packages/ui --noEmit && tsc -p apps/web --noEmit && tsc -p apps/desktop --noEmit",
     "check": "npm run lint && npm run typecheck && npm run build",
-    "test:desktop": "npm test -w @eaios/desktop"
+    "test:desktop": "npm test -w @eaios/desktop",
+    "test:web": "npm test -w @eaios/web"
   },
   "devDependencies": {
     "@eslint/js": "9.35.0",
