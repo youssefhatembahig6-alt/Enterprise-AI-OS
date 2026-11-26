@@ -1,0 +1,5 @@
++ docker compose -f '<repo>/compose.yaml' -f '<repo>/infra/acceptance/compose.m7.yaml' --env-file '<repo>/var/m7-acceptance/.env' --profile test run --rm --build backend-tests pytest -q -p no:cacheprovider tests/integration/test_m5_github.py tests/integration/test_m5_acceptance_runner.py tests/integration/test_m5_legal.py
+E   FileNotFoundError: [Errno 2] No such file or directory: '/scripts/m5_github_acceptance.py'
+ERROR tests/integration/test_m5_acceptance_runner.py - FileNotFoundError: [Er...
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 warning, 1 error in 0.20s

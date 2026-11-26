@@ -57,6 +57,8 @@ def main() -> None:
     parser.add_argument("--api", default="http://127.0.0.1:8000")
     parser.add_argument("--web", default="http://127.0.0.1:3000")
     parser.add_argument("--credentials", default=str(ROOT / "var/dev-credentials.json"))
+    parser.add_argument("--origin", default="http://localhost:3000",
+                        help="frontend origin the API must allow (CORS preflight)")
     args = parser.parse_args()
 
     status, body, _ = call("GET", f"{args.api}/health")
@@ -114,9 +116,9 @@ def main() -> None:
     check("inactive user 401", status == 401)
 
     status, _, headers = call("OPTIONS", f"{args.api}/api/v1/auth/login", headers={
-        "Origin": "http://localhost:3000", "Access-Control-Request-Method": "POST"})
+        "Origin": args.origin, "Access-Control-Request-Method": "POST"})
     check("CORS preflight for dev frontend",
-          headers.get("access-control-allow-origin") == "http://localhost:3000")
+          headers.get("access-control-allow-origin") == args.origin)
     print("smoke: all checks passed")
 
 

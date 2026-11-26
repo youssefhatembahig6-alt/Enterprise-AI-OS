@@ -1,0 +1,28 @@
++ docker compose -f '<repo>/compose.yaml' -f '<repo>/infra/acceptance/compose.m7.yaml' --env-file '<repo>/var/m7-acceptance/.env' --profile test run --rm -v '<repo>/scripts:/scripts:ro' backend-tests pytest -q -p no:cacheprovider -rA tests/integration/test_m5_github.py tests/integration/test_m5_acceptance_runner.py tests/integration/test_m5_legal.py
+PASSED tests/integration/test_m5_github.py::test_sync_records_every_path_and_ingests_only_eligible_files
+PASSED tests/integration/test_m5_github.py::test_code_answer_cites_repository_file_revision_and_exact_lines
+PASSED tests/integration/test_m5_github.py::test_users_who_are_not_linked_collaborators_get_no_sources
+PASSED tests/integration/test_m5_github.py::test_unlinking_a_login_revokes_at_once_without_a_sync
+PASSED tests/integration/test_m5_github.py::test_collaborator_removed_in_github_loses_access_at_the_next_sync
+PASSED tests/integration/test_m5_github.py::test_lost_repository_access_fails_closed[inaccessible-repository_not_accessible]
+PASSED tests/integration/test_m5_github.py::test_lost_repository_access_fails_closed[collaborators-collaborators_unavailable]
+PASSED tests/integration/test_m5_github.py::test_lost_repository_access_fails_closed[renamed-repository_moved]
+PASSED tests/integration/test_m5_github.py::test_public_visibility_never_widens_access
+PASSED tests/integration/test_m5_github.py::test_allowlist_removal_fails_before_any_github_request
+PASSED tests/integration/test_m5_github.py::test_edit_rename_and_delete_follow_the_repository
+PASSED tests/integration/test_m5_github.py::test_documents_pack_never_searches_repository_code
+PASSED tests/integration/test_m5_github.py::test_disabled_github_connector_denies_repository_content
+PASSED tests/integration/test_m5_github.py::test_deleting_a_repository_source_tombstones_its_documents
+PASSED tests/integration/test_m5_github.py::test_repository_sources_need_the_operator_allowlist_and_connector
+PASSED tests/integration/test_m5_github.py::test_linking_needs_tenant_wide_identity_admin
+PASSED tests/integration/test_m5_acceptance_runner.py::test_acceptance_runner_passes_every_stage
+PASSED tests/integration/test_m5_legal.py::test_expiry_answers_cite_the_exact_passages
+PASSED tests/integration/test_m5_legal.py::test_clause_comparison_cites_each_contract
+PASSED tests/integration/test_m5_legal.py::test_an_unreadable_contract_cannot_contribute_to_a_comparison
+PASSED tests/integration/test_m5_legal.py::test_only_an_unreadable_contract_looks_like_a_missing_one
+PASSED tests/integration/test_m5_legal.py::test_access_revoked_before_publication_publishes_nothing
+PASSED tests/integration/test_m5_legal.py::test_year_filter_and_auto_routing
+PASSED tests/integration/test_m5_legal.py::test_legal_pack_is_backend_enforced
+PASSED tests/integration/test_m5_legal.py::test_documents_answers_do_not_search_repository_code
+25 passed, 3 warnings in 23.15s
+pytest_exit=0

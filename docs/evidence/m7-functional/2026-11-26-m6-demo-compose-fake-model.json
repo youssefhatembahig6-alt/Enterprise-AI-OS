@@ -1,0 +1,525 @@
+{
+  "started_at": "2026-11-26T02:23:56.601549+00:00",
+  "api": "http://localhost:18000",
+  "tenant_settings": {
+    "enabled_packs": [
+      "actions",
+      "code",
+      "documents",
+      "legal",
+      "sales_reports"
+    ],
+    "enabled_connectors": [
+      "github",
+      "google_drive",
+      "local_folder",
+      "mailpit",
+      "upload"
+    ],
+    "sync_mode": "demo",
+    "sync_interval_seconds": 900,
+    "max_staleness_seconds": 1800,
+    "version": 2,
+    "updated_at": "2026-11-26T02:23:56.707221+00:00",
+    "available_packs": {
+      "documents": "Document answers with citations (M3)",
+      "sales_reports": "Verified sales reports over SQL (M2)",
+      "legal": "Contract clause comparison and expiry answers with exact citations (M5)",
+      "code": "Code answers over synced repositories with file, revision and line citations (M5)",
+      "actions": "Human-approved email drafts from verified reports and scheduled briefings (M6)"
+    },
+    "available_connectors": {
+      "upload": "Manual upload with explicit sharing",
+      "google_drive": "Google Drive folder sync",
+      "github": "GitHub repository sync (code)",
+      "local_folder": "Desktop local folder with backend-assigned sharing",
+      "mailpit": "Development email delivery through Mailpit (approved sends only)"
+    }
+  },
+  "report": {
+    "seconds": 0.63,
+    "events": [
+      {
+        "event": "status",
+        "data": {
+          "inference": "fake",
+          "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+          "label": "Request accepted",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "state": "completed",
+          "step": "accepted",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "fake",
+          "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+          "label": "Checked your access",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "state": "completed",
+          "step": "authorization",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "fake",
+          "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+          "label": "Understood the request",
+          "period": "Q1 2026",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "state": "completed",
+          "step": "routing",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "attempt": 1,
+          "inference": "fake",
+          "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+          "label": "Drafted a read-only query",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "state": "completed",
+          "step": "sql_generation",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "fake",
+          "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+          "label": "Validated the query",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "state": "completed",
+          "step": "sql_validation",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "fake",
+          "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+          "label": "Ran a read-only query",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "state": "completed",
+          "step": "query_execution",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "fake",
+          "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+          "label": "Checked the query's meaning",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "state": "completed",
+          "step": "query_verification",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "attempt": 1,
+          "inference": "fake",
+          "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+          "label": "Drafted the report",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "state": "completed",
+          "step": "report_drafting",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "fake",
+          "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+          "label": "Verified figures and claims",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "state": "completed",
+          "step": "report_verification",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "fake",
+          "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+          "label": "Published the verified result",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "state": "completed",
+          "step": "publication",
+          "version": 1
+        }
+      },
+      {
+        "event": "token",
+        "data": {
+          "definition": {
+            "currency": "USD",
+            "date_basis": "order_date",
+            "excluded_statuses": [
+              "PENDING",
+              "CANCELLED"
+            ],
+            "grain": "period_total",
+            "included_statuses": [
+              "FULFILLED"
+            ],
+            "tax_treatment": "net sales are tax-exclusive; gross = net + tax"
+          },
+          "message_id": "f83cc695-0548-4e94-b3ab-52aa5b331eb4",
+          "part": "table",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "table": {
+            "columns": [
+              {
+                "key": "order_count",
+                "label": "Fulfilled orders",
+                "type": "integer"
+              },
+              {
+                "key": "net_sales",
+                "label": "Net sales (tax-exclusive)",
+                "type": "money"
+              },
+              {
+                "key": "tax_amount",
+                "label": "Tax",
+                "type": "money"
+              },
+              {
+                "key": "gross_sales",
+                "label": "Gross sales (tax-inclusive)",
+                "type": "money"
+              }
+            ],
+            "rows": [
+              [
+                {
+                  "citation_id": "c1",
+                  "column": "order_count",
+                  "display": "291",
+                  "ref": {
+                    "column": "order_count",
+                    "evidence_id": "9cb45043-069c-4a87-819e-f2da061dc7e1",
+                    "row": 0
+                  },
+                  "value": 291
+                },
+                {
+                  "citation_id": "c2",
+                  "column": "net_sales",
+                  "display": "USD 80,934,385.00",
+                  "ref": {
+                    "column": "net_sales",
+                    "evidence_id": "9cb45043-069c-4a87-819e-f2da061dc7e1",
+                    "row": 0
+                  },
+                  "value": "80934385.00"
+                },
+                {
+                  "citation_id": "c3",
+                  "column": "tax_amount",
+                  "display": "USD 11,330,813.90",
+                  "ref": {
+                    "column": "tax_amount",
+                    "evidence_id": "9cb45043-069c-4a87-819e-f2da061dc7e1",
+                    "row": 0
+                  },
+                  "value": "11330813.90"
+                },
+                {
+                  "citation_id": "c4",
+                  "column": "gross_sales",
+                  "display": "USD 92,265,198.90",
+                  "ref": {
+                    "column": "gross_sales",
+                    "evidence_id": "9cb45043-069c-4a87-819e-f2da061dc7e1",
+                    "row": 0
+                  },
+                  "value": "92265198.90"
+                }
+              ]
+            ]
+          },
+          "title": "Fulfilled sales, Q1 2026",
+          "version": 1
+        }
+      },
+      {
+        "event": "token",
+        "data": {
+          "citations": [
+            "c2",
+            "c1"
+          ],
+          "index": 0,
+          "message_id": "f83cc695-0548-4e94-b3ab-52aa5b331eb4",
+          "part": "text",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "text": "In Q1 2026, net sales (tax-exclusive) were USD 80,934,385.00 from 291 fulfilled orders.",
+          "version": 1
+        }
+      },
+      {
+        "event": "token",
+        "data": {
+          "citations": [
+            "c3",
+            "c4"
+          ],
+          "index": 1,
+          "message_id": "f83cc695-0548-4e94-b3ab-52aa5b331eb4",
+          "part": "text",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "text": "Tax was USD 11,330,813.90, giving gross sales of USD 92,265,198.90.",
+          "version": 1
+        }
+      },
+      {
+        "event": "citation",
+        "data": {
+          "citation_id": "c1",
+          "column": "order_count",
+          "evidence_id": "9cb45043-069c-4a87-819e-f2da061dc7e1",
+          "label": "Fulfilled orders",
+          "row": 0,
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "version": 1
+        }
+      },
+      {
+        "event": "citation",
+        "data": {
+          "citation_id": "c2",
+          "column": "net_sales",
+          "evidence_id": "9cb45043-069c-4a87-819e-f2da061dc7e1",
+          "label": "Net sales (tax-exclusive)",
+          "row": 0,
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "version": 1
+        }
+      },
+      {
+        "event": "citation",
+        "data": {
+          "citation_id": "c3",
+          "column": "tax_amount",
+          "evidence_id": "9cb45043-069c-4a87-819e-f2da061dc7e1",
+          "label": "Tax",
+          "row": 0,
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "version": 1
+        }
+      },
+      {
+        "event": "citation",
+        "data": {
+          "citation_id": "c4",
+          "column": "gross_sales",
+          "evidence_id": "9cb45043-069c-4a87-819e-f2da061dc7e1",
+          "label": "Gross sales (tax-inclusive)",
+          "row": 0,
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "version": 1
+        }
+      },
+      {
+        "event": "done",
+        "data": {
+          "abstention": null,
+          "inference": "fake",
+          "message_id": "f83cc695-0548-4e94-b3ab-52aa5b331eb4",
+          "outcome": "published",
+          "run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+          "verification": {
+            "checker": null,
+            "figures": "exact_decimal_match_to_evidence",
+            "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+            "inference_mode": "fake",
+            "join_multiplicity": "verified_no_fan_out",
+            "label": "figures_verified_narrative_dev_checked",
+            "narrative": "verified",
+            "query_semantics": "verified_against_report_definition"
+          },
+          "version": 1
+        }
+      }
+    ]
+  },
+  "draft_to_unauthorized_recipient": {
+    "status": 422,
+    "body": {
+      "error": {
+        "code": "action_blocked",
+        "message": "The recipient is not authorized to see this report.",
+        "request_id": "0330c93f-bd2e-4810-a36e-e17b6780e1ff"
+      }
+    }
+  },
+  "draft_v1": {
+    "action_id": "1c984754-b43f-4cf5-8672-c1e027d1fa38",
+    "status": "draft",
+    "status_reason": null,
+    "origin": "user",
+    "source_run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+    "version": 1,
+    "draft_sha256": "3a0bbc1a4eb8bc6d6e0a9bf160f18482751e0863bcecb6870548d6d6476063b5",
+    "recipient": {
+      "user_id": "e8ac7b67-c507-5d2d-8803-cbc6bf03b5b8",
+      "display_name": "Finance Reader",
+      "email": "finance.reader@niletech.example"
+    },
+    "subject": "Verified report: Fulfilled sales, Q1 2026",
+    "body": "Fulfilled sales, Q1 2026\n\nVerified figures:\n  Fulfilled orders             291\n  Net sales (tax-exclusive)    USD 80,934,385.00\n  Tax                          USD 11,330,813.90\n  Gross sales (tax-inclusive)  USD 92,265,198.90\n\nSummary:\n  In Q1 2026, net sales (tax-exclusive) were USD 80,934,385.00 from 291 fulfilled orders.\n  Tax was USD 11,330,813.90, giving gross sales of USD 92,265,198.90.\n\nDefinition:\n  Date basis: order_date\n  Included statuses: FULFILLED\n  Currency: USD\n  Tax treatment: net sales are tax-exclusive; gross = net + tax\n\nVerification: figures_verified_narrative_dev_checked\n  FAKE INFERENCE (deterministic development double, not model output)\nEvidence: 9cb45043-069c-4a87-819e-f2da061dc7e1 (result sha256 8b3c3959219203eb74107c5b9cf904e176d14b7a76e20d85fc08afdc3e606cbf)\nDataset: niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127\n\nPrepared by Enterprise AI OS for Finance Reader. Sent only after their approval.",
+    "content_withheld": false,
+    "edited": false,
+    "approval_expires_at": null,
+    "delivery": null,
+    "created_at": "2026-11-26T02:23:57.513333Z",
+    "updated_at": "2026-11-26T02:23:57.513333Z"
+  },
+  "draft_v2": {
+    "action_id": "1c984754-b43f-4cf5-8672-c1e027d1fa38",
+    "status": "draft",
+    "status_reason": null,
+    "origin": "user",
+    "source_run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+    "version": 2,
+    "draft_sha256": "a643cb83ce44b80c006f1e4aee8a490fd1d9b3f08d47cbf0bd17ac881a43f620",
+    "recipient": {
+      "user_id": "e8ac7b67-c507-5d2d-8803-cbc6bf03b5b8",
+      "display_name": "Finance Reader",
+      "email": "finance.reader@niletech.example"
+    },
+    "subject": "Verified report: Fulfilled sales, Q1 2026 (reviewed)",
+    "body": "Fulfilled sales, Q1 2026\n\nVerified figures:\n  Fulfilled orders             291\n  Net sales (tax-exclusive)    USD 80,934,385.00\n  Tax                          USD 11,330,813.90\n  Gross sales (tax-inclusive)  USD 92,265,198.90\n\nSummary:\n  In Q1 2026, net sales (tax-exclusive) were USD 80,934,385.00 from 291 fulfilled orders.\n  Tax was USD 11,330,813.90, giving gross sales of USD 92,265,198.90.\n\nDefinition:\n  Date basis: order_date\n  Included statuses: FULFILLED\n  Currency: USD\n  Tax treatment: net sales are tax-exclusive; gross = net + tax\n\nVerification: figures_verified_narrative_dev_checked\n  FAKE INFERENCE (deterministic development double, not model output)\nEvidence: 9cb45043-069c-4a87-819e-f2da061dc7e1 (result sha256 8b3c3959219203eb74107c5b9cf904e176d14b7a76e20d85fc08afdc3e606cbf)\nDataset: niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127\n\nPrepared by Enterprise AI OS for Finance Reader. Sent only after their approval.\n\nReviewed before sending.",
+    "content_withheld": false,
+    "edited": true,
+    "approval_expires_at": null,
+    "delivery": null,
+    "created_at": "2026-11-26T02:23:57.513333Z",
+    "updated_at": "2026-11-26T02:23:57.596027Z"
+  },
+  "send_with_pre_edit_approval": {
+    "status": 409,
+    "body": {
+      "error": {
+        "code": "approval_rejected",
+        "message": "The draft changed after approval. Review and approve it again.",
+        "request_id": "d23a7edd-fd17-452d-83d3-1b4b2e51097b"
+      }
+    }
+  },
+  "send_with_forged_approval": {
+    "status": 409,
+    "body": {
+      "error": {
+        "code": "approval_rejected",
+        "message": "The approval is not valid for this draft.",
+        "request_id": "74132f92-8edf-4eca-9be5-1e931fa26326"
+      }
+    }
+  },
+  "approval_v2": {
+    "action_id": "1c984754-b43f-4cf5-8672-c1e027d1fa38",
+    "version": 2,
+    "draft_sha256": "a643cb83ce44b80c006f1e4aee8a490fd1d9b3f08d47cbf0bd17ac881a43f620",
+    "expires_at": "2026-11-26T02:38:57.677245Z"
+  },
+  "send": {
+    "action_id": "1c984754-b43f-4cf5-8672-c1e027d1fa38",
+    "status": "queued",
+    "status_reason": null,
+    "origin": "user",
+    "source_run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+    "version": 2,
+    "draft_sha256": "a643cb83ce44b80c006f1e4aee8a490fd1d9b3f08d47cbf0bd17ac881a43f620",
+    "recipient": {
+      "user_id": "e8ac7b67-c507-5d2d-8803-cbc6bf03b5b8",
+      "display_name": "Finance Reader",
+      "email": "finance.reader@niletech.example"
+    },
+    "subject": "Verified report: Fulfilled sales, Q1 2026 (reviewed)",
+    "body": "Fulfilled sales, Q1 2026\n\nVerified figures:\n  Fulfilled orders             291\n  Net sales (tax-exclusive)    USD 80,934,385.00\n  Tax                          USD 11,330,813.90\n  Gross sales (tax-inclusive)  USD 92,265,198.90\n\nSummary:\n  In Q1 2026, net sales (tax-exclusive) were USD 80,934,385.00 from 291 fulfilled orders.\n  Tax was USD 11,330,813.90, giving gross sales of USD 92,265,198.90.\n\nDefinition:\n  Date basis: order_date\n  Included statuses: FULFILLED\n  Currency: USD\n  Tax treatment: net sales are tax-exclusive; gross = net + tax\n\nVerification: figures_verified_narrative_dev_checked\n  FAKE INFERENCE (deterministic development double, not model output)\nEvidence: 9cb45043-069c-4a87-819e-f2da061dc7e1 (result sha256 8b3c3959219203eb74107c5b9cf904e176d14b7a76e20d85fc08afdc3e606cbf)\nDataset: niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127\n\nPrepared by Enterprise AI OS for Finance Reader. Sent only after their approval.\n\nReviewed before sending.",
+    "content_withheld": false,
+    "edited": true,
+    "approval_expires_at": null,
+    "delivery": {
+      "execution_key": "ae583cbd-7b27-4fcc-b9d4-108d63c974a4",
+      "message_id": "<ae583cbd-7b27-4fcc-b9d4-108d63c974a4@eaios.local>",
+      "status": "pending",
+      "status_reason": null,
+      "attempts": 0,
+      "smtp_accepted_at": null,
+      "confirmed_at": null,
+      "uncertain_since": null,
+      "mailpit_id": null
+    },
+    "created_at": "2026-11-26T02:23:57.513333Z",
+    "updated_at": "2026-11-26T02:23:57.708484Z"
+  },
+  "send_reusing_approval": {
+    "status": 409,
+    "body": {
+      "error": {
+        "code": "approval_rejected",
+        "message": "The approval was already used.",
+        "request_id": "c1d5a255-169e-4523-bff3-28e0bba1780f"
+      }
+    }
+  },
+  "final": {
+    "action_id": "1c984754-b43f-4cf5-8672-c1e027d1fa38",
+    "status": "delivered",
+    "status_reason": "smtp_accepted",
+    "origin": "user",
+    "source_run_id": "db41ab77-70e9-4cd5-ae07-18418a75c197",
+    "version": 2,
+    "draft_sha256": "a643cb83ce44b80c006f1e4aee8a490fd1d9b3f08d47cbf0bd17ac881a43f620",
+    "recipient": {
+      "user_id": "e8ac7b67-c507-5d2d-8803-cbc6bf03b5b8",
+      "display_name": "Finance Reader",
+      "email": "finance.reader@niletech.example"
+    },
+    "subject": "Verified report: Fulfilled sales, Q1 2026 (reviewed)",
+    "body": "Fulfilled sales, Q1 2026\n\nVerified figures:\n  Fulfilled orders             291\n  Net sales (tax-exclusive)    USD 80,934,385.00\n  Tax                          USD 11,330,813.90\n  Gross sales (tax-inclusive)  USD 92,265,198.90\n\nSummary:\n  In Q1 2026, net sales (tax-exclusive) were USD 80,934,385.00 from 291 fulfilled orders.\n  Tax was USD 11,330,813.90, giving gross sales of USD 92,265,198.90.\n\nDefinition:\n  Date basis: order_date\n  Included statuses: FULFILLED\n  Currency: USD\n  Tax treatment: net sales are tax-exclusive; gross = net + tax\n\nVerification: figures_verified_narrative_dev_checked\n  FAKE INFERENCE (deterministic development double, not model output)\nEvidence: 9cb45043-069c-4a87-819e-f2da061dc7e1 (result sha256 8b3c3959219203eb74107c5b9cf904e176d14b7a76e20d85fc08afdc3e606cbf)\nDataset: niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127\n\nPrepared by Enterprise AI OS for Finance Reader. Sent only after their approval.\n\nReviewed before sending.",
+    "content_withheld": false,
+    "edited": true,
+    "approval_expires_at": null,
+    "delivery": {
+      "execution_key": "ae583cbd-7b27-4fcc-b9d4-108d63c974a4",
+      "message_id": "<ae583cbd-7b27-4fcc-b9d4-108d63c974a4@eaios.local>",
+      "status": "delivered",
+      "status_reason": "smtp_accepted",
+      "attempts": 1,
+      "smtp_accepted_at": "2026-11-26T02:23:57.820589Z",
+      "confirmed_at": "2026-11-26T02:23:57.820589Z",
+      "uncertain_since": null,
+      "mailpit_id": null
+    },
+    "created_at": "2026-11-26T02:23:57.513333Z",
+    "updated_at": "2026-11-26T02:23:57.821413Z"
+  },
+  "mailpit": {
+    "id": "L9oC9zeC2KCUdiKTZJ4tb2",
+    "message_id": "ae583cbd-7b27-4fcc-b9d4-108d63c974a4@eaios.local",
+    "to": [
+      "finance.reader@niletech.example"
+    ],
+    "subject": "Verified report: Fulfilled sales, Q1 2026 (reviewed)",
+    "text": "Fulfilled sales, Q1 2026\r\n\r\nVerified figures:\r\n  Fulfilled orders             291\r\n  Net sales (tax-exclusive)    USD 80,934,385.00\r\n  Tax                          USD 11,330,813.90\r\n  Gross sales (tax-inclusive)  USD 92,265,198.90\r\n\r\nSummary:\r\n  In Q1 2026, net sales (tax-exclusive) were USD 80,934,385.00 from 291 fulfilled orders.\r\n  Tax was USD 11,330,813.90, giving gross sales of USD 92,265,198.90.\r\n\r\nDefinition:\r\n  Date basis: order_date\r\n  Included statuses: FULFILLED\r\n  Currency: USD\r\n  Tax treatment: net sales are tax-exclusive; gross = net + tax\r\n\r\nVerification: figures_verified_narrative_dev_checked\r\n  FAKE INFERENCE (deterministic development double, not model output)\r\nEvidence: 9cb45043-069c-4a87-819e-f2da061dc7e1 (result sha256 8b3c3959219203eb74107c5b9cf904e176d14b7a76e20d85fc08afdc3e606cbf)\r\nDataset: niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127\r\n\r\nPrepared by Enterprise AI OS for Finance Reader. Sent only after their approval.\r\n\r\nReviewed before sending.\r\n"
+  },
+  "finished_at": "2026-11-26T02:23:58.805069+00:00"
+}

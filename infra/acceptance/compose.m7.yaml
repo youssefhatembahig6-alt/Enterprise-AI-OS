@@ -1,0 +1,33 @@
+# M7 functional acceptance: a disposable copy of the development stack that can run
+# next to the owner's own stack. Use only through scripts/m7_acceptance.py, which
+# passes this file after compose.yaml with its own env file:
+#   docker compose -f compose.yaml -f infra/acceptance/compose.m7.yaml \
+#     --env-file var/m7-acceptance/.env ...
+# Differences from compose.yaml: its own project name (so its own named volumes),
+# its own image tags (building never retags the owner's eaios-* images), and
+# published ports 18000 (API), 13000 (web) and 18025 (Mailpit), all on 127.0.0.1.
+name: eaios-m7acc
+
+services:
+  mailpit:
+    ports: !override
+      - "127.0.0.1:18025:8025"
+  migrate:
+    image: eaios-backend:m7acc
+  api:
+    image: eaios-backend:m7acc
+    ports: !override
+      - "127.0.0.1:18000:8000"
+  worker:
+    image: eaios-backend:m7acc
+  scheduler:
+    image: eaios-backend:m7acc
+  frontend:
+    image: eaios-web:m7acc
+    # Bug B1 workaround: the image's CSP hard-codes the API at :8000.
+    volumes:
+      - ./infra/acceptance/nginx.m7.conf:/etc/nginx/conf.d/default.conf:ro
+    ports: !override
+      - "127.0.0.1:13000:3000"
+  backend-tests:
+    image: eaios-backend-tests:m7acc

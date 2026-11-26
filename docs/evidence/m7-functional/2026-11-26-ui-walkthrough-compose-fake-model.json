@@ -1,0 +1,158 @@
+{
+ "kind": "m7_functional_ui_walkthrough",
+ "recorded": "2026-11-26 02:25–02:45 UTC",
+ "how": "Claude desktop built-in browser driving http://localhost:13000 (disposable stack eaios-m7acc); page text and network results transcribed from the browser tools. Inference: FAKE (labelled in the UI on every run).",
+ "tested_commit": "695ce8acb23209cc472e3f03c4ab52a935f0d131",
+ "steps": [
+  {
+   "check": 1,
+   "user": "sales.reader",
+   "action": "sign in (organization niletech)",
+   "observed": "signed in; 'Model inference: FAKE (development double, not a model)'; Documents list shows 6 documents, not 'Q1 2026 finance commentary' or 'Board minutes, March 2026'"
+  },
+  {
+   "check": 1,
+   "user": "sales.reader",
+   "action": "Ask, source 'Documents you can access': 'How many invoices were overdue at the reference date?'",
+   "observed": "'I couldn't find information in documents you can access that answers this.'"
+  },
+  {
+   "check": 1,
+   "user": "sales.reader, denied.reader",
+   "action": "GET /api/v1/runs/15d21c78-4212-4bc1-bb09-786af0ddd5d5/citations/c1 (finance.reader's citation)",
+   "observed": "404 not_found for both; finance.reader 200, integrity verified, code points 401-509",
+   "evidence": "2026-11-26-check1-citation-reopen.json"
+  },
+  {
+   "check": 2,
+   "user": "finance.reader",
+   "action": "source 'Sales report (SQL)', Use example, Run report",
+   "observed": "10 progress steps, 'Fulfilled sales, Q1 2026 — Verified'; orders 291; net USD 80,934,385.00; tax USD 11,330,813.90; gross USD 92,265,198.90"
+  },
+  {
+   "check": 2,
+   "user": "finance.reader",
+   "action": "click citation [2]",
+   "observed": "Evidence panel: row 1 column net_sales = 80934385.00; read-only SELECT over reporting.sales_orders, 2026-01-01..2026-03-31, status FULFILLED; 'hash verified'; result SHA-256 d603713b86c76273c67ee0c5ef9bb312304a4ee4295da2c407e76909db8a2064; dataset niletech-0.1.6:e5715a94…f127"
+  },
+  {
+   "check": 4,
+   "user": "finance.reader",
+   "action": "Create draft for review to sales.reader, then to finance.admin",
+   "observed": "both refused: 'The recipient is not authorized to see this report.'"
+  },
+  {
+   "check": 4,
+   "user": "finance.reader",
+   "action": "Create draft to finance.reader; Approve this version",
+   "observed": "'You approved version 1 … any edit cancels it.'; Send now shown"
+  },
+  {
+   "check": 4,
+   "user": "finance.reader",
+   "action": "edit Subject (append ' (M7 edit)')",
+   "observed": "while unsaved: only 'Save as new version' and 'Cancel' (Send now hidden)"
+  },
+  {
+   "check": 4,
+   "user": "finance.reader",
+   "action": "Save as new version",
+   "observed": "'Version 2 (edited)', 'Draft — not approved', only 'Approve this version'; Mailpit total still 1"
+  },
+  {
+   "check": 4,
+   "user": "finance.reader",
+   "action": "Approve this version; Send now",
+   "observed": "'Delivered to Mailpit', attempts 1, Message-ID <774e0330-0277-4231-b626-5404ca4b4969@eaios.local>; Mailpit total 2 (1 from the earlier m6_demo run), exactly 1 with this Message-ID / subject '(M7 edit)', unchanged after 20 s"
+  },
+  {
+   "check": 4,
+   "user": "finance.reader",
+   "action": "Schedule briefing (Q1 net sales question, to finance.reader, every day)",
+   "observed": "occurrence ran 02:31:29-02:31:59 UTC: audit 'draft_for_review'; new draft origin=briefing, approval null, occurrence status review/awaiting_human_approval; Mailpit total stayed 2 from 02:30 to 02:33:38",
+   "evidence": "2026-11-26-check4-drafts-and-briefing.json"
+  },
+  {
+   "check": 3,
+   "user": "access.admin",
+   "action": "upload backend/fixtures/m7-acceptance/sales-territory-memo.md, department sales, Internal, groups 'all-staffall-staff' (typing error)",
+   "observed": "refused: 'A group in the sharing list does not exist.'"
+  },
+  {
+   "check": 3,
+   "user": "access.admin",
+   "action": "upload again with groups 'all-staff'",
+   "observed": "document 455123a8-49dc-419b-bb63-702237da3546 uploaded; list label 'Not searchable' (stale, bug B2); API status ready, searchable true; label 'Searchable' after re-login"
+  },
+  {
+   "check": 3,
+   "user": "sales.reader",
+   "action": "Documents: 'What is the quarterly visit target for the Delta territory?'",
+   "observed": "'Verified against sources'; 'The quarterly visit target for the Delta territory is 48 customer visits per field representative. [1]'; [1] sales-territory-memo version 1"
+  },
+  {
+   "check": 3,
+   "user": "sales.reader",
+   "action": "open citation [1] (run c7257795-c9a8-4730-b8d1-554d5b60a72f, c1)",
+   "observed": "200; characters 208-306 (Unicode code points), text hash verified"
+  },
+  {
+   "check": 3,
+   "user": "access.admin (second tab)",
+   "action": "Administration → Users → sales.reader groups: clear 'all-staff', Save",
+   "observed": "saved; groups empty"
+  },
+  {
+   "check": 3,
+   "user": "sales.reader (same open session)",
+   "action": "reopen citation [1]",
+   "observed": "404; 'This source is not available to you (your access may have changed or the document was removed).'"
+  },
+  {
+   "check": 3,
+   "user": "sales.reader (same open session)",
+   "action": "ask the same question again",
+   "observed": "'I couldn't find information in documents you can access that answers this.' (identity card and document list in that tab still show the pre-revocation snapshot until reload; display only)"
+  },
+  {
+   "check": 5,
+   "user": "finance.reader",
+   "action": "source 'Contracts': 'When do our contracts expire?'",
+   "observed": "Red Sea expires 30 June 2026 [1]; Aswan initial term ends 31 March 2027 [2][3]; Aswan renewal notice by 31 December 2026 [2][3][4]; NileCloud (restricted) absent. Verification text shows the SQL-report warning (bug B3)"
+  },
+  {
+   "check": 5,
+   "user": "finance.reader",
+   "action": "open Aswan citation (run f8bc299b-5a46-4ce5-ad40-4d6f92025345, c2)",
+   "observed": "200; aswan-components-supply.md version 1, characters 183-252, text hash verified"
+  },
+  {
+   "check": 5,
+   "user": "finance.reader",
+   "action": "source 'Code repositories': 'How long does a stock reservation last before it expires?'",
+   "observed": "'I couldn't find information…' — no GitHub source configured in the disposable stack (live GitHub blocked)"
+  }
+ ],
+ "b2_api_probe": {
+  "action": "POST /api/v1/documents (m7-race-probe.md) then GET /api/v1/documents every 50 ms",
+  "observed": [
+   [
+    0.0,
+    [
+     "ready",
+     false,
+     "verified"
+    ]
+   ],
+   [
+    0.05,
+    [
+     "ready",
+     true,
+     "verified"
+    ]
+   ]
+  ],
+  "also_seen": "scripts/m7_acceptance.py seed-legal printed 'ready searchable=False' for 2 of 3 contracts; all True 3 s later"
+ }
+}

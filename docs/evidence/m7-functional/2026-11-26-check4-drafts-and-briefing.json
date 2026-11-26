@@ -1,0 +1,81 @@
+{
+ "captured": "2026-11-26T02:34Z",
+ "as": "niletech/finance-reader",
+ "GET /api/v1/actions/email-drafts": [
+  {
+   "action_id": "316fddc3-3605-428e-8d82-bafcbc383d48",
+   "status": "draft",
+   "status_reason": null,
+   "origin": "briefing",
+   "version": 1,
+   "subject": "Verified report: Fulfilled sales, Q1 2026",
+   "approval": null,
+   "delivery": null
+  },
+  {
+   "action_id": "364a0383-16a2-49f8-8984-3cc3acc3782f",
+   "status": "delivered",
+   "status_reason": "smtp_accepted",
+   "origin": "user",
+   "version": 2,
+   "subject": "Verified report: Fulfilled sales, Q1 2026 (M7 edit)",
+   "approval": null,
+   "delivery": {
+    "execution_key": "774e0330-0277-4231-b626-5404ca4b4969",
+    "message_id": "<774e0330-0277-4231-b626-5404ca4b4969@eaios.local>",
+    "status": "delivered",
+    "status_reason": "smtp_accepted",
+    "attempts": 1,
+    "smtp_accepted_at": "2026-11-26T02:29:44.595452Z",
+    "confirmed_at": "2026-11-26T02:29:44.595452Z",
+    "uncertain_since": null,
+    "mailpit_id": null
+   }
+  },
+  {
+   "action_id": "1c984754-b43f-4cf5-8672-c1e027d1fa38",
+   "status": "delivered",
+   "status_reason": "smtp_accepted",
+   "origin": "user",
+   "version": 2,
+   "subject": "Verified report: Fulfilled sales, Q1 2026 (reviewed)",
+   "approval": null,
+   "delivery": {
+    "execution_key": "ae583cbd-7b27-4fcc-b9d4-108d63c974a4",
+    "message_id": "<ae583cbd-7b27-4fcc-b9d4-108d63c974a4@eaios.local>",
+    "status": "delivered",
+    "status_reason": "smtp_accepted",
+    "attempts": 1,
+    "smtp_accepted_at": "2026-11-26T02:23:57.820589Z",
+    "confirmed_at": "2026-11-26T02:23:57.820589Z",
+    "uncertain_since": null,
+    "mailpit_id": null
+   }
+  }
+ ],
+ "GET /api/v1/actions/briefings": [
+  {
+   "schedule_id": "3f12bfb8-7d25-4bd8-afda-709efd478541",
+   "question": "What were NileTech's net (tax-exclusive) fulfilled sales for Q1 2026, in USD?",
+   "recipient": {
+    "user_id": "e8ac7b67-c507-5d2d-8803-cbc6bf03b5b8",
+    "display_name": "Finance Reader",
+    "email": "finance.reader@niletech.example"
+   },
+   "interval_seconds": 86400,
+   "next_run_at": "2026-11-27T02:31:27.693000Z",
+   "active": true,
+   "created_at": "2026-11-26T02:30:27.711390Z",
+   "occurrences": [
+    {
+     "occurrence_id": "05590680-fd24-4306-b234-6e5c5eaa4e77",
+     "due_at": "2026-11-26T02:31:27.693000Z",
+     "status": "review",
+     "status_reason": "awaiting_human_approval",
+     "run_id": "ba803a8a-2951-4062-944b-02914fd5cf8e",
+     "action_id": "316fddc3-3605-428e-8d82-bafcbc383d48"
+    }
+   ]
+  }
+ ]
+}
