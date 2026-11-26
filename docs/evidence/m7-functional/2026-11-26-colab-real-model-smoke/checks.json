@@ -1,0 +1,13 @@
+{
+  "report_outcome": "published",
+  "report_verification_label": "figures_verified_narrative_dev_checked",
+  "report_inference_modes_seen": [
+    "gateway"
+  ],
+  "report_seconds": 149.59,
+  "final_status": "delivered",
+  "final_version": 2,
+  "mailpit_total_messages": 1,
+  "mailpit_message_id": "7ddd1fb8-6739-4207-b78b-432562e08993@eaios.local",
+  "pass": true
+}

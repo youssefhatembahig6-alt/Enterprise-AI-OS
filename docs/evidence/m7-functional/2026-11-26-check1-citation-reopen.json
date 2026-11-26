@@ -1,0 +1,37 @@
+{
+ "finance.reader@niletech.example": {
+  "citation_status": 200,
+  "citation_body": {
+   "title": "Q1 2026 finance commentary",
+   "char_start": 401,
+   "char_end": 509,
+   "integrity": "verified"
+  },
+  "lists_finance_commentary": true,
+  "lists_board_minutes": false
+ },
+ "sales.reader@niletech.example": {
+  "citation_status": 404,
+  "citation_body": {
+   "error": {
+    "code": "not_found",
+    "message": "Not found.",
+    "request_id": "cbd7e6cd-2183-46b5-ae53-bba7d753deca"
+   }
+  },
+  "lists_finance_commentary": false,
+  "lists_board_minutes": false
+ },
+ "denied.reader@niletech.example": {
+  "citation_status": 404,
+  "citation_body": {
+   "error": {
+    "code": "not_found",
+    "message": "Not found.",
+    "request_id": "1d262e9b-e096-4327-8b0b-0dbc249ab266"
+   }
+  },
+  "lists_finance_commentary": false,
+  "lists_board_minutes": false
+ }
+}

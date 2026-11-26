@@ -1,0 +1,49 @@
++ /usr/bin/python3 scripts/smoke_stack.py --api http://localhost:18000 --web http://localhost:13000 --credentials '<repo>/var/m7-acceptance/dev-credentials.json'
+PASS liveness 200
+PASS readiness 200 ({'status': 'ready', 'checks': {'postgres': 'ok', 'redis': 'ok', 'qdrant': 'ok', 'storage': 'ok'}, 'model_inference': 'fake'})
+PASS no model capability claimed
+PASS frontend serves index
+PASS wrong password 401 generic
+PASS login 200
+PASS identity is server-derived
+PASS report run ends with one done event
+PASS no content before publication
+PASS logout 204
+PASS revoked session 401
+PASS inactive user 401
+FAIL CORS preflight for dev frontend
++ /usr/bin/python3 scripts/m2_demo_capture.py --api http://localhost:18000 --credentials '<repo>/var/m7-acceptance/dev-credentials.json'
+run 9ceb627c-fe0a-47f0-9d13-49dd2acf75a1: outcome=published inference=fake
+first status at 0.025 s; done at 0.634 s
+  order_count: 291
+  net_sales: USD 80,934,385.00
+  tax_amount: USD 11,330,813.90
+  gross_sales: USD 92,265,198.90
+verification: figures_verified_narrative_dev_checked
+wrote <repo>/var/m2-demo-20261126T022355Z.json
+NOTE: this run used FAKE inference; it is not real-model evidence.
++ /usr/bin/python3 scripts/m3_demo.py capture --api http://localhost:18000 --credentials '<repo>/var/m7-acceptance/dev-credentials.json'
+authorized: outcome=published inference=fake
+  [c1] Q1 2026 finance commentary v1 chars 401-509 integrity=verified: 'Collections lagged revenue because 370 open invoices were already past their due date at the reference date.'
+no access: outcome=abstained code=no_sources events=['status', 'status', 'status', 'done']
+wrote <repo>/var/m3-demo-20261126T022356Z.json
+NOTE: FAKE inference; this is not real-model evidence.
++ /usr/bin/python3 scripts/m6_demo.py --api http://localhost:18000 --mailpit http://localhost:18025 --credentials '<repo>/var/m7-acceptance/dev-credentials.json'
+1. actions pack and mailpit connector enabled by the access admin
+2. verified report published: run db41ab77-70e9-4cd5-ae07-18418a75c197, figures_verified_narrative_dev_checked, inference=fake
+  ok  draft_to_unauthorized_recipient: 422 action_blocked
+3. a recipient without dataset access cannot be drafted
+4. draft 1c984754-b43f-4cf5-8672-c1e027d1fa38 v1 approved, then edited to v2
+  ok  send_with_pre_edit_approval: 409 approval_rejected
+  ok  send_with_forged_approval: 409 approval_rejected
+5. v2 approved (expires 2026-11-26T02:38:57.677245Z) and queued: queued
+  ok  send_reusing_approval: 409 approval_rejected
+6. delivered: exactly one Mailpit message L9oC9zeC2KCUdiKTZJ4tb2 with Message-ID <ae583cbd-7b27-4fcc-b9d4-108d63c974a4@eaios.local> to ['finance.reader@niletech.example']
+evidence: var/m6-demo-20261126T022358Z.json
++ /usr/bin/python3 scripts/m5_desktop_smoke.py --api http://localhost:18000 --credentials '<repo>/var/m7-acceptance/dev-credentials.json' --out '<repo>/var/m7-acceptance/m5-desktop-smoke.json'
+desktop smoke passed: <repo>/var/m7-acceptance/m5-desktop-smoke.json
+smoke_stack: FAIL (exit 1)
+m2_demo_capture: PASS
+m3_demo_capture: PASS
+m6_demo: PASS
+m5_desktop_smoke: PASS

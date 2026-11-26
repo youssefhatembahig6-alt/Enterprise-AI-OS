@@ -1,0 +1,27 @@
+{
+  "status": "ok",
+  "models": {
+    "chat": {
+      "model": "Qwen/Qwen3-8B-AWQ",
+      "revision": "4da05a8edb55c6046cce958586c33b61da07bb79"
+    },
+    "embed": {
+      "model": "BAAI/bge-m3",
+      "revision": "5617a9f61b028005a4858fdac845db406aefb181"
+    },
+    "checker": {
+      "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+      "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb",
+      "status": "development_baseline_not_final_trained_checker"
+    }
+  },
+  "engine": {
+    "quantization": "awq",
+    "dtype": "half",
+    "max_model_len": 4096,
+    "max_num_seqs": 8,
+    "gpu_memory_utilization": 0.75,
+    "seed": 0,
+    "vllm_version": "0.11.0"
+  }
+}

@@ -1,0 +1,657 @@
+{
+  "captured_at": "20261126T022355Z",
+  "api": "http://localhost:18000",
+  "question": "What were NileTech's net (tax-exclusive) fulfilled sales for Q1 2026, in USD?",
+  "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+  "frames": [
+    {
+      "t": 0.025,
+      "id": "1",
+      "event": "status",
+      "data": {
+        "inference": "fake",
+        "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+        "label": "Request accepted",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "state": "completed",
+        "step": "accepted",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.532,
+      "id": "2",
+      "event": "status",
+      "data": {
+        "inference": "fake",
+        "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+        "label": "Checked your access",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "state": "completed",
+        "step": "authorization",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.532,
+      "id": "3",
+      "event": "status",
+      "data": {
+        "inference": "fake",
+        "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+        "label": "Understood the request",
+        "period": "Q1 2026",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "state": "completed",
+        "step": "routing",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.533,
+      "id": "4",
+      "event": "status",
+      "data": {
+        "attempt": 1,
+        "inference": "fake",
+        "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+        "label": "Drafted a read-only query",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "state": "completed",
+        "step": "sql_generation",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.533,
+      "id": "5",
+      "event": "status",
+      "data": {
+        "inference": "fake",
+        "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+        "label": "Validated the query",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "state": "completed",
+        "step": "sql_validation",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.534,
+      "id": "6",
+      "event": "status",
+      "data": {
+        "inference": "fake",
+        "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+        "label": "Ran a read-only query",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "state": "completed",
+        "step": "query_execution",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.534,
+      "id": "7",
+      "event": "status",
+      "data": {
+        "inference": "fake",
+        "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+        "label": "Checked the query's meaning",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "state": "completed",
+        "step": "query_verification",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.535,
+      "id": "8",
+      "event": "status",
+      "data": {
+        "attempt": 1,
+        "inference": "fake",
+        "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+        "label": "Drafted the report",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "state": "completed",
+        "step": "report_drafting",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.535,
+      "id": "9",
+      "event": "status",
+      "data": {
+        "inference": "fake",
+        "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+        "label": "Verified figures and claims",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "state": "completed",
+        "step": "report_verification",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.536,
+      "id": "10",
+      "event": "status",
+      "data": {
+        "inference": "fake",
+        "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+        "label": "Published the verified result",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "state": "completed",
+        "step": "publication",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.554,
+      "id": "11",
+      "event": "token",
+      "data": {
+        "definition": {
+          "currency": "USD",
+          "date_basis": "order_date",
+          "excluded_statuses": [
+            "PENDING",
+            "CANCELLED"
+          ],
+          "grain": "period_total",
+          "included_statuses": [
+            "FULFILLED"
+          ],
+          "tax_treatment": "net sales are tax-exclusive; gross = net + tax"
+        },
+        "message_id": "c0180716-a106-4e99-b30f-4f24611db943",
+        "part": "table",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "table": {
+          "columns": [
+            {
+              "key": "order_count",
+              "label": "Fulfilled orders",
+              "type": "integer"
+            },
+            {
+              "key": "net_sales",
+              "label": "Net sales (tax-exclusive)",
+              "type": "money"
+            },
+            {
+              "key": "tax_amount",
+              "label": "Tax",
+              "type": "money"
+            },
+            {
+              "key": "gross_sales",
+              "label": "Gross sales (tax-inclusive)",
+              "type": "money"
+            }
+          ],
+          "rows": [
+            [
+              {
+                "citation_id": "c1",
+                "column": "order_count",
+                "display": "291",
+                "ref": {
+                  "column": "order_count",
+                  "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a",
+                  "row": 0
+                },
+                "value": 291
+              },
+              {
+                "citation_id": "c2",
+                "column": "net_sales",
+                "display": "USD 80,934,385.00",
+                "ref": {
+                  "column": "net_sales",
+                  "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a",
+                  "row": 0
+                },
+                "value": "80934385.00"
+              },
+              {
+                "citation_id": "c3",
+                "column": "tax_amount",
+                "display": "USD 11,330,813.90",
+                "ref": {
+                  "column": "tax_amount",
+                  "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a",
+                  "row": 0
+                },
+                "value": "11330813.90"
+              },
+              {
+                "citation_id": "c4",
+                "column": "gross_sales",
+                "display": "USD 92,265,198.90",
+                "ref": {
+                  "column": "gross_sales",
+                  "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a",
+                  "row": 0
+                },
+                "value": "92265198.90"
+              }
+            ]
+          ]
+        },
+        "title": "Fulfilled sales, Q1 2026",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.569,
+      "id": "12",
+      "event": "token",
+      "data": {
+        "citations": [
+          "c2",
+          "c1"
+        ],
+        "index": 0,
+        "message_id": "c0180716-a106-4e99-b30f-4f24611db943",
+        "part": "text",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "text": "In Q1 2026, net sales (tax-exclusive) were USD 80,934,385.00 from 291 fulfilled orders.",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.582,
+      "id": "13",
+      "event": "token",
+      "data": {
+        "citations": [
+          "c3",
+          "c4"
+        ],
+        "index": 1,
+        "message_id": "c0180716-a106-4e99-b30f-4f24611db943",
+        "part": "text",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "text": "Tax was USD 11,330,813.90, giving gross sales of USD 92,265,198.90.",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.594,
+      "id": "14",
+      "event": "citation",
+      "data": {
+        "citation_id": "c1",
+        "column": "order_count",
+        "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a",
+        "label": "Fulfilled orders",
+        "row": 0,
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.604,
+      "id": "15",
+      "event": "citation",
+      "data": {
+        "citation_id": "c2",
+        "column": "net_sales",
+        "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a",
+        "label": "Net sales (tax-exclusive)",
+        "row": 0,
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.614,
+      "id": "16",
+      "event": "citation",
+      "data": {
+        "citation_id": "c3",
+        "column": "tax_amount",
+        "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a",
+        "label": "Tax",
+        "row": 0,
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.627,
+      "id": "17",
+      "event": "citation",
+      "data": {
+        "citation_id": "c4",
+        "column": "gross_sales",
+        "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a",
+        "label": "Gross sales (tax-inclusive)",
+        "row": 0,
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "version": 1
+      }
+    },
+    {
+      "t": 0.634,
+      "id": "18",
+      "event": "done",
+      "data": {
+        "abstention": null,
+        "inference": "fake",
+        "message_id": "c0180716-a106-4e99-b30f-4f24611db943",
+        "outcome": "published",
+        "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+        "verification": {
+          "checker": null,
+          "figures": "exact_decimal_match_to_evidence",
+          "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+          "inference_mode": "fake",
+          "join_multiplicity": "verified_no_fan_out",
+          "label": "figures_verified_narrative_dev_checked",
+          "narrative": "verified",
+          "query_semantics": "verified_against_report_definition"
+        },
+        "version": 1
+      }
+    }
+  ],
+  "run": {
+    "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+    "status": "published",
+    "inference_mode": "fake",
+    "outcome_code": "figures_verified_narrative_dev_checked",
+    "created_at": "2026-11-26T02:23:54.455365Z",
+    "finished_at": "2026-11-26T02:23:54.550696Z",
+    "last_event_id": 18,
+    "diagnostics": {
+      "timings": {
+        "route": 0.003,
+        "execute": 0.021,
+        "prepare": 0.017,
+        "check_sql": 0.005,
+        "draft_report": 0.003,
+        "generate_sql": 0.003,
+        "verify_report": 0.003,
+        "persist_evidence": 0.007
+      },
+      "sql_attempts": 1,
+      "report_attempts": 1,
+      "max_repairs": 2,
+      "model_calls": [
+        {
+          "ttft": 0.0,
+          "tokens": null,
+          "purpose": "sql",
+          "seconds": 0.0
+        },
+        {
+          "ttft": 0.0,
+          "tokens": null,
+          "purpose": "report",
+          "seconds": 0.0
+        }
+      ],
+      "model": {
+        "mode": "fake",
+        "label": "FAKE INFERENCE (deterministic development double, not model output)"
+      },
+      "prompt_version": "m2-prompts-v1",
+      "profile_version": 1,
+      "checker_scores": [
+        0.99,
+        0.99
+      ],
+      "rejections": []
+    },
+    "result": {
+      "table": {
+        "rows": [
+          [
+            {
+              "ref": {
+                "row": 0,
+                "column": "order_count",
+                "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a"
+              },
+              "value": 291,
+              "column": "order_count",
+              "display": "291",
+              "citation_id": "c1"
+            },
+            {
+              "ref": {
+                "row": 0,
+                "column": "net_sales",
+                "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a"
+              },
+              "value": "80934385.00",
+              "column": "net_sales",
+              "display": "USD 80,934,385.00",
+              "citation_id": "c2"
+            },
+            {
+              "ref": {
+                "row": 0,
+                "column": "tax_amount",
+                "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a"
+              },
+              "value": "11330813.90",
+              "column": "tax_amount",
+              "display": "USD 11,330,813.90",
+              "citation_id": "c3"
+            },
+            {
+              "ref": {
+                "row": 0,
+                "column": "gross_sales",
+                "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a"
+              },
+              "value": "92265198.90",
+              "column": "gross_sales",
+              "display": "USD 92,265,198.90",
+              "citation_id": "c4"
+            }
+          ]
+        ],
+        "columns": [
+          {
+            "key": "order_count",
+            "type": "integer",
+            "label": "Fulfilled orders"
+          },
+          {
+            "key": "net_sales",
+            "type": "money",
+            "label": "Net sales (tax-exclusive)"
+          },
+          {
+            "key": "tax_amount",
+            "type": "money",
+            "label": "Tax"
+          },
+          {
+            "key": "gross_sales",
+            "type": "money",
+            "label": "Gross sales (tax-inclusive)"
+          }
+        ]
+      },
+      "title": "Fulfilled sales, Q1 2026",
+      "period": {
+        "end": "2026-03-31",
+        "kind": "quarter",
+        "label": "Q1 2026",
+        "start": "2026-01-01"
+      },
+      "evidence": {
+        "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a",
+        "result_sha256": "2ef0b7cb33e9b94e853adf34fb759029af88ccac9e636a2760305d5dd7043854",
+        "dataset_fingerprint": "niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127"
+      },
+      "citations": [
+        {
+          "row": 0,
+          "label": "Fulfilled orders",
+          "column": "order_count",
+          "citation_id": "c1",
+          "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a"
+        },
+        {
+          "row": 0,
+          "label": "Net sales (tax-exclusive)",
+          "column": "net_sales",
+          "citation_id": "c2",
+          "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a"
+        },
+        {
+          "row": 0,
+          "label": "Tax",
+          "column": "tax_amount",
+          "citation_id": "c3",
+          "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a"
+        },
+        {
+          "row": 0,
+          "label": "Gross sales (tax-inclusive)",
+          "column": "gross_sales",
+          "citation_id": "c4",
+          "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a"
+        }
+      ],
+      "narrative": [
+        {
+          "text": "In Q1 2026, net sales (tax-exclusive) were USD 80,934,385.00 from 291 fulfilled orders.",
+          "citations": [
+            "c2",
+            "c1"
+          ]
+        },
+        {
+          "text": "Tax was USD 11,330,813.90, giving gross sales of USD 92,265,198.90.",
+          "citations": [
+            "c3",
+            "c4"
+          ]
+        }
+      ],
+      "definition": {
+        "grain": "period_total",
+        "currency": "USD",
+        "date_basis": "order_date",
+        "tax_treatment": "net sales are tax-exclusive; gross = net + tax",
+        "excluded_statuses": [
+          "PENDING",
+          "CANCELLED"
+        ],
+        "included_statuses": [
+          "FULFILLED"
+        ]
+      },
+      "message_id": "c0180716-a106-4e99-b30f-4f24611db943",
+      "report_key": "sales.fulfilled",
+      "verification": {
+        "label": "figures_verified_narrative_dev_checked",
+        "checker": null,
+        "figures": "exact_decimal_match_to_evidence",
+        "narrative": "verified",
+        "inference_mode": "fake",
+        "inference_label": "FAKE INFERENCE (deterministic development double, not model output)",
+        "query_semantics": "verified_against_report_definition",
+        "join_multiplicity": "verified_no_fan_out"
+      }
+    }
+  },
+  "evidence": {
+    "evidence_id": "b139fef0-bef9-449d-a75e-59b20372c53a",
+    "run_id": "9ceb627c-fe0a-47f0-9d13-49dd2acf75a1",
+    "report_key": "sales.fulfilled",
+    "executed_sql": "SELECT count(*) AS order_count, sum(o.subtotal) AS net_sales, sum(o.tax) AS tax_amount, sum(o.total) AS gross_sales FROM reporting.sales_orders AS o WHERE o.order_date >= CAST('2026-01-01' AS date) AND o.order_date <= CAST('2026-03-31' AS date) AND o.status IN ('FULFILLED')",
+    "parameters": {
+      "row_limit": 201
+    },
+    "columns": [
+      {
+        "name": "order_count",
+        "type": "integer"
+      },
+      {
+        "name": "net_sales",
+        "type": "decimal"
+      },
+      {
+        "name": "tax_amount",
+        "type": "decimal"
+      },
+      {
+        "name": "gross_sales",
+        "type": "decimal"
+      }
+    ],
+    "rows": [
+      [
+        291,
+        "80934385.00",
+        "11330813.90",
+        "92265198.90"
+      ]
+    ],
+    "row_count": 1,
+    "semantics": {
+      "report": {
+        "grain": "period_total",
+        "period": {
+          "end": "2026-03-31",
+          "kind": "quarter",
+          "label": "Q1 2026",
+          "start": "2026-01-01"
+        },
+        "columns": [
+          "order_count",
+          "net_sales",
+          "tax_amount",
+          "gross_sales"
+        ],
+        "currency": "USD",
+        "tax_basis": "net_is_tax_exclusive",
+        "date_basis": "order_date",
+        "report_key": "sales.fulfilled",
+        "included_statuses": [
+          "FULFILLED"
+        ]
+      },
+      "verified": {
+        "joins": [],
+        "window": [
+          "2026-01-01",
+          "2026-03-31"
+        ],
+        "failures": [],
+        "measures": {
+          "net_sales": "net",
+          "tax_amount": "tax",
+          "gross_sales": "gross",
+          "order_count": "count_orders"
+        },
+        "statuses": [
+          "FULFILLED"
+        ],
+        "currency_filter": null
+      },
+      "join_probe": {
+        "currency": "USD",
+        "currencies": 1,
+        "joined_rows": 291,
+        "distinct_orders": 291
+      },
+      "profile_version": 1
+    },
+    "dataset_fingerprint": "niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127",
+    "policy_epoch": 72,
+    "executed_at": "2026-11-26T02:23:54.516271Z",
+    "result_sha256": "2ef0b7cb33e9b94e853adf34fb759029af88ccac9e636a2760305d5dd7043854",
+    "integrity": "verified"
+  }
+}

@@ -1,0 +1,12 @@
+1. actions pack and mailpit connector enabled by the access admin
+2. verified report published: run c7efa81c-9ea6-46d1-beee-02cbb14db952, figures_verified_narrative_dev_checked, inference=gateway
+  ok  draft_to_unauthorized_recipient: 422 action_blocked
+3. a recipient without dataset access cannot be drafted
+4. draft c30150ae-43f1-41db-932f-122c17ff69e1 v1 approved, then edited to v2
+  ok  send_with_pre_edit_approval: 409 approval_rejected
+  ok  send_with_forged_approval: 409 approval_rejected
+5. v2 approved (expires 2026-11-26T03:31:37.371538Z) and queued: queued
+  ok  send_reusing_approval: 409 approval_rejected
+6. delivered: exactly one Mailpit message kudZNPtr3marwMvgWEoKzc with Message-ID <7ddd1fb8-6739-4207-b78b-432562e08993@eaios.local> to ['finance.reader@niletech.example']
+evidence: var/m6-demo-20261126T031638Z.json
+

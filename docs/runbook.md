@@ -142,6 +142,10 @@ After pulling M6: `python3 scripts/dev.py up` (starts Mailpit and runs migration
 - **Delivery states.** `uncertain` means Mailpit may have accepted the message but the app could not record it; the scheduler reconciles it by Message-ID every 30 s and never re-sends it blindly. Mailpit keeps messages on the `mailpit-data` volume. An uncertain send is re-sent automatically only when the app recorded that its attempt never reached SMTP. If it may have reached SMTP and its message is not in Mailpit (for example it was deleted from the inbox), it stays `uncertain` (`receipt_missing_after_smtp`) for an operator to resolve. Upgrading to migration 0015 marks sends that were in progress, uncertain or re-queued under older M6 code the same way: delivered if Mailpit has them, otherwise uncertain.
 - **Tests from the host** need Mailpit too: `TEST_MAILPIT_SMTP_HOST=<mailpit container IP> TEST_MAILPIT_API_URL=http://<mailpit container IP>:8025` in addition to the variables under "Checks"; `python3 scripts/dev.py test-backend` sets them inside Compose.
 
+## Functional acceptance on a disposable stack (M7)
+
+`scripts/m7_acceptance.py` runs a second, disposable copy of the stack (project `eaios-m7acc`, web :13000, API :18000, Mailpit :18025, its own volumes and secrets in `var/m7-acceptance/`) next to your own. It never touches the `eaios` project. Commands, the checklist, the CSP workaround (bug B1) and the reset steps are in [evidence/m7-functional/README.md](evidence/m7-functional/README.md); the UI walkthrough is [evidence/m7-functional/DEMO.md](evidence/m7-functional/DEMO.md).
+
 ## Restart
 
 ```bash

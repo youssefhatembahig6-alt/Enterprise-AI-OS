@@ -1,0 +1,537 @@
+{
+  "started_at": "2026-11-26T03:14:07.135951+00:00",
+  "api": "http://127.0.0.1:18000",
+  "tenant_settings": {
+    "enabled_packs": [
+      "actions",
+      "code",
+      "documents",
+      "legal",
+      "sales_reports"
+    ],
+    "enabled_connectors": [
+      "github",
+      "google_drive",
+      "local_folder",
+      "mailpit",
+      "upload"
+    ],
+    "sync_mode": "demo",
+    "sync_interval_seconds": 900,
+    "max_staleness_seconds": 1800,
+    "version": 2,
+    "updated_at": "2026-11-26T03:14:07.397991+00:00",
+    "available_packs": {
+      "documents": "Document answers with citations (M3)",
+      "sales_reports": "Verified sales reports over SQL (M2)",
+      "legal": "Contract clause comparison and expiry answers with exact citations (M5)",
+      "code": "Code answers over synced repositories with file, revision and line citations (M5)",
+      "actions": "Human-approved email drafts from verified reports and scheduled briefings (M6)"
+    },
+    "available_connectors": {
+      "upload": "Manual upload with explicit sharing",
+      "google_drive": "Google Drive folder sync",
+      "github": "GitHub repository sync (code)",
+      "local_folder": "Desktop local folder with backend-assigned sharing",
+      "mailpit": "Development email delivery through Mailpit (approved sends only)"
+    }
+  },
+  "report": {
+    "seconds": 149.59,
+    "events": [
+      {
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Request accepted",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "state": "completed",
+          "step": "accepted",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Checked your access",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "state": "completed",
+          "step": "authorization",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Understood the request",
+          "period": "Q1 2026",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "state": "completed",
+          "step": "routing",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "attempt": 1,
+          "inference": "gateway",
+          "label": "Drafted a read-only query",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "state": "completed",
+          "step": "sql_generation",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Validated the query",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "state": "completed",
+          "step": "sql_validation",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Ran a read-only query",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "state": "completed",
+          "step": "query_execution",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Checked the query's meaning",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "state": "completed",
+          "step": "query_verification",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "attempt": 1,
+          "inference": "gateway",
+          "label": "Drafted the report",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "state": "completed",
+          "step": "report_drafting",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Verified figures and claims",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "state": "completed",
+          "step": "report_verification",
+          "version": 1
+        }
+      },
+      {
+        "event": "status",
+        "data": {
+          "inference": "gateway",
+          "label": "Published the verified result",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "state": "completed",
+          "step": "publication",
+          "version": 1
+        }
+      },
+      {
+        "event": "token",
+        "data": {
+          "definition": {
+            "currency": "USD",
+            "date_basis": "order_date",
+            "excluded_statuses": [
+              "PENDING",
+              "CANCELLED"
+            ],
+            "grain": "period_total",
+            "included_statuses": [
+              "FULFILLED"
+            ],
+            "tax_treatment": "net sales are tax-exclusive; gross = net + tax"
+          },
+          "message_id": "b14e1d24-0715-4ca3-810d-796ef17dd9b1",
+          "part": "table",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "table": {
+            "columns": [
+              {
+                "key": "order_count",
+                "label": "Fulfilled orders",
+                "type": "integer"
+              },
+              {
+                "key": "net_sales",
+                "label": "Net sales (tax-exclusive)",
+                "type": "money"
+              },
+              {
+                "key": "tax_amount",
+                "label": "Tax",
+                "type": "money"
+              },
+              {
+                "key": "gross_sales",
+                "label": "Gross sales (tax-inclusive)",
+                "type": "money"
+              }
+            ],
+            "rows": [
+              [
+                {
+                  "citation_id": "c1",
+                  "column": "order_count",
+                  "display": "291",
+                  "ref": {
+                    "column": "order_count",
+                    "evidence_id": "669fb5a6-447b-45df-bd5d-8e7051cbdf28",
+                    "row": 0
+                  },
+                  "value": 291
+                },
+                {
+                  "citation_id": "c2",
+                  "column": "net_sales",
+                  "display": "USD 80,934,385.00",
+                  "ref": {
+                    "column": "net_sales",
+                    "evidence_id": "669fb5a6-447b-45df-bd5d-8e7051cbdf28",
+                    "row": 0
+                  },
+                  "value": "80934385.00"
+                },
+                {
+                  "citation_id": "c3",
+                  "column": "tax_amount",
+                  "display": "USD 11,330,813.90",
+                  "ref": {
+                    "column": "tax_amount",
+                    "evidence_id": "669fb5a6-447b-45df-bd5d-8e7051cbdf28",
+                    "row": 0
+                  },
+                  "value": "11330813.90"
+                },
+                {
+                  "citation_id": "c4",
+                  "column": "gross_sales",
+                  "display": "USD 92,265,198.90",
+                  "ref": {
+                    "column": "gross_sales",
+                    "evidence_id": "669fb5a6-447b-45df-bd5d-8e7051cbdf28",
+                    "row": 0
+                  },
+                  "value": "92265198.90"
+                }
+              ]
+            ]
+          },
+          "title": "Fulfilled sales, Q1 2026",
+          "version": 1
+        }
+      },
+      {
+        "event": "token",
+        "data": {
+          "citations": [
+            "c2"
+          ],
+          "index": 0,
+          "message_id": "b14e1d24-0715-4ca3-810d-796ef17dd9b1",
+          "part": "text",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "text": "Net sales for Q1 2026 were USD 80,934,385.00.",
+          "version": 1
+        }
+      },
+      {
+        "event": "token",
+        "data": {
+          "citations": [
+            "c3"
+          ],
+          "index": 1,
+          "message_id": "b14e1d24-0715-4ca3-810d-796ef17dd9b1",
+          "part": "text",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "text": "Tax amount for Q1 2026 was USD 11,330,813.90.",
+          "version": 1
+        }
+      },
+      {
+        "event": "token",
+        "data": {
+          "citations": [
+            "c4"
+          ],
+          "index": 2,
+          "message_id": "b14e1d24-0715-4ca3-810d-796ef17dd9b1",
+          "part": "text",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "text": "Gross sales for Q1 2026 were USD 92,265,198.90.",
+          "version": 1
+        }
+      },
+      {
+        "event": "citation",
+        "data": {
+          "citation_id": "c1",
+          "column": "order_count",
+          "evidence_id": "669fb5a6-447b-45df-bd5d-8e7051cbdf28",
+          "label": "Fulfilled orders",
+          "row": 0,
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "version": 1
+        }
+      },
+      {
+        "event": "citation",
+        "data": {
+          "citation_id": "c2",
+          "column": "net_sales",
+          "evidence_id": "669fb5a6-447b-45df-bd5d-8e7051cbdf28",
+          "label": "Net sales (tax-exclusive)",
+          "row": 0,
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "version": 1
+        }
+      },
+      {
+        "event": "citation",
+        "data": {
+          "citation_id": "c3",
+          "column": "tax_amount",
+          "evidence_id": "669fb5a6-447b-45df-bd5d-8e7051cbdf28",
+          "label": "Tax",
+          "row": 0,
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "version": 1
+        }
+      },
+      {
+        "event": "citation",
+        "data": {
+          "citation_id": "c4",
+          "column": "gross_sales",
+          "evidence_id": "669fb5a6-447b-45df-bd5d-8e7051cbdf28",
+          "label": "Gross sales (tax-inclusive)",
+          "row": 0,
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "version": 1
+        }
+      },
+      {
+        "event": "done",
+        "data": {
+          "abstention": null,
+          "inference": "gateway",
+          "message_id": "b14e1d24-0715-4ca3-810d-796ef17dd9b1",
+          "outcome": "published",
+          "run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+          "verification": {
+            "checker": {
+              "model": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+              "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb",
+              "scores": [
+                0.9929,
+                0.9972,
+                0.9899
+              ],
+              "status": "development_baseline_not_final_trained_checker",
+              "threshold": 0.5,
+              "threshold_status": "uncalibrated"
+            },
+            "figures": "exact_decimal_match_to_evidence",
+            "inference_mode": "gateway",
+            "join_multiplicity": "verified_no_fan_out",
+            "label": "figures_verified_narrative_dev_checked",
+            "narrative": "verified",
+            "query_semantics": "verified_against_report_definition"
+          },
+          "version": 1
+        }
+      }
+    ]
+  },
+  "draft_to_unauthorized_recipient": {
+    "status": 422,
+    "body": {
+      "error": {
+        "code": "action_blocked",
+        "message": "The recipient is not authorized to see this report.",
+        "request_id": "596c66fb-caaa-436c-affb-880339b01eae"
+      }
+    }
+  },
+  "draft_v1": {
+    "action_id": "c30150ae-43f1-41db-932f-122c17ff69e1",
+    "status": "draft",
+    "status_reason": null,
+    "origin": "user",
+    "source_run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+    "version": 1,
+    "draft_sha256": "07789d8e3da8fc02fcbdce5cfcd2926ba36d4a3914613da42574fd92113fc844",
+    "recipient": {
+      "user_id": "e8ac7b67-c507-5d2d-8803-cbc6bf03b5b8",
+      "display_name": "Finance Reader",
+      "email": "finance.reader@niletech.example"
+    },
+    "subject": "Verified report: Fulfilled sales, Q1 2026",
+    "body": "Fulfilled sales, Q1 2026\n\nVerified figures:\n  Fulfilled orders             291\n  Net sales (tax-exclusive)    USD 80,934,385.00\n  Tax                          USD 11,330,813.90\n  Gross sales (tax-inclusive)  USD 92,265,198.90\n\nSummary:\n  Net sales for Q1 2026 were USD 80,934,385.00.\n  Tax amount for Q1 2026 was USD 11,330,813.90.\n  Gross sales for Q1 2026 were USD 92,265,198.90.\n\nDefinition:\n  Date basis: order_date\n  Included statuses: FULFILLED\n  Currency: USD\n  Tax treatment: net sales are tax-exclusive; gross = net + tax\n\nVerification: figures_verified_narrative_dev_checked\nEvidence: 669fb5a6-447b-45df-bd5d-8e7051cbdf28 (result sha256 e1d3831e54d43902eb88be435393875af41caa613efd8643702b1588f45e0c91)\nDataset: niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127\n\nPrepared by Enterprise AI OS for Finance Reader. Sent only after their approval.",
+    "content_withheld": false,
+    "edited": false,
+    "approval_expires_at": null,
+    "delivery": null,
+    "created_at": "2026-11-26T03:16:37.213427Z",
+    "updated_at": "2026-11-26T03:16:37.213428Z"
+  },
+  "draft_v2": {
+    "action_id": "c30150ae-43f1-41db-932f-122c17ff69e1",
+    "status": "draft",
+    "status_reason": null,
+    "origin": "user",
+    "source_run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+    "version": 2,
+    "draft_sha256": "7b5994a7f13330a39eae53f5b69d051f1d5b5af7a827963cd171bca0e8823d19",
+    "recipient": {
+      "user_id": "e8ac7b67-c507-5d2d-8803-cbc6bf03b5b8",
+      "display_name": "Finance Reader",
+      "email": "finance.reader@niletech.example"
+    },
+    "subject": "Verified report: Fulfilled sales, Q1 2026 (reviewed)",
+    "body": "Fulfilled sales, Q1 2026\n\nVerified figures:\n  Fulfilled orders             291\n  Net sales (tax-exclusive)    USD 80,934,385.00\n  Tax                          USD 11,330,813.90\n  Gross sales (tax-inclusive)  USD 92,265,198.90\n\nSummary:\n  Net sales for Q1 2026 were USD 80,934,385.00.\n  Tax amount for Q1 2026 was USD 11,330,813.90.\n  Gross sales for Q1 2026 were USD 92,265,198.90.\n\nDefinition:\n  Date basis: order_date\n  Included statuses: FULFILLED\n  Currency: USD\n  Tax treatment: net sales are tax-exclusive; gross = net + tax\n\nVerification: figures_verified_narrative_dev_checked\nEvidence: 669fb5a6-447b-45df-bd5d-8e7051cbdf28 (result sha256 e1d3831e54d43902eb88be435393875af41caa613efd8643702b1588f45e0c91)\nDataset: niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127\n\nPrepared by Enterprise AI OS for Finance Reader. Sent only after their approval.\n\nReviewed before sending.",
+    "content_withheld": false,
+    "edited": true,
+    "approval_expires_at": null,
+    "delivery": null,
+    "created_at": "2026-11-26T03:16:37.213427Z",
+    "updated_at": "2026-11-26T03:16:37.296074Z"
+  },
+  "send_with_pre_edit_approval": {
+    "status": 409,
+    "body": {
+      "error": {
+        "code": "approval_rejected",
+        "message": "The draft changed after approval. Review and approve it again.",
+        "request_id": "5b6cb307-9109-40f1-b112-ecea12906e81"
+      }
+    }
+  },
+  "send_with_forged_approval": {
+    "status": 409,
+    "body": {
+      "error": {
+        "code": "approval_rejected",
+        "message": "The approval is not valid for this draft.",
+        "request_id": "78b24f91-8525-46ac-8b67-8fa3c8dab94b"
+      }
+    }
+  },
+  "approval_v2": {
+    "action_id": "c30150ae-43f1-41db-932f-122c17ff69e1",
+    "version": 2,
+    "draft_sha256": "7b5994a7f13330a39eae53f5b69d051f1d5b5af7a827963cd171bca0e8823d19",
+    "expires_at": "2026-11-26T03:31:37.371538Z"
+  },
+  "send": {
+    "action_id": "c30150ae-43f1-41db-932f-122c17ff69e1",
+    "status": "queued",
+    "status_reason": null,
+    "origin": "user",
+    "source_run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+    "version": 2,
+    "draft_sha256": "7b5994a7f13330a39eae53f5b69d051f1d5b5af7a827963cd171bca0e8823d19",
+    "recipient": {
+      "user_id": "e8ac7b67-c507-5d2d-8803-cbc6bf03b5b8",
+      "display_name": "Finance Reader",
+      "email": "finance.reader@niletech.example"
+    },
+    "subject": "Verified report: Fulfilled sales, Q1 2026 (reviewed)",
+    "body": "Fulfilled sales, Q1 2026\n\nVerified figures:\n  Fulfilled orders             291\n  Net sales (tax-exclusive)    USD 80,934,385.00\n  Tax                          USD 11,330,813.90\n  Gross sales (tax-inclusive)  USD 92,265,198.90\n\nSummary:\n  Net sales for Q1 2026 were USD 80,934,385.00.\n  Tax amount for Q1 2026 was USD 11,330,813.90.\n  Gross sales for Q1 2026 were USD 92,265,198.90.\n\nDefinition:\n  Date basis: order_date\n  Included statuses: FULFILLED\n  Currency: USD\n  Tax treatment: net sales are tax-exclusive; gross = net + tax\n\nVerification: figures_verified_narrative_dev_checked\nEvidence: 669fb5a6-447b-45df-bd5d-8e7051cbdf28 (result sha256 e1d3831e54d43902eb88be435393875af41caa613efd8643702b1588f45e0c91)\nDataset: niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127\n\nPrepared by Enterprise AI OS for Finance Reader. Sent only after their approval.\n\nReviewed before sending.",
+    "content_withheld": false,
+    "edited": true,
+    "approval_expires_at": null,
+    "delivery": {
+      "execution_key": "7ddd1fb8-6739-4207-b78b-432562e08993",
+      "message_id": "<7ddd1fb8-6739-4207-b78b-432562e08993@eaios.local>",
+      "status": "pending",
+      "status_reason": null,
+      "attempts": 0,
+      "smtp_accepted_at": null,
+      "confirmed_at": null,
+      "uncertain_since": null,
+      "mailpit_id": null
+    },
+    "created_at": "2026-11-26T03:16:37.213427Z",
+    "updated_at": "2026-11-26T03:16:37.406849Z"
+  },
+  "send_reusing_approval": {
+    "status": 409,
+    "body": {
+      "error": {
+        "code": "approval_rejected",
+        "message": "The approval was already used.",
+        "request_id": "dcef3cbc-0e03-4830-8ac3-2840c384cbfd"
+      }
+    }
+  },
+  "final": {
+    "action_id": "c30150ae-43f1-41db-932f-122c17ff69e1",
+    "status": "delivered",
+    "status_reason": "smtp_accepted",
+    "origin": "user",
+    "source_run_id": "c7efa81c-9ea6-46d1-beee-02cbb14db952",
+    "version": 2,
+    "draft_sha256": "7b5994a7f13330a39eae53f5b69d051f1d5b5af7a827963cd171bca0e8823d19",
+    "recipient": {
+      "user_id": "e8ac7b67-c507-5d2d-8803-cbc6bf03b5b8",
+      "display_name": "Finance Reader",
+      "email": "finance.reader@niletech.example"
+    },
+    "subject": "Verified report: Fulfilled sales, Q1 2026 (reviewed)",
+    "body": "Fulfilled sales, Q1 2026\n\nVerified figures:\n  Fulfilled orders             291\n  Net sales (tax-exclusive)    USD 80,934,385.00\n  Tax                          USD 11,330,813.90\n  Gross sales (tax-inclusive)  USD 92,265,198.90\n\nSummary:\n  Net sales for Q1 2026 were USD 80,934,385.00.\n  Tax amount for Q1 2026 was USD 11,330,813.90.\n  Gross sales for Q1 2026 were USD 92,265,198.90.\n\nDefinition:\n  Date basis: order_date\n  Included statuses: FULFILLED\n  Currency: USD\n  Tax treatment: net sales are tax-exclusive; gross = net + tax\n\nVerification: figures_verified_narrative_dev_checked\nEvidence: 669fb5a6-447b-45df-bd5d-8e7051cbdf28 (result sha256 e1d3831e54d43902eb88be435393875af41caa613efd8643702b1588f45e0c91)\nDataset: niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127\n\nPrepared by Enterprise AI OS for Finance Reader. Sent only after their approval.\n\nReviewed before sending.",
+    "content_withheld": false,
+    "edited": true,
+    "approval_expires_at": null,
+    "delivery": {
+      "execution_key": "7ddd1fb8-6739-4207-b78b-432562e08993",
+      "message_id": "<7ddd1fb8-6739-4207-b78b-432562e08993@eaios.local>",
+      "status": "delivered",
+      "status_reason": "smtp_accepted",
+      "attempts": 1,
+      "smtp_accepted_at": "2026-11-26T03:16:37.501928Z",
+      "confirmed_at": "2026-11-26T03:16:37.501928Z",
+      "uncertain_since": null,
+      "mailpit_id": null
+    },
+    "created_at": "2026-11-26T03:16:37.213427Z",
+    "updated_at": "2026-11-26T03:16:37.502504Z"
+  },
+  "mailpit": {
+    "id": "kudZNPtr3marwMvgWEoKzc",
+    "message_id": "7ddd1fb8-6739-4207-b78b-432562e08993@eaios.local",
+    "to": [
+      "finance.reader@niletech.example"
+    ],
+    "subject": "Verified report: Fulfilled sales, Q1 2026 (reviewed)",
+    "text": "Fulfilled sales, Q1 2026\r\n\r\nVerified figures:\r\n  Fulfilled orders             291\r\n  Net sales (tax-exclusive)    USD 80,934,385.00\r\n  Tax                          USD 11,330,813.90\r\n  Gross sales (tax-inclusive)  USD 92,265,198.90\r\n\r\nSummary:\r\n  Net sales for Q1 2026 were USD 80,934,385.00.\r\n  Tax amount for Q1 2026 was USD 11,330,813.90.\r\n  Gross sales for Q1 2026 were USD 92,265,198.90.\r\n\r\nDefinition:\r\n  Date basis: order_date\r\n  Included statuses: FULFILLED\r\n  Currency: USD\r\n  Tax treatment: net sales are tax-exclusive; gross = net + tax\r\n\r\nVerification: figures_verified_narrative_dev_checked\r\nEvidence: 669fb5a6-447b-45df-bd5d-8e7051cbdf28 (result sha256 e1d3831e54d43902eb88be435393875af41caa613efd8643702b1588f45e0c91)\r\nDataset: niletech-0.1.6:e5715a94f93ed42dd31b3f00337af4bb591495a0cfd96f7a5a8ca90555bef127\r\n\r\nPrepared by Enterprise AI OS for Finance Reader. Sent only after their approval.\r\n\r\nReviewed before sending.\r\n"
+  },
+  "finished_at": "2026-11-26T03:16:38.478693+00:00"
+}
