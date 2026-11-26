@@ -244,9 +244,15 @@ services:
   backend-tests:
     profiles: ["test"]
     build:
-      context: ./backend
-      target: test
-    image: eaios-backend-tests:m4
+      # Repository root, filtered by backend/Dockerfile.test.dockerignore (allowlist of
+      # backend/, scripts/, ml/, docs/; nothing git ignores).
+      context: .
+      dockerfile: backend/Dockerfile.test
+    image: eaios-backend-tests:m7
+    # Read-only Git metadata for tests that read history or HEAD. Only committed
+    # objects; no working-tree files beyond what the image copied.
+    volumes:
+      - ./.git:/repo/.git:ro
     environment:
       TEST_DATABASE_ADMIN_URL: postgresql+psycopg://postgres:${POSTGRES_SUPERUSER_PASSWORD:?set in .env}@postgres:5432/postgres
       TEST_REDIS_URL: redis://:${REDIS_PASSWORD:?set in .env}@redis:6379/15
