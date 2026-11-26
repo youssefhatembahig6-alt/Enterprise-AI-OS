@@ -15,6 +15,7 @@ project is eaios-m7acc (with only eaios-m7acc_* volumes) runs before every Compo
     python3 scripts/m7_acceptance.py seed       # users, business data, M3 corpus
     python3 scripts/m7_acceptance.py seed-legal # the three M5 legal fixture contracts
     python3 scripts/m7_acceptance.py runners    # rerun the M2/M3/M6/smoke/desktop runners
+    python3 scripts/m7_acceptance.py test-backend [-- pytest args]  # backend suite, staged context
     python3 scripts/m7_acceptance.py compose -- <docker compose args>
     python3 scripts/m7_acceptance.py destroy    # removes ONLY eaios-m7acc containers+volumes
     python3 scripts/m7_acceptance.py check-project  # read-only: show the resolved project
@@ -143,6 +144,24 @@ def run(cmd: list[str], check: bool = True) -> int:
     if check and code:
         sys.exit(code)
     return code
+
+
+def test_backend(pytest_args: list[str]) -> None:
+    """``scripts/dev.py test-backend`` pinned to this project: the backend-tests image is
+    built from a staged context (scripts/test_context.py), never from the checkout."""
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from test_context import staged
+
+    with staged(ROOT) as context:
+        os.environ["EAIOS_TEST_CONTEXT"] = str(context)
+        try:
+            cmd = [*base(), "--profile", "test", "run", "--rm", "--build", "backend-tests"]
+            code = run(cmd + (["pytest", *pytest_args] if pytest_args else []), check=False)
+        finally:
+            os.environ.pop("EAIOS_TEST_CONTEXT", None)
+    if code:
+        sys.exit(code)
 
 
 def init_env(model_mode: str) -> None:
@@ -386,6 +405,8 @@ def main() -> None:
     sub.add_parser("down")
     sub.add_parser("destroy")
     sub.add_parser("check-project")
+    tests = sub.add_parser("test-backend")
+    tests.add_argument("pytest_args", nargs=argparse.REMAINDER)
     raw = sub.add_parser("compose")
     raw.add_argument("args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -411,6 +432,8 @@ def main() -> None:
         print(f"project {name}; volumes {volumes}")
         assert_disposable()
         print("ok: pinned to the disposable project")
+    elif args.cmd == "test-backend":
+        test_backend(args.pytest_args[1:] if args.pytest_args[:1] == ["--"] else args.pytest_args)
     elif args.cmd == "compose":
         extra = args.args[1:] if args.args[:1] == ["--"] else args.args
         bad = forbidden_globals(extra)

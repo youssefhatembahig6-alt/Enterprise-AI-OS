@@ -10,7 +10,9 @@
                                               .env if missing and create/update the M2 report role
     python scripts/dev.py status              docker compose ps
     python scripts/dev.py down                stop containers (data volumes are kept)
-    python scripts/dev.py test-backend        backend suite in Compose against real PostgreSQL/Redis
+    python scripts/dev.py test-backend [pytest args]
+                                              backend suite in Compose (real PostgreSQL/Redis),
+                                              built from a staged context (scripts/test_context.py)
     python scripts/dev.py check               local Ruff, Mypy, unit tests, frontend lint/typecheck/build
     python scripts/dev.py lock                regenerate Python lockfiles (hashes)
     python scripts/dev.py openapi             regenerate docs/openapi.json
@@ -48,6 +50,26 @@ def run(cmd: list[str], cwd: Path = ROOT, env: dict[str, str] | None = None) -> 
 def compose(*args: str) -> None:
     base = shlex.split(os.environ.get("DOCKER_COMPOSE", "docker compose"))
     run([*base, *args])
+
+
+def test_backend(pytest_args: list[str]) -> None:
+    """Backend suite in Compose, built from a staged context (scripts/test_context.py):
+    only git-indexed files, no labels, no access to the checkout's .git."""
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from test_context import staged
+
+    base = shlex.split(os.environ.get("DOCKER_COMPOSE", "docker compose"))
+    with staged(ROOT) as context:
+        cmd = [*base, "--profile", "test", "run", "--rm", "--build", "backend-tests"]
+        if pytest_args:
+            cmd += ["pytest", *pytest_args]
+        print("+", " ".join(shlex.quote(c) for c in cmd), flush=True)
+        code = subprocess.run(  # noqa: S603
+            cmd, cwd=ROOT, env={**os.environ, "EAIOS_TEST_CONTEXT": str(context)}, check=False
+        ).returncode
+    if code:
+        sys.exit(code)
 
 
 def tool(name: str) -> str:
@@ -171,8 +193,7 @@ def main() -> None:
             "run", "--rm", "migrate", "python", "-m", "app.cli", "business-data-report"
         ),
         "down": lambda: compose("down"),
-        "test-backend": lambda: compose("--profile", "test", "run", "--rm", "--build",
-                                        "backend-tests"),
+        "test-backend": lambda: test_backend(rest),
         "check": check,
         "lock": lock,
         "openapi": lambda: run([tool("python"), "-m", "app.cli", "export-openapi"], cwd=BACKEND),

@@ -69,6 +69,48 @@ test("values that would broaden or break the policy fail the build", () => {
   assert.throws(() => apiConnectSources(undefined));
 });
 
+test("malformed bases that URL parsing would silently repair fail with a clear message", () => {
+  const cases = [
+    ["http:api.example.test", /must start with "http:\/\/" or "https:\/\/"/],
+    ["https:api.example.test", /must start with "http:\/\/" or "https:\/\/"/],
+    ["http:/api.example.test", /must start with "http:\/\/" or "https:\/\/"/],
+    ["HTTP://api.example.test", /must start with "http:\/\/" or "https:\/\/"/],
+    ["http://api.example.test?", /query or a trailing '\?'/],
+    ["http://api.example.test/?", /query or a trailing '\?'/],
+    ["http://api.example.test#", /fragment or a trailing '#'/],
+    ["http://api.example.test/#", /fragment or a trailing '#'/],
+    ["http://@api.example.test", /credentials/],
+    ["http://api.example.test:0", /port outside 1-65535/],
+    ["http://api.example.test:65536", /port outside 1-65535/],
+    ["http://api.example.test:", /not a plain http\(s\) base URL/],
+    ["http://api\\example.test", /not a plain http\(s\) base URL/],
+    ["http://ex%61mple.test", /not a plain http\(s\) base URL/],
+    ["http://api.example.test./", /not a plain http\(s\) base URL/],
+    ["http://-api.example.test", /not a plain http\(s\) base URL/],
+    ["http://api.example.test\t", /whitespace/],
+  ];
+  for (const [value, message] of cases) {
+    assert.throws(() => apiConnectSources(value), message, JSON.stringify(value));
+    assert.throws(() => renderNginx(TEMPLATE, value), message, JSON.stringify(value));
+  }
+});
+
+test("the loopback alias applies to exactly localhost and 127.0.0.1", () => {
+  assert.deepEqual(apiConnectSources("http://127.0.0.1:18000"), [
+    "http://127.0.0.1:18000",
+    "http://localhost:18000",
+  ]);
+  assert.deepEqual(apiConnectSources("https://localhost"), ["https://localhost", "https://127.0.0.1"]);
+  // Names that an object lookup would resolve through Object.prototype.
+  for (const host of ["constructor", "toString", "hasOwnProperty", "valueOf", "proto"]) {
+    assert.deepEqual(apiConnectSources(`http://${host}:8000`), [`http://${host.toLowerCase()}:8000`], host);
+  }
+  for (const host of ["localhost.example.test", "127.0.0.2", "localhost6", "my-localhost", "[::1]"]) {
+    assert.equal(apiConnectSources(`http://${host}:8000`).length, 1, host);
+  }
+  assert.throws(() => apiConnectSources("http://__proto__:8000"), /not a plain/);
+});
+
 test("a template without the placeholder in the CSP is refused", () => {
   assert.throws(() => renderNginx(TEMPLATE.replaceAll("@API_CONNECT_SRC@", "http://x"), "http://localhost:8000"));
 });

@@ -244,15 +244,13 @@ services:
   backend-tests:
     profiles: ["test"]
     build:
-      # Repository root, filtered by backend/Dockerfile.test.dockerignore (allowlist of
-      # backend/, scripts/, ml/, docs/; nothing git ignores).
-      context: .
+      # A staged context, never the checkout: only git-indexed files of backend/,
+      # scripts/, ml/ and docs/ (no untracked, ignored or label files) plus a one-commit
+      # git snapshot of them. Run through `python3 scripts/dev.py test-backend` (or
+      # `scripts/m7_acceptance.py test-backend`), which stage it and set the path.
+      context: ${EAIOS_TEST_CONTEXT:-./.test-context-not-staged}
       dockerfile: backend/Dockerfile.test
     image: eaios-backend-tests:m7
-    # Read-only Git metadata for tests that read history or HEAD. Only committed
-    # objects; no working-tree files beyond what the image copied.
-    volumes:
-      - ./.git:/repo/.git:ro
     environment:
       TEST_DATABASE_ADMIN_URL: postgresql+psycopg://postgres:${POSTGRES_SUPERUSER_PASSWORD:?set in .env}@postgres:5432/postgres
       TEST_REDIS_URL: redis://:${REDIS_PASSWORD:?set in .env}@redis:6379/15
