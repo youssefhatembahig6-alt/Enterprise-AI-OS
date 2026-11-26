@@ -1,6 +1,6 @@
 # M7 checker baseline runner
 
-Status: **runner built; scoring is BLOCKED.** No dev pair has human gold labels yet (0 of 37). No model was scored. Nothing was fine-tuned, no threshold was selected, and the blind release set was not touched (it does not exist yet, and the runner cannot read anything outside dev).
+Status (updated 2026-11-26): **runner built and used.** The 37 dev pairs now have agreed human labels (2 annotators, kappa 1.00), and all three baselines below were scored on Colab T4s. Results, aggregates only: **[m7-baseline-run.md](m7-baseline-run.md)**. Nothing was fine-tuned, no threshold was selected, and the blind release set was not touched (the runner cannot read anything outside dev). The rest of this page documents the runner; the "blocked" behaviour below still applies whenever no agreed labels are supplied (`--label-dir`).
 
 ## Revision 2 (PR #13 review)
 
@@ -17,7 +17,7 @@ The Member 5 report, section 4.3, "How the result is measured", names the compar
 | Baseline | Runner scorer | How it is run |
 | --- | --- | --- |
 | Zero-shot NLI checkpoint (no fine-tuning) | `deberta` | The **current pinned checker**, `MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli@6f5cf0a2…`, through the model gateway's `/check`, exactly as the application calls it. P(supported) = P(entailment). |
-| HHEM-2.1-open (Vectara) | `predictions` | Scored offline on Colab from `--export-inputs`; the predictions file must carry model, revision, runtime and the input digests. Scorer: `ml/hhem-baseline/hhem_score.py` ([m7-hhem-baseline.md](m7-hhem-baseline.md)); no real run yet. |
+| HHEM-2.1-open (Vectara) | `predictions` | Scored offline on Colab from `--export-inputs`; the predictions file must carry model, revision, runtime and the input digests. Scorer: `ml/hhem-baseline/hhem_score.py` ([m7-hhem-baseline.md](m7-hhem-baseline.md)); scored on the 37 dev pairs, see [m7-baseline-run.md](m7-baseline-run.md). |
 | Qwen3-8B as a judge (on Colab) | `qwen-judge` | Through the gateway chat route, temperature 0, thinking off, fixed prompt `m7-judge-1` (its SHA-256 is recorded), one-word answer. Hard labels; an unparseable answer is scored UNSUPPORTED (fail closed) and counted. |
 
 The fine-tuned checker does not exist yet. When it does, it plugs in as another scorer.
@@ -73,7 +73,7 @@ These are not model results.
 
 ```bash
 cd backend
-.venv/bin/python -m app.evaluation checker-baselines --scorer deberta --out ../var/m7-baseline-deberta.json   # blocked today (exit 3)
+.venv/bin/python -m app.evaluation checker-baselines --scorer deberta --out ../var/m7-baseline-deberta.json   # exit 3 (blocked) without --label-dir
 .venv/bin/python -m app.evaluation checker-baselines --synthetic-selftest                                 # runner self-test, not a result
 .venv/bin/pytest -q tests/unit/test_m7_evaluation.py   # 154 tests; 43 cover the metrics and the runner
 # Once human labels exist and the Colab gateway is up (MODEL_MODE=gateway, LLM_BASE_URL, token):
@@ -85,9 +85,9 @@ cd backend
 
 ## Gaps
 
-1. **Human labels:** two annotators must label the 37 dev gold pairs through the blind workflow (`docs/evaluation/m7-labelling.md`). Until then, scoring is blocked.
+1. ~~**Human labels.**~~ Done: 37/37 double-labelled and agreed through the blind workflow (`docs/evaluation/m7-labelling.md`); scored in [m7-baseline-run.md](m7-baseline-run.md).
 2. **Dev set size:** 37 pairs give wide intervals: even 0 false passes out of ~19 unsupported pairs has a Wilson upper bound of about 17%. A larger human-labelled dev set is needed before comparisons mean much.
-3. **HHEM-2.1-open predictions:** no Colab script yet. HHEM loads custom model code (`trust_remote_code`), which needs a pinned revision and a review of that code before it runs. The script must write the predictions-file header (model, revision, runtime).
+3. ~~**HHEM-2.1-open predictions.**~~ Done: pinned, code-reviewed scorer ([m7-hhem-baseline.md](m7-hhem-baseline.md)), scored on a Colab T4 ([m7-baseline-run.md](m7-baseline-run.md)).
 4. **Judge bias:** Qwen3-8B also writes the answers in production, so as a judge it may favour its own phrasing (noted in the specification). Here it judges template claims, not its own answers.
 5. **Latency** includes the laptop-to-Colab round trip. T4-only per-claim latency needs gateway-side timing.
 6. **Out of scope by instruction:** fine-tuning, threshold selection, held-out and blind-release scoring. This runner refuses non-dev data by design; release scoring follows the coordinator procedure in `m7-v3-corpus.md`.

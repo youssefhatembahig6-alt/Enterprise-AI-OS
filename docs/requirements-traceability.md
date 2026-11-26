@@ -117,7 +117,7 @@ Integration tests run on real PostgreSQL (RLS, non-owner app role), Redis and a 
 | NFR-07 UI | "Email and briefings" card: draft from a published report, recipient choice, edit, approve, re-approve after expiry, send, cancel, delivery state including uncertain, briefing schedules | `apps/web/src/ActionsPanel.tsx`; lint/typecheck/build; browser run `docs/evidence/m6/2026-11-25-browser-check-compose-fake-model.json` |
 
 
-## M7 — Evaluation foundation (pilot; no human labels, fine-tuning or thresholds yet)
+## M7 — Evaluation foundation and checker baselines (human-labelled dev baselines done; no fine-tuning, threshold selection or blind release evaluation)
 
 Deterministic checks only (no database or model). Details, counts and gaps: [`docs/evaluation/m7-foundation.md`](evaluation/m7-foundation.md). Tests are in `backend/tests/unit/test_m7_evaluation.py`.
 

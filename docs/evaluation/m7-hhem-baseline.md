@@ -1,7 +1,7 @@
 # M7 baseline: HHEM-2.1-open scorer
 
 **Status.** HHEM passed the model-card compatibility check on a Colab Tesla T4. The scorer is pinned and code-reviewed, and the export and import round trip is covered by synthetic tests.
-- **Dev scoring is blocked.** None of the 37 dev pairs has human gold labels, so `--export-inputs` has nothing to export. The project runs HHEM on a Colab T4.
+- **Dev scoring is done** (2026-11-26). After the 37 dev pairs received agreed human labels, HHEM scored them on a Colab T4 alongside the DeBERTa and Qwen3-8B judge baselines: **[m7-baseline-run.md](m7-baseline-run.md)** (aggregates only).
 - **Out of scope:** no fine-tuning; no threshold was chosen.
 
 ## Revision 2 (PR #14 review)

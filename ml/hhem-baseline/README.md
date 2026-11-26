@@ -4,7 +4,9 @@
 on the Colab GPU. It writes a predictions file for `checker-baselines --scorer predictions`.
 The model revision, the reviewed custom code, the weights and the flan-t5-base foundation are
 all pinned by SHA-256. The full write-up, including the code review, is
-`m7-hhem-baseline.md` in the repository's evaluation docs.
+`m7-hhem-baseline.md` in the repository's evaluation docs. The scored comparison on the 37
+human-agreed dev pairs (HHEM vs zero-shot DeBERTa vs the Qwen3-8B judge) is
+`m7-baseline-run.md`, next to that write-up.
 
 ```bash
 pip install -r requirements.txt            # torch comes from the Colab runtime

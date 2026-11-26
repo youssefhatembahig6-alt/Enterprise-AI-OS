@@ -19,7 +19,7 @@ python3 -c "import json; print(json.load(open('var/m7-acceptance/dev-credentials
 
 Open http://localhost:13000 (app) and http://localhost:18025 (Mailpit inbox). The organization for every sign-in is `niletech`. Use **Sign out** between users; reloading the page also signs you out.
 
-> The disposable frontend uses the CSP workaround for bug B1 (see README). Without it the UI on port 13000 says "API unreachable".
+> The disposable frontend is the standard web image. Its CSP allows the API it was built for (`VITE_API_BASE_URL`, :18000 here), so no override is needed. The header under the title should read "API ready".
 
 ## 1. Permissions decide what you can see (2 minutes)
 
@@ -63,7 +63,7 @@ Open http://localhost:13000 (app) and http://localhost:18025 (Mailpit inbox). Th
    The label goes from "Ingesting (…)" to **Searchable** without a reload.
 2. Open a **second tab** at http://localhost:13000 and sign in as **sales.reader** there. Source **Documents you can access**, ask: `What is the quarterly visit target for the Delta territory?`
    Expected: verified answer, *"48 customer visits per field representative [1]"*. Click [1] to see the exact passage.
-3. Back in the admin tab: **Administration → Users**. In **Sales Reader**'s row, clear the groups field (`all-staff`) and click the **Save** next to it.
+3. Back in the admin tab: **Administration → Users**. In **Sales Reader**'s row, clear the groups field (`all-staff`) and click the **Save** next to it (screen readers announce it as "Save groups of sales.reader@niletech.example").
 4. In the sales reader tab, without reloading, click [1] again. Expected: *"This source is not available to you (your access may have changed or the document was removed)."* Ask the same question again: *"I couldn't find information…"*
 
 ## Afterwards

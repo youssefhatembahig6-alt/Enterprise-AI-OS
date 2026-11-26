@@ -144,7 +144,7 @@ After pulling M6: `python3 scripts/dev.py up` (starts Mailpit and runs migration
 
 ## Functional acceptance on a disposable stack (M7)
 
-`scripts/m7_acceptance.py` runs a second, disposable copy of the stack (project `eaios-m7acc`, web :13000, API :18000, Mailpit :18025, its own volumes and secrets in `var/m7-acceptance/`) next to your own. It never touches the `eaios` project. Commands, the checklist, the CSP workaround (bug B1) and the reset steps are in [evidence/m7-functional/README.md](evidence/m7-functional/README.md); the UI walkthrough is [evidence/m7-functional/DEMO.md](evidence/m7-functional/DEMO.md).
+`scripts/m7_acceptance.py` runs a second, disposable copy of the stack (project `eaios-m7acc`, web :13000, API :18000, Mailpit :18025, its own volumes and secrets in `var/m7-acceptance/`) next to your own. It never touches the `eaios` project. It uses the standard images: the web image's CSP is rendered from `VITE_API_BASE_URL` at build time, so a non-default API origin works without overrides. Commands, the checklist and the reset steps are in [evidence/m7-functional/README.md](evidence/m7-functional/README.md); the UI walkthrough is [evidence/m7-functional/DEMO.md](evidence/m7-functional/DEMO.md).
 
 ## Restart
 
@@ -160,6 +160,10 @@ python3 scripts/dev.py check          # Ruff, Mypy, unit tests, ESLint, tsc, Vit
 python3 scripts/dev.py test-backend   # full backend suite in Compose against real PostgreSQL/Redis (creates its own report role)
 python3 scripts/smoke_stack.py        # end-to-end checks against the running stack
 ```
+
+`test-backend` builds `backend/Dockerfile.test` from the repository root. Its context filter `backend/Dockerfile.test.dockerignore` admits only `backend/`, `scripts/`, `ml/` and `docs/`, minus everything git ignores (`var/`, `.env`, keys, virtualenvs, caches, raw GPU output). The files are laid out as in a checkout (`/repo/backend`, `/repo/scripts`, ...), `git` is installed, and the checkout's `.git` is mounted read-only at `/repo/.git`. The checkout-dependent tests (acceptance scripts, notebooks, committed evidence, the M7 freeze checks) therefore run unchanged. The mount needs a normal clone: in a `git worktree`, `.git` is a file that points outside the mount.
+
+**Web image API origin.** The frontend image renders its nginx CSP from the same `VITE_API_BASE_URL` build argument the bundle uses (`apps/web/render-nginx.mjs`). `connect-src` allows exactly that origin, plus the other loopback spelling for `localhost`/`127.0.0.1`. Anything other than a plain http(s) origin (a wildcard, another scheme, credentials, a query, extra sources) fails the build. To serve the UI against another API address, set `VITE_API_BASE_URL` in `.env` and rebuild (`python3 scripts/dev.py up`).
 
 Local backend tooling: `cd backend && python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.lock`. To run integration tests from the host, point `TEST_DATABASE_ADMIN_URL` and `TEST_REDIS_URL` at disposable services; each run creates and drops its own database and roles.
 
