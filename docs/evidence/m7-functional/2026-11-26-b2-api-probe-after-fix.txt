@@ -1,0 +1,9 @@
+probe 1: post=202 transitions=[(0.272, ('parsing', False)), (0.584, ('ready', True))] ready_but_unsearchable=0
+probe 2: post=202 transitions=[(0.238, ('queued', False)), (0.521, ('ready', True))] ready_but_unsearchable=0
+probe 3: post=202 transitions=[(0.324, ('queued', False)), (0.679, ('ready', True))] ready_but_unsearchable=0
+probe 4: post=202 transitions=[(0.318, ('queued', False)), (0.708, ('ready', True))] ready_but_unsearchable=0
+probe 5: post=202 transitions=[(0.374, ('queued', False)), (0.833, ('ready', True))] ready_but_unsearchable=0
+probe 6: post=202 transitions=[(0.473, ('parsing', False)), (0.936, ('ready', True))] ready_but_unsearchable=0
+probe 7: post=202 transitions=[(0.601, ('queued', False)), (1.118, ('ready', True))] ready_but_unsearchable=0
+probe 8: post=202 transitions=[(0.56, ('parsing', False)), (1.174, ('ready', True))] ready_but_unsearchable=0
+TOTAL ready_but_unsearchable observations: 0

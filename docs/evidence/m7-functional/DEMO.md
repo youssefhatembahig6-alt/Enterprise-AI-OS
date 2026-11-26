@@ -54,13 +54,13 @@ Open http://localhost:13000 (app) and http://localhost:18025 (Mailpit inbox). Th
 1. Still as finance.reader, choose source **Contracts (clauses and expiry)** and ask `When do our contracts expire?`
 2. Expected: Red Sea expires 30 June 2026; Aswan's initial term ends 31 March 2027, with renewal notice due by 31 December 2026. The restricted NileCloud licence isn't mentioned.
 3. Open an Aswan citation: the contract passage with "text hash verified".
-4. Known issue (B3): the line under "Verified against sources" wrongly talks about a "query result". Mention it if anyone asks.
+4. The line under "Verified against sources" describes the contract checks: exact cited passages, access re-checked, dates and terms re-derived by fixed rules, no model.
 5. Sign out.
 
 ## 6. Upload, answer, revoke (4 minutes)
 
 1. Sign in as **access.admin@niletech.example**. In **Documents → Upload**, choose `backend/fixtures/m7-acceptance/sales-territory-memo.md`. Set Department `sales` and Classification **Internal**. Leave Share with groups as `all-staff` (it's pre-filled; don't type it again). Click **Upload**.
-   Known issue (B2): the label can say "Not searchable" until you sign in again. The document is indexed.
+   The label goes from "Ingesting (…)" to **Searchable** without a reload.
 2. Open a **second tab** at http://localhost:13000 and sign in as **sales.reader** there. Source **Documents you can access**, ask: `What is the quarterly visit target for the Delta territory?`
    Expected: verified answer, *"48 customer visits per field representative [1]"*. Click [1] to see the exact passage.
 3. Back in the admin tab: **Administration → Users**. In **Sales Reader**'s row, clear the groups field (`all-staff`) and click the **Save** next to it.

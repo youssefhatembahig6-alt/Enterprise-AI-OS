@@ -103,6 +103,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm test -w @eaios/web
       - run: npm run build
 
   desktop:

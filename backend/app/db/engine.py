@@ -58,15 +58,22 @@ _SET_CONTEXT = text(
 
 @contextmanager
 def tenant_transaction(
-    engine: Engine, tenant_id: UUID, user_id: UUID | None = None
+    engine: Engine, tenant_id: UUID, user_id: UUID | None = None, *, snapshot: bool = False
 ) -> Iterator[Connection]:
     """Open a transaction bound to a trusted tenant (and optionally user) identity.
 
     ``tenant_id`` must come from a verified source (a validated session token or
     the restricted login lookup), never from request JSON or headers.
+
+    ``snapshot=True`` runs the transaction at REPEATABLE READ, so every statement in it
+    sees one snapshot. Use it for reads that combine several statements into one answer
+    (for example a document's ``active_generation`` and its version ``status``): under the
+    default READ COMMITTED a concurrent commit could land between them.
     """
 
     with engine.begin() as conn:
+        if snapshot:  # must be the first statement of the transaction
+            conn.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
         conn.execute(
             _SET_CONTEXT,
             {"tenant_id": str(tenant_id), "user_id": str(user_id) if user_id else ""},

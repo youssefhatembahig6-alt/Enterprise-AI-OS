@@ -19,3 +19,4 @@ var/
 ml/gpu-feasibility/**/*.zip
 ml/gpu-feasibility/**/vllm-*.log
 apps/desktop/smoke-report*.json
+dist-test/

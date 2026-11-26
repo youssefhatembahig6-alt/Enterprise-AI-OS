@@ -59,6 +59,8 @@ This pass replaces the planned M7 dataset expansion. It checks what a user can s
 
 ### B2 — A new upload can show "Not searchable" until the page is reloaded (low)
 
+**Fixed** on branch `fix/m7-demo-b2-b3`: cause confirmed, both reads now share one snapshot. See [the fix record](2026-11-26-b2-b3-fix.md).
+
 `GET /api/v1/documents` can briefly report `status: "ready"` with `searchable: false` for a document whose ingestion has just committed. `DocumentsPanel` polls only while the status is `queued`, `parsing` or `indexing`, so it stops on that response and keeps the stale label.
 
 1. As `access.admin`, upload any small Markdown file with valid sharing (fake model, so ingestion is fast).
@@ -68,6 +70,8 @@ This pass replaces the planned M7 dataset expansion. It checks what a user can s
 Likely cause (not confirmed with a debugger): `DocumentService._describe` (`backend/app/documents/ingest.py`) takes `active_generation` from the document row read by the list query, and `status` from `store.list_versions`, a separate statement. Under READ COMMITTED, the ingestion commit can land between the two reads. Possible fixes: read both in one statement or snapshot, or have the UI keep polling while `ready && !searchable && permission_state == "verified"`.
 
 ### B3 — Contract answers show the SQL-report warning text
+
+**Fixed** on branch `fix/m7-demo-b2-b3`. See [the fix record](2026-11-26-b2-b3-fix.md).
 
 `verificationText()` in `apps/web/src/ReportPanel.tsx` recognises `answer_quotes_verified_dev_checked` and `narrative == "verified"`. Every other label falls through to the SQL-report warning. The legal pack's label `legal_facts_extracted_and_rechecked` (`backend/app/legal/workflow.py`) therefore makes a correctly verified contract answer show, in **warning** style: *"Figures verified exactly against the query result. No written summary is shown because it could not be verified."* There is no query result and no withheld summary.
 
