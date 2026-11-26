@@ -1,0 +1,467 @@
+{
+  "backend": {
+    "cuda": "13.0",
+    "device": "cuda",
+    "device_name": "Tesla T4",
+    "torch": "2.14.1+cu130",
+    "transformers": "4.56.2"
+  },
+  "code_commit": "4f06c2597628d376ae242bb3659aaabd63c25193",
+  "comparison": {
+    "examples": [
+      {
+        "abs_diff": 4.470348358154297e-08,
+        "actual": 0.011061468161642551,
+        "decision_matches": true,
+        "hypothesis": "The capital of France is Paris.",
+        "premise": "The capital of France is Berlin.",
+        "published": 0.011061512865126133,
+        "timed_passes": [
+          {
+            "abs_diff": 4.470348358154297e-08,
+            "actual": 0.011061468161642551,
+            "decision_matches": true,
+            "latency_ms": 20.259339000176624,
+            "pass": 1,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 4.470348358154297e-08,
+            "actual": 0.011061468161642551,
+            "decision_matches": true,
+            "latency_ms": 19.22762699996383,
+            "pass": 2,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 4.470348358154297e-08,
+            "actual": 0.011061468161642551,
+            "decision_matches": true,
+            "latency_ms": 18.438220000007277,
+            "pass": 3,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 4.470348358154297e-08,
+            "actual": 0.011061468161642551,
+            "decision_matches": true,
+            "latency_ms": 21.440051000126914,
+            "pass": 4,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 4.470348358154297e-08,
+            "actual": 0.011061468161642551,
+            "decision_matches": true,
+            "latency_ms": 25.97649399990587,
+            "pass": 5,
+            "valid_score": true,
+            "within_tolerance": true
+          }
+        ],
+        "valid_score": true,
+        "warmup_latency_ms": 805.3659170000174,
+        "within_tolerance": true
+      },
+      {
+        "abs_diff": 3.5762786865234375e-07,
+        "actual": 0.6473636031150818,
+        "decision_matches": true,
+        "hypothesis": "I am in United States.",
+        "premise": "I am in California",
+        "published": 0.6473632454872131,
+        "timed_passes": [
+          {
+            "abs_diff": 3.5762786865234375e-07,
+            "actual": 0.6473636031150818,
+            "decision_matches": true,
+            "latency_ms": 19.859902000007423,
+            "pass": 1,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 3.5762786865234375e-07,
+            "actual": 0.6473636031150818,
+            "decision_matches": true,
+            "latency_ms": 23.354072000074666,
+            "pass": 2,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 3.5762786865234375e-07,
+            "actual": 0.6473636031150818,
+            "decision_matches": true,
+            "latency_ms": 19.39147400003094,
+            "pass": 3,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 3.5762786865234375e-07,
+            "actual": 0.6473636031150818,
+            "decision_matches": true,
+            "latency_ms": 21.802455999932135,
+            "pass": 4,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 3.5762786865234375e-07,
+            "actual": 0.6473636031150818,
+            "decision_matches": true,
+            "latency_ms": 18.763994999972056,
+            "pass": 5,
+            "valid_score": true,
+            "within_tolerance": true
+          }
+        ],
+        "valid_score": true,
+        "warmup_latency_ms": 35.78347399979975,
+        "within_tolerance": true
+      },
+      {
+        "abs_diff": 8.940696716308594e-08,
+        "actual": 0.12901724874973297,
+        "decision_matches": true,
+        "hypothesis": "I am in California.",
+        "premise": "I am in United States",
+        "published": 0.1290171593427658,
+        "timed_passes": [
+          {
+            "abs_diff": 8.940696716308594e-08,
+            "actual": 0.12901724874973297,
+            "decision_matches": true,
+            "latency_ms": 19.296685999961483,
+            "pass": 1,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 8.940696716308594e-08,
+            "actual": 0.12901724874973297,
+            "decision_matches": true,
+            "latency_ms": 21.29234200015162,
+            "pass": 2,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 8.940696716308594e-08,
+            "actual": 0.12901724874973297,
+            "decision_matches": true,
+            "latency_ms": 23.997117000135404,
+            "pass": 3,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 8.940696716308594e-08,
+            "actual": 0.12901724874973297,
+            "decision_matches": true,
+            "latency_ms": 25.446071000033044,
+            "pass": 4,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 8.940696716308594e-08,
+            "actual": 0.12901724874973297,
+            "decision_matches": true,
+            "latency_ms": 14.885451000054672,
+            "pass": 5,
+            "valid_score": true,
+            "within_tolerance": true
+          }
+        ],
+        "valid_score": true,
+        "warmup_latency_ms": 27.54872900004557,
+        "within_tolerance": true
+      },
+      {
+        "abs_diff": 0.0,
+        "actual": 0.8969419002532959,
+        "decision_matches": true,
+        "hypothesis": "A person is outdoors, on a horse.",
+        "premise": "A person on a horse jumps over a broken down airplane.",
+        "published": 0.8969419002532959,
+        "timed_passes": [
+          {
+            "abs_diff": 0.0,
+            "actual": 0.8969419002532959,
+            "decision_matches": true,
+            "latency_ms": 19.655646000046545,
+            "pass": 1,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 0.0,
+            "actual": 0.8969419002532959,
+            "decision_matches": true,
+            "latency_ms": 22.280143999978463,
+            "pass": 2,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 0.0,
+            "actual": 0.8969419002532959,
+            "decision_matches": true,
+            "latency_ms": 25.33447900009378,
+            "pass": 3,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 0.0,
+            "actual": 0.8969419002532959,
+            "decision_matches": true,
+            "latency_ms": 22.687855000185664,
+            "pass": 4,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 0.0,
+            "actual": 0.8969419002532959,
+            "decision_matches": true,
+            "latency_ms": 15.017807000049288,
+            "pass": 5,
+            "valid_score": true,
+            "within_tolerance": true
+          }
+        ],
+        "valid_score": true,
+        "warmup_latency_ms": 25.9957379998923,
+        "within_tolerance": true
+      },
+      {
+        "abs_diff": 4.470348358154297e-08,
+        "actual": 0.18462489545345306,
+        "decision_matches": true,
+        "hypothesis": "The boy skates down the sidewalk on a red bridge",
+        "premise": "A boy is jumping on skateboard in the middle of a red bridge.",
+        "published": 0.18462494015693665,
+        "timed_passes": [
+          {
+            "abs_diff": 4.470348358154297e-08,
+            "actual": 0.18462489545345306,
+            "decision_matches": true,
+            "latency_ms": 19.985717000054137,
+            "pass": 1,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 4.470348358154297e-08,
+            "actual": 0.18462489545345306,
+            "decision_matches": true,
+            "latency_ms": 21.709809000185487,
+            "pass": 2,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 4.470348358154297e-08,
+            "actual": 0.18462489545345306,
+            "decision_matches": true,
+            "latency_ms": 26.292758999943544,
+            "pass": 3,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 4.470348358154297e-08,
+            "actual": 0.18462489545345306,
+            "decision_matches": true,
+            "latency_ms": 24.490740999908667,
+            "pass": 4,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 4.470348358154297e-08,
+            "actual": 0.18462489545345306,
+            "decision_matches": true,
+            "latency_ms": 15.022090000002208,
+            "pass": 5,
+            "valid_score": true,
+            "within_tolerance": true
+          }
+        ],
+        "valid_score": true,
+        "warmup_latency_ms": 21.379195999998046,
+        "within_tolerance": true
+      },
+      {
+        "abs_diff": 2.3283064365386963e-09,
+        "actual": 0.005031012464314699,
+        "decision_matches": true,
+        "hypothesis": "A blond man wearing a brown shirt is reading a book.",
+        "premise": "A man with blond-hair, and a brown shirt drinking out of a public water fountain.",
+        "published": 0.005031010136008263,
+        "timed_passes": [
+          {
+            "abs_diff": 2.3283064365386963e-09,
+            "actual": 0.005031012464314699,
+            "decision_matches": true,
+            "latency_ms": 22.972141999844098,
+            "pass": 1,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 2.3283064365386963e-09,
+            "actual": 0.005031012464314699,
+            "decision_matches": true,
+            "latency_ms": 19.326331999991453,
+            "pass": 2,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 2.3283064365386963e-09,
+            "actual": 0.005031012464314699,
+            "decision_matches": true,
+            "latency_ms": 32.20897699998204,
+            "pass": 3,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 2.3283064365386963e-09,
+            "actual": 0.005031012464314699,
+            "decision_matches": true,
+            "latency_ms": 24.060581000185266,
+            "pass": 4,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 2.3283064365386963e-09,
+            "actual": 0.005031012464314699,
+            "decision_matches": true,
+            "latency_ms": 15.469791999976223,
+            "pass": 5,
+            "valid_score": true,
+            "within_tolerance": true
+          }
+        ],
+        "valid_score": true,
+        "warmup_latency_ms": 25.81940000004579,
+        "within_tolerance": true
+      },
+      {
+        "abs_diff": 1.1175870895385742e-07,
+        "actual": 0.05432360991835594,
+        "decision_matches": true,
+        "hypothesis": "Manny was a fan of Mark Wahlberg.",
+        "premise": "Mark Wahlberg was a fan of Manny.",
+        "published": 0.05432349815964699,
+        "timed_passes": [
+          {
+            "abs_diff": 1.1175870895385742e-07,
+            "actual": 0.05432360991835594,
+            "decision_matches": true,
+            "latency_ms": 21.6242809999585,
+            "pass": 1,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 1.1175870895385742e-07,
+            "actual": 0.05432360991835594,
+            "decision_matches": true,
+            "latency_ms": 19.276350999916758,
+            "pass": 2,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 1.1175870895385742e-07,
+            "actual": 0.05432360991835594,
+            "decision_matches": true,
+            "latency_ms": 37.28467699988869,
+            "pass": 3,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 1.1175870895385742e-07,
+            "actual": 0.05432360991835594,
+            "decision_matches": true,
+            "latency_ms": 25.97202000015386,
+            "pass": 4,
+            "valid_score": true,
+            "within_tolerance": true
+          },
+          {
+            "abs_diff": 1.1175870895385742e-07,
+            "actual": 0.05432360991835594,
+            "decision_matches": true,
+            "latency_ms": 15.096698999968794,
+            "pass": 5,
+            "valid_score": true,
+            "within_tolerance": true
+          }
+        ],
+        "valid_score": true,
+        "warmup_latency_ms": 23.582081000085964,
+        "within_tolerance": true
+      }
+    ],
+    "max_abs_diff": 3.5762786865234375e-07,
+    "passed": true,
+    "tolerance": 0.005
+  },
+  "first_pass_latency_ms": [
+    805.3659170000174,
+    35.78347399979975,
+    27.54872900004557,
+    25.9957379998923,
+    21.379195999998046,
+    25.81940000004579,
+    23.582081000085964
+  ],
+  "foundation": {
+    "repo": "google/flan-t5-base",
+    "revision": "7bcac572ce56db69c1ea7c8af255c5d7c9672fc2"
+  },
+  "kind": "m7-hhem-model-card-smoke",
+  "latency_per_example": {
+    "excludes": "warm-up pass and model load",
+    "max_ms": 37.28467699988869,
+    "mean_ms": 21.691434171452784,
+    "n": 35,
+    "p50_ms": 21.440051000126914,
+    "p95_ms": 32.20897699998204,
+    "repeats": 5
+  },
+  "load_seconds": 19.97512301400002,
+  "model": "vectara/hallucination_evaluation_model",
+  "model_card_sha256": "85f87c95ca2ced124cc3a2f2ff27ea00874787d460b684ab12755b9eac0f677c",
+  "nvidia_driver": "580.82.07",
+  "platform": "Linux-6.6.159+-x86_64-with-glibc2.39",
+  "python": "3.13.16",
+  "revision": "de9a5e6ba9ba49531a022dba17e35ffeb2a6fad8",
+  "runtime": {
+    "colab": true,
+    "cuda": true,
+    "device_name": "Tesla T4",
+    "torch": "2.14.1+cu130"
+  },
+  "scorer_sha256": "9c2c4877ff7e8119213227f04c6176b9ae758f88022c60ec85811cc611a15cfb",
+  "smoke_version": "1.1.0",
+  "status": "passed",
+  "versions": {
+    "safetensors": "0.8.0",
+    "tokenizers": "0.22.2",
+    "transformers": "4.56.2"
+  }
+}

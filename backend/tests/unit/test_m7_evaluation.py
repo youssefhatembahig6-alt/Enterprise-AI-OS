@@ -2386,7 +2386,7 @@ def test_t4_notebook_is_clean_and_runs_the_pinned_smoke_test() -> None:
     nb = _smoke_notebook()
     assert nb["nbformat"] == 4 and nb["metadata"]["colab"]["gpuType"] == "T4"
     text = "".join("".join(c["source"]) for c in nb["cells"])
-    assert "PENDING" in text and "T4 GPU" in text
+    assert "T4 GPU" in text
     assert '"-m", "pip", "install", "-q", "-r", "requirements.txt"' in text
     assert '"smoke_model_card.py", "--out", str(report_path)' in text
     assert '"refs/pull/15/head"' in text
