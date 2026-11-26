@@ -7,7 +7,7 @@
     "dev": "vite --port 3000 --strictPort",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 3000",
-    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/"
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/verification.test.js"
   },
   "dependencies": {
     "@eaios/ui": "0.1.0",
