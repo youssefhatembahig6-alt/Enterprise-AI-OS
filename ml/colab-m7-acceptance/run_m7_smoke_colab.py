@@ -35,6 +35,7 @@ import time
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 os.environ.setdefault("M3_RUN_DIR", "/content/m7-run")
 HERE = Path(__file__).resolve().parent
@@ -147,22 +148,64 @@ def demo() -> Path:
     return target
 
 
+# Stream events that may legitimately carry no inference label (they relay model
+# output and citations; the run's mode is on the status and done events).
+UNLABELLED_OK = ("token", "citation")
+
+
+def inference_problems(events: list[dict[str, Any]]) -> list[str]:
+    """Every reason the report stream is not provably real-model (gateway) output.
+
+    Required: at least one ``status`` event; exactly one ``done`` event, and it is the
+    last event; an explicit ``inference: "gateway"`` on the done event (and
+    ``verification.inference_mode == "gateway"``) and on every status event. ``token``
+    and ``citation`` events may be unlabelled; any other event type must be labelled.
+    A label anywhere that is not ``gateway`` (for example ``fake``) is a problem.
+    Missing labels are never dropped, so one labelled event cannot vouch for the rest.
+    """
+    problems: list[str] = []
+    if not events:
+        return ["no report events"]
+    kinds = [e.get("event") for e in events]
+    if kinds.count("done") != 1:
+        problems.append(f"expected exactly one done event, found {kinds.count('done')}")
+    elif kinds[-1] != "done":
+        problems.append(f"done is not the last event (last is {kinds[-1]!r})")
+    if "status" not in kinds:
+        problems.append("no status events")
+    for i, event in enumerate(events):
+        kind = event.get("event")
+        data = event.get("data") if isinstance(event.get("data"), dict) else {}
+        label = data.get("inference")
+        if label is None and kind in UNLABELLED_OK:
+            continue
+        if label != "gateway":
+            problems.append(f"event {i} ({kind}): inference={label!r}, expected 'gateway'")
+        if kind == "done":
+            mode = (data.get("verification") or {}).get("inference_mode")
+            if mode != "gateway":
+                problems.append(f"event {i} (done): verification.inference_mode={mode!r}")
+    return problems
+
+
 def checks(evidence: Path) -> bool:
     log = json.loads(evidence.read_text())
     events = log["report"]["events"]
-    done = next(e["data"] for e in events if e["event"] == "done")
-    modes = sorted(
+    done = next((e["data"] for e in events if e["event"] == "done"), {})
+    problems = inference_problems(events)
+    labelled = sorted(
         {
-            e["data"]["inference"]
+            str(e["data"]["inference"])
             for e in events
-            if isinstance(e.get("data"), dict) and e["data"].get("inference")
+            if isinstance(e.get("data"), dict) and "inference" in e["data"]
         }
     )
     total = m3.get_json(f"{MAILPIT}/api/v1/messages")["total"]  # type: ignore[index]
     result = {
-        "report_outcome": done["outcome"],
-        "report_verification_label": done["verification"]["label"],
-        "report_inference_modes_seen": modes,
+        "report_outcome": done.get("outcome"),
+        "report_verification_label": (done.get("verification") or {}).get("label"),
+        "report_inference_labels_seen": labelled,
+        "report_inference_problems": problems,
         "report_seconds": log["report"]["seconds"],
         "final_status": log["final"]["status"],
         "final_version": log["final"]["version"],
@@ -171,8 +214,8 @@ def checks(evidence: Path) -> bool:
     }
     result["pass"] = (
         STEPS.get("m6_demo_exit") == 0
-        and done["outcome"] == "published"
-        and modes == ["gateway"]
+        and done.get("outcome") == "published"
+        and not problems
         and log["final"]["status"] == "delivered"
         and total == 1
     )

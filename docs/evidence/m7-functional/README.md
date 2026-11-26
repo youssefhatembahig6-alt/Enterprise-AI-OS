@@ -63,7 +63,7 @@ This pass replaces the planned M7 dataset expansion. It checks what a user can s
 
 1. As `access.admin`, upload any small Markdown file with valid sharing (fake model, so ingestion is fast).
 2. Poll `GET /api/v1/documents` every 50 ms from the moment the POST returns 202. Observed: `t=0.00 (ready, searchable=false)`, then `t=0.05 (ready, searchable=true)`. In the UI the label stayed "Not searchable" until the next sign-in.
-3. Also reproduced by `python3 scripts/m7_acceptance.py seed-legal`, which printed `searchable=False` for 2 of 3 contracts. Three seconds later all were `true`.
+3. Also reproduced by the first version of `python3 scripts/m7_acceptance.py seed-legal`, which printed `searchable=False` for 2 of 3 contracts. Three seconds later all were `true`. That version also counted any terminal status as success. Since the review fix, `seed-legal` exits 0 only when every expected contract is present exactly once, `ready` and `searchable`. It keeps waiting through ingestion and this B2 window, and it exits non-zero naming each missing, duplicated, failed or otherwise unready fixture (180 s deadline).
 
 Likely cause (not confirmed with a debugger): `DocumentService._describe` (`backend/app/documents/ingest.py`) takes `active_generation` from the document row read by the list query, and `status` from `store.list_versions`, a separate statement. Under READ COMMITTED, the ingestion commit can land between the two reads. Possible fixes: read both in one statement or snapshot, or have the UI keep polling while `ready && !searchable && permission_state == "verified"`.
 
@@ -100,11 +100,23 @@ Suggested fix: `aria-label={"Save groups of " + email}`, matching the roles butt
 
 All commands run from the repository root. They touch only the `eaios-m7acc` project. The disposable stack's secrets and fixture passwords live in `var/m7-acceptance/` (git-ignored, 0600) and are never printed.
 
+**Project pinning (review fix, PR #17).** Every Compose call the wrapper makes passes `-p eaios-m7acc`. The CLI flag wins over an inherited `COMPOSE_PROJECT_NAME`, over one inside an env file, and over the `name:` key. Child processes run without `COMPOSE_PROJECT_NAME`, `COMPOSE_FILE`, `COMPOSE_ENV_FILES`, `COMPOSE_PROJECT_DIRECTORY` and `COMPOSE_PATH_SEPARATOR`.
+
+The `compose --` passthrough refuses global `-p`/`--project-name`, `-f`/`--file`, `--env-file` and `--project-directory` (in every spelling) before Compose runs. It checks only options before the subcommand, so `run -p 8080:80` still publishes a port. A `DOCKER_COMPOSE` override carrying those flags is refused too.
+
+Before every Compose call, a read-only `docker compose config` check requires project `eaios-m7acc` and only `eaios-m7acc_*` volumes. To see what it resolves:
+
+```bash
+python3 scripts/m7_acceptance.py check-project   # read-only
+```
+
+Verified read-only on 26 November with `COMPOSE_PROJECT_NAME=eaios` inherited. Before the fix, `config` resolved to project `eaios` with `eaios_*` volumes (the reviewer's reproduction). After it, `check-project` and `compose -- config` resolve to `eaios-m7acc` with only `eaios-m7acc_*` volumes, also with `COMPOSE_FILE` and `COMPOSE_ENV_FILES` aimed at the normal stack. All nine override spellings exit 1 before Compose runs. No `up` or `down` was run against either stack. `backend/tests/unit/test_m7_acceptance_tooling.py` covers this in CI.
+
 ```bash
 python3 scripts/m7_acceptance.py init-env      # var/m7-acceptance/.env, MODEL_MODE=fake
 python3 scripts/m7_acceptance.py up            # build + start; web :13000, API :18000, Mailpit :18025
 python3 scripts/m7_acceptance.py seed          # users, NileTech business data, M3 corpus (waits for ingestion)
-python3 scripts/m7_acceptance.py seed-legal    # the three M5 legal contracts
+python3 scripts/m7_acceptance.py seed-legal    # the three M5 legal contracts; exit 0 only if all 3 are ready + searchable
 python3 scripts/m7_acceptance.py runners       # smoke_stack, m2 capture, m3 capture, m6 demo, desktop smoke
 ```
 
@@ -128,7 +140,7 @@ python3 scripts/m7_acceptance.py seed
 python3 scripts/m7_acceptance.py seed-legal
 ```
 
-To restore only the revoked user without a full reset: as `access.admin`, open **Administration → Users** and set `sales.reader`'s groups back to `all-staff`. `destroy` uses `-p eaios-m7acc` explicitly and never touches the owner's `eaios` project or its volumes. Remove the images with `docker image rm eaios-backend:m7acc eaios-web:m7acc eaios-backend-tests:m7acc` if wanted.
+To restore only the revoked user without a full reset: as `access.admin`, open **Administration → Users** and set `sales.reader`'s groups back to `all-staff`. `destroy`, like every wrapper command, is pinned to `-p eaios-m7acc` and checked read-only first, so it never touches the owner's `eaios` project or its volumes. Remove the images with `docker image rm eaios-backend:m7acc eaios-web:m7acc eaios-backend-tests:m7acc` if wanted.
 
 ## Colab real-model smoke test
 
@@ -150,5 +162,11 @@ To restore only the revoked user without a full reset: as `access.admin`, open *
 4. Action safety on the real-model report: a draft to `board.member` was refused `422 action_blocked`; sending with the pre-edit v1 approval, a forged approval and a reused approval each returned `409 approval_rejected`.
 5. Delivery: v2 approved and sent, final status `delivered` (`smtp_accepted`, 1 attempt). The fresh Mailpit database holds **exactly one** message in total, to `finance.reader@niletech.example`, subject "Verified report: Fulfilled sales, Q1 2026 (reviewed)", whose body carries the verified figures, the evidence id and the dataset fingerprint.
 6. Secret scan: the notebook's own scan passed before the bundle was written. A second scan here (JWT, bearer, GitHub/Hugging Face token patterns, passwords, non-fixture emails, non-loopback addresses) found only package version strings.
+
+**Validator tightened after the run (review fix, PR #17).** The validator that produced the bundle's `checks.json` collected the set of inference labels and dropped events without one. In principle, one gateway-labelled event could have satisfied it. `inference_problems()` now requires:
+- an explicit `inference: "gateway"` on the terminal `done` event (plus `verification.inference_mode == "gateway"`) and on every `status` event;
+- exactly one `done`, coming last, and at least one `status` event.
+
+`token` and `citation` events may stay unlabelled, but any label must be `gateway`, and any other event type must be labelled. Re-validated on the **unchanged** saved evidence `m6-demo-real-model.json`, the run still passes: 10 status events and 1 done, all labelled `gateway`, no problems. The saved fake-model stream and synthetic mutations (one label removed, only the done labelled, only one status labelled, done mode missing, no done, done not last, unlabelled error, token labelled `fake`) are all rejected (`backend/tests/unit/test_m7_acceptance_tooling.py`). The committed bundle files, including its original `checks.json`, are left as produced.
 
 Reproduce: open https://colab.research.google.com/github/youssefhatembahig6-alt/Enterprise-AI-OS/blob/feature/m7-functional-acceptance/ml/colab-m7-acceptance/m7_real_model_smoke.ipynb, choose **Runtime → Change runtime type → T4 GPU**, run cells 1–5 in order (cell 4 runs `ml/colab-m7-acceptance/run_m7_smoke_colab.py all`; cell 5 downloads `m7-smoke-evidence-<UTC stamp>.zip`). If cell 4 fails, the last `+ …` command or the `SystemExit` message names the failing step.
