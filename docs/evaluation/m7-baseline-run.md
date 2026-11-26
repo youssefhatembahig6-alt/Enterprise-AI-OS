@@ -36,48 +36,48 @@ Private artifact SHA-256s (files not published): gateway bundle `59cd43c5…`, `
 
 ## 3. Comparison (37 dev pairs; "unsupported" is the positive class)
 
-| Baseline | TP / FP / FN / TN | Unsupported precision | Unsupported recall | Unsupported F1 | False-support rate (Wilson 95% CI) | ECE | MCE | Brier | Median latency | p95 latency |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Zero-shot DeBERTa | 18 / 3 / 1 / 15 | 85.7% | 94.7% | **90.0%** | **1/19 = 5.3%** [0.9%, 24.6%] | 0.096 | 0.744 | 0.088 | 30.5 ms | 396.8 ms |
-| Qwen3-8B judge | 19 / 1 / 0 / 17 | 95.0% | 100.0% | **97.4%** | **0/19 = 0.0%** [0.0%, 16.8%] | 0.027* | 0.050* | 0.027* | 806.5 ms | 25,791.9 ms |
-| HHEM-2.1-open | 18 / 2 / 1 / 16 | 90.0% | 94.7% | **92.3%** | **1/19 = 5.3%** [0.9%, 24.6%] | 0.118 | 0.454 | 0.070 | 14.7 ms | 23.4 ms |
+| Baseline | TP / FP / FN / TN | Unsupported precision | Unsupported recall | Unsupported F1 | False-support rate (Wilson 95% CI) | ECE | Brier | Median latency | p95 latency |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Zero-shot DeBERTa | 18 / 3 / 1 / 15 | 85.7% | 94.7% | **90.0%** | **1/19 = 5.3%** [0.9%, 24.6%] | 0.096 | 0.088 | 30.5 ms | 396.8 ms |
+| Qwen3-8B judge | 19 / 1 / 0 / 17 | 95.0% | 100.0% | **97.4%** | **0/19 = 0.0%** [0.0%, 16.8%] | 0.027* | 0.027* | 806.5 ms | 25,791.9 ms |
+| HHEM-2.1-open | 18 / 2 / 1 / 16 | 90.0% | 94.7% | **92.3%** | **1/19 = 5.3%** [0.9%, 24.6%] | 0.118 | 0.070 | 14.7 ms | 23.4 ms |
 
 \* The judge outputs hard labels (P(supported) is 1 or 0), so its calibration numbers only restate its accuracy. They are not probability calibration.
 
-The judge returned 0 unparseable answers. F1 = 2TP / (2TP + FP + FN). Latency is nearest-rank over the 37 calls.
+The judge returned 0 unparseable answers. F1 = 2TP / (2TP + FP + FN). Latency is nearest-rank over the 37 calls. The maximum calibration error is kept in the private reports only: with 37 pairs a calibration bin can hold a single pair, so that figure can equal one pair's exact score.
 
 ### What each latency includes
 * **DeBERTa:** wall time around one `GatewayModelClient.check()` call from the runner, through **loopback HTTP** to the gateway: JSON, auth, tokenization and the fp16 forward pass on the T4, with vLLM resident on the same GPU.
 * **Qwen judge:** wall time around one **streamed chat call** through loopback: prompt processing and up to 8 output tokens under vLLM (AWQ, 0.75 GPU memory).
 * **HHEM:** wall time around one in-process `predict()` call, **CUDA-synchronised, no HTTP**, on a dedicated T4 runtime. It excludes download and model load.
-* **Cold starts dominate the p95 values.** The runner has no warm-up pass, and with 37 calls the p95 is the second-slowest call:
-  - Qwen's first two calls took 33.6 s and 25.8 s, and one later call 5.3 s; all others were around 0.8 s.
-  - DeBERTa's first two calls took 740 ms and 397 ms; the rest were around 30 ms.
-  - HHEM's first call took 422 ms; the rest were around 15 ms.
+* **How p95 arises in this run (observations).** Latency is nearest-rank over 37 calls, so p95 is the 36th-smallest value. The runner had **no warm-up pass**.
+  - **DeBERTa:** the first two calls were the slowest (739.8 ms and 396.8 ms). The second call determines the p95 (396.8 ms).
+  - **Qwen judge:** the first two calls were the slowest (33.6 s and 25.8 s). The second call determines the p95 (25,791.9 ms). One later call also exceeded 1 s.
+  - **HHEM:** the first call was the maximum (422.0 ms). The p95 (23.4 ms) is determined by call 24.
+  - These early spikes are observations; this run did not isolate their cause.
 
-  The medians are the representative per-claim cost. The three scopes differ (HTTP vs in-process), so compare latency within a scope, not across scopes.
+  The three measurement scopes differ (loopback HTTP vs in-process), so compare latency within a scope, not across scopes.
 
 ## 4. Error patterns (aggregate)
 
 | Baseline | False passes (unsupported judged supported) | False alarms (supported judged unsupported) |
 | --- | --- | --- |
-| Zero-shot DeBERTa | 1, a **unit** edit (HR leave policy), at P(supported) 0.744 | 3 supported originals (2 HR leave policy, 1 customer records) |
-| Qwen3-8B judge | 0 | 1 supported original (customer records) |
-| HHEM-2.1-open | 1, an **entity** edit (product catalogue), at P(supported) 0.751 | 2 supported originals (1 HR leave policy, 1 customer records) |
+| Zero-shot DeBERTa | 1 of 19 | 3 of 18 |
+| Qwen3-8B judge | 0 of 19 | 1 of 18 |
+| HHEM-2.1-open | 1 of 19 | 2 of 18 |
 
-* **Number, polarity and scope edits** (8 + 1 + 1 pairs) were caught by all three models.
-* **Accuracy on unit edits** (6 pairs) was 5/6 for DeBERTa and 6/6 for the other two. On entity edits (3 pairs) it was 2/3 for HHEM and 3/3 for the other two.
-* **Most errors are false alarms on supported originals**, and they cluster in two families: customer records, where all three models rejected the same CSV-row claim, and the HR leave policy, where HHEM's false alarm is also one of DeBERTa's. Several of DeBERTa's false alarms had very low P(supported) (0.005 and 0.038), so they come from misreading the evidence, not from a borderline threshold.
-* **Both false passes were confident** (P(supported) of about 0.75), so a higher threshold alone would not reliably remove them. Threshold choice is out of scope here.
+* **False passes:** the two observed false passes (one each for DeBERTa and HHEM) were both value substitutions (unit or entity edits). All ten number, polarity and scope edits were caught by all three models.
+* **False alarms:** all of them were on supported originals, and some were shared across models. False alarms outnumber false passes for every model.
+* **Thresholds:** this run used each baseline's existing decision rule only. It did not test alternative thresholds, and threshold selection is a separate, dev-only step.
 
 ## 5. What 37 pairs can establish
 
-* **The false-support intervals overlap heavily.** With only 19 unsupported claims, even the judge's 0/19 has a 95% upper bound of **16.8%**, and one false pass gives [0.9%, 24.6%]. The models differ by **one** false pass, far less than the roughly 5 false passes needed before Wilson intervals separate.
-* **These are per-model descriptions of a small sample, not a paired significance test.** The ranking (judge ≥ HHEM ≈ DeBERTa on F1) is not established.
-* **The pairs are template edits** from six dev families, with 1–9 pairs per change type. Errors can cluster within a family, as in customer records. Results describe these change types, not live answer sentences.
+* **The observed Wilson 95% intervals for the false-support rate overlap.** DeBERTa and HHEM are at 1/19 [0.9%, 24.6%]; the judge is at 0/19 [0.0%, 16.8%]. Even 0/19 false passes still has an upper bound of **16.8%**.
+* **These are per-model descriptions of a small sample, not a paired significance test.** No ranking of the three baselines is established.
+* **The pairs are template edits** from six dev document families. Some change types have only one or a few pairs, and errors can cluster within a family. Results describe these change types, not live answer sentences.
 * **Agreement was perfect** (kappa 1.00). The labels are unambiguous, but the pairs may be easy and under-represent hard cases.
 * **These are dev results.** They must not be used to pick a model and then report it as final. The release claim needs the blind release set (coordinator procedure in `m7-v3-corpus.md`).
-* **What the sample does show:** all three pinned baselines run end to end in the approved Colab setup with verified identities and digests. They catch most single-fact edits. Their concrete failure cases (unit, entity, false alarms on supported originals) are worth targeting in the larger human-labelled dev set and in fine-tuning, both later steps.
+* **What the sample does show:** all three pinned baselines run end to end in the approved Colab setup with verified identities and digests, and they catch most single-fact edits. The observed failure types (value substitutions passed, supported originals rejected) are candidates to examine in a larger human-labelled dev set, which is a separate assignment.
 
 ## 6. Reproduction
 
