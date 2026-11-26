@@ -334,9 +334,13 @@ class DocumentService:
         if self._dispatch is not None:
             self._dispatch(job_id, ctx.tenant_id)
 
+    # Listing reads the document row, the access checks and the versions in separate
+    # statements. They share one snapshot so an ingestion commit can never be seen half
+    # applied (B2: status "ready" from after the commit with active_generation from before
+    # it reported a just-indexed document as "Not searchable", and the UI stopped polling).
     def visible(self, ctx: AccessContext) -> list[dict[str, Any]]:
         out = []
-        with tenant_transaction(self._engine, ctx.tenant_id, ctx.user_id) as conn:
+        with tenant_transaction(self._engine, ctx.tenant_id, ctx.user_id, snapshot=True) as conn:
             for doc in store.list_documents(conn):
                 if doc.deleted_at is not None:
                     continue
@@ -346,7 +350,7 @@ class DocumentService:
         return out
 
     def get(self, ctx: AccessContext, document_id: UUID) -> dict[str, Any]:
-        with tenant_transaction(self._engine, ctx.tenant_id, ctx.user_id) as conn:
+        with tenant_transaction(self._engine, ctx.tenant_id, ctx.user_id, snapshot=True) as conn:
             doc = store.load_document(conn, document_id)
             described = self._describe(conn, ctx, doc) if doc and doc.deleted_at is None else None
         if described is None:

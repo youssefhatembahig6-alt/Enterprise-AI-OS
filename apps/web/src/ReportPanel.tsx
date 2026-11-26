@@ -1,6 +1,7 @@
 import { Alert, Button, Card, StatusPill } from "@eaios/ui";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "./api";
+import { verificationText } from "./verification";
 import {
   cancelReport,
   fetchDocumentCitation,
@@ -111,32 +112,6 @@ function apply(view: RunView, event: ReportEvent): RunView {
       break; // reserved for wave 3; never sent in M2
   }
   return next;
-}
-
-function verificationText(done: DonePayload): { tone: "ok" | "warn"; text: string } | null {
-  const v = done.verification;
-  if (!v) return null;
-  if (v.label === "answer_quotes_verified_dev_checked") {
-    return {
-      tone: "ok",
-      text: "Every sentence quotes an exact passage of a document you can access (re-checked at publication); claims checked by the development baseline checker (not the final trained checker).",
-    };
-  }
-  if (v.narrative === "verified") {
-    return {
-      tone: "ok",
-      text: "Figures verified exactly against the query result; summary checked by the development baseline checker (not the final trained checker).",
-    };
-  }
-  const why: Record<string, string> = {
-    withheld_checker_unavailable: "the claim checker was unavailable",
-    withheld_failed_verification: "no summary passed verification",
-    withheld_model_unavailable: "the model was unavailable for the summary",
-  };
-  return {
-    tone: "warn",
-    text: `Figures verified exactly against the query result. No written summary is shown because ${why[v.narrative] ?? "it could not be verified"}.`,
-  };
 }
 
 function EvidencePanel({

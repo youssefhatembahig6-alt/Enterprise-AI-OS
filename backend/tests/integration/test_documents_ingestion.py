@@ -242,6 +242,117 @@ def test_bad_files_end_with_a_useful_status(
     assert qdrant_count(app_client, document_id) == 0
 
 
+# -- B2: the document list never shows an ingestion commit half applied ---------------------
+
+
+def listed(client: TestClient, token: str, document_id: str) -> dict[str, Any] | None:
+    response = client.get("/api/v1/documents", headers=auth(token))
+    assert response.status_code == 200, response.text
+    return next((d for d in response.json() if d["document_id"] == document_id), None)
+
+
+@pytest.mark.parametrize("endpoint", ["list", "detail"])
+def test_activation_committing_mid_request_is_never_reported_ready_but_unsearchable(
+    app_client: TestClient,
+    ingest_db: DbHarness,
+    monkeypatch: pytest.MonkeyPatch,
+    endpoint: str,
+) -> None:
+    """B2 (docs/evidence/m7-functional/README.md). ``_describe`` reads the document row
+    (``active_generation``) and then, in a later statement, the versions (``status``). The
+    activation transaction sets both. Under READ COMMITTED a commit between the two reads
+    produced ``ready`` + ``searchable: false``, a terminal state for the UI's poller, so a
+    correctly indexed upload kept the label "Not searchable" until the next sign-in.
+
+    The interleaving is forced deterministically: the job is held just before activation,
+    then committed from inside the request, between the two reads."""
+
+    from app.documents import store
+
+    crash_at(app_client, "before_activate")
+    document_id = finance(ingest_db, app_client)
+    job_id, tenant_id = job_for(ingest_db, document_id)
+    wait_crashed(ingest_db, job_id)
+    expire_lease(ingest_db, job_id)
+    runner(app_client).fault = None
+
+    real_list_versions = store.list_versions
+    committed: list[str] = []
+
+    def commit_activation_first(conn: Any, doc_id: uuid.UUID) -> Any:
+        if str(doc_id) == document_id and not committed:
+            committed.append(runner(app_client).run_job(job_id, tenant_id))
+        return real_list_versions(conn, doc_id)
+
+    monkeypatch.setattr(store, "list_versions", commit_activation_first)
+    admin = login(app_client, ingest_db, "niletech/access-admin")
+    if endpoint == "list":
+        first = listed(app_client, admin, document_id)
+    else:
+        first = app_client.get(f"/api/v1/documents/{document_id}", headers=auth(admin)).json()
+    assert committed == ["ready"], "the activation did not commit inside the request"
+    assert first is not None
+    # One snapshot: the state from before the commit, still in progress, so the UI keeps
+    # polling. Never the mixed ("ready", False).
+    assert (first["status"], first["searchable"]) == ("indexing", False)
+
+    monkeypatch.setattr(store, "list_versions", real_list_versions)
+    after = listed(app_client, admin, document_id)
+    assert after is not None
+    assert (after["status"], after["searchable"], after["permission_state"]) == (
+        "ready",
+        True,
+        "verified",
+    )
+
+
+def test_unsearchable_states_are_still_reported(
+    app_client: TestClient, ingest_db: DbHarness
+) -> None:
+    """The B2 fix keeps the genuine reasons a document is not searchable: sharing not
+    set, failed ingestion, and a reader whose access was revoked."""
+
+    admin = login(app_client, ingest_db, "niletech/access-admin")
+    reader = login(app_client, ingest_db, "niletech/finance-reader")
+
+    unshared = upload(app_client, ingest_db, corpus_doc("finance-q1-commentary"), permissions=False)
+    failed_body = {
+        "filename": "empty.md",
+        "content_base64": base64.b64encode(b"\n\n").decode(),
+        "department": "it",
+        "permissions": {"classification": "internal", "grants": [{"group": "all-staff"}]},
+    }
+    response = app_client.post("/api/v1/documents", json=failed_body, headers=auth(admin))
+    assert response.status_code == 202
+    failed = response.json()["document_id"]
+    shared = finance(ingest_db, app_client)
+    wait_status(ingest_db, unshared, {"ready"})
+    wait_status(ingest_db, failed, {"failed"})
+    wait_status(ingest_db, shared, {"ready"})
+
+    no_sharing = listed(app_client, admin, unshared)
+    assert no_sharing is not None
+    assert (no_sharing["status"], no_sharing["permission_state"], no_sharing["searchable"]) == (
+        "ready",
+        "unknown",
+        False,
+    )
+    broken = listed(app_client, admin, failed)
+    assert broken is not None
+    assert (broken["status"], broken["searchable"], broken["error"]["code"]) == (
+        "failed",
+        False,
+        "empty_document",
+    )
+
+    assert listed(app_client, reader, unshared) is None
+    granted = listed(app_client, reader, shared)
+    assert granted is not None and granted["searchable"] is True
+    owner_exec(ingest_db, "DELETE FROM resource_grants WHERE resource_id = :d", {"d": shared})
+    assert listed(app_client, reader, shared) is None
+    assert app_client.get(f"/api/v1/documents/{shared}", headers=auth(reader)).status_code == 404
+
+
 def test_unsupported_type_is_rejected_at_upload(
     app_client: TestClient, ingest_db: DbHarness
 ) -> None:
