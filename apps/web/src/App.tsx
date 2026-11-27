@@ -1,8 +1,12 @@
-import { Alert, Button, Card, Field, StatusPill, type StatusTone } from "@eaios/ui";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Alert, Button, Card, StatusPill, type StatusTone } from "@eaios/ui";
+import { useCallback, useEffect, useReducer, useState, type FormEvent } from "react";
 import { admin, type TenantSettings } from "./admin";
-import { ActionsPanel, type ReportSource } from "./ActionsPanel";
+import { ActionsPanel } from "./ActionsPanel";
+import { emailSourceReducer, INITIAL_EMAIL_SOURCE, newerThanPinned } from "./emailSource";
 import { AdminPanel } from "./AdminPanel";
+import { AppearanceSettings } from "./AppearanceSettings";
+import { useAppearance } from "./useAppearance";
+import { ChatPage, type ShellView } from "./ChatPage";
 import { api, ApiError, type Identity } from "./api";
 import { desktop } from "./desktop";
 import { DocumentsPanel } from "./DocumentsPanel";
@@ -92,41 +96,36 @@ function SignInForm({ disabled, onSignedIn }: { disabled: boolean; onSignedIn: (
   };
 
   return (
-    <Card title="Sign in">
-      <form className="flex flex-col gap-4" onSubmit={(e) => void submit(e)} noValidate>
-        <Field
-          id="tenant"
-          label="Organization"
-          autoComplete="organization"
-          placeholder="organization-slug"
-          value={tenant}
-          onChange={(e) => setTenant(e.target.value)}
-          required
-        />
-        <Field
-          id="email"
-          label="Email"
-          type="email"
-          autoComplete="username"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <Field
-          id="password"
-          label="Password"
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        {error ? <Alert>{error}</Alert> : null}
-        <Button type="submit" disabled={disabled || busy || !tenant || !email || !password}>
+    <div className="card">
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span className="avatar">N</span>
+        <h3>Sign in to NileTech Assistant</h3>
+      </div>
+      <p className="note">
+        Use your organization account. Your access is loaded from the server, never from the browser.
+      </p>
+      <form className="flex flex-col gap-3" onSubmit={(e) => void submit(e)} noValidate>
+        <div className="fld">
+          <label htmlFor="tenant">Organization</label>
+          <input id="tenant" autoComplete="organization" placeholder="organization-slug" value={tenant}
+            onChange={(e) => setTenant(e.target.value)} required />
+        </div>
+        <div className="fld">
+          <label htmlFor="email">Email</label>
+          <input id="email" type="email" autoComplete="username" value={email}
+            onChange={(e) => setEmail(e.target.value)} required />
+        </div>
+        <div className="fld">
+          <label htmlFor="password">Password</label>
+          <input id="password" type="password" autoComplete="current-password" value={password}
+            onChange={(e) => setPassword(e.target.value)} required />
+        </div>
+        {error ? <p className="err" role="alert">{error}</p> : null}
+        <button type="submit" className="btn" disabled={disabled || busy || !tenant || !email || !password}>
           {busy ? "Signing in…" : "Sign in"}
-        </Button>
+        </button>
       </form>
-    </Card>
+    </div>
   );
 }
 
@@ -177,13 +176,24 @@ function IdentityView({ session, onSignOut }: { session: Session; onSignOut: () 
 
 export function App() {
   const status = useApiStatus();
+  const [appearance, setAppearance] = useAppearance();
   const bridge = desktop();
   const [session, setSession] = useState<Session | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [settings, setSettings] = useState<TenantSettings | null>(null);
   const [desktopSession, setDesktopSession] = useState<{ session: Session; ready: boolean } | null>(null);
-  const [reportSource, setReportSource] = useState<ReportSource | null>(null);
-  const onReportPublished = useCallback((runId: string, title: string) => setReportSource({ runId, title }), []);
+  const [emailSource, dispatchEmailSource] = useReducer(emailSourceReducer, INITIAL_EMAIL_SOURCE);
+  const [view, setView] = useState<ShellView>("chat");
+  // A finished run becomes the email source only until the user explicitly picks one;
+  // after that, later runs (slower chat turns, Approvals-page reports) never replace it.
+  const onReportPublished = useCallback(
+    (runId: string, title: string) => dispatchEmailSource({ type: "published", runId, title }),
+    [],
+  );
+  const onEmailReport = useCallback(
+    (runId: string, title: string) => dispatchEmailSource({ type: "select", runId, title }),
+    [],
+  );
 
   useEffect(() => {
     let current = true;
@@ -194,7 +204,7 @@ export function App() {
     );
     setDesktopSession(null);
     setSettings(null);
-    setReportSource(null);
+    dispatchEmailSource({ type: "clear" });
     if (session) {
       void admin.tenantSettings(session.token).then(
         (value) => { if (current) setSettings(value); },
@@ -216,62 +226,137 @@ export function App() {
     }
   }, [session]);
 
+  if (!session) {
+    return (
+      <div className="eaios-signin">
+        <div className="flex w-full max-w-[400px] flex-col gap-3">
+          <SignInForm
+            disabled={status.kind === "unreachable"}
+            onSignedIn={(s) => {
+              setNotice(null);
+              setView("chat");
+              setSession(s);
+            }}
+          />
+          <div className="status">
+            <ApiStatusBar status={status} />
+          </div>
+          {notice ? <p className="note">{notice}</p> : null}
+        </div>
+      </div>
+    );
+  }
+
+  const caps = session.identity.capabilities.map((c) => c.capability);
+  const showActivity = ["resource.admin", "identity.admin", "audit.read", "tenant.config"].some((c) =>
+    caps.includes(c),
+  );
+  const fake =
+    (status.kind === "ready" || status.kind === "degraded") && status.readiness.model_inference === "fake";
+
   return (
-    <main
-      className={`mx-auto flex min-h-screen w-full flex-col gap-6 px-4 py-10 ${session ? "max-w-3xl" : "max-w-xl"}`}
-    >
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">Enterprise AI OS</h1>
-        <ApiStatusBar status={status} />
-      </header>
-      {notice && !session ? <p className="text-sm text-muted-fg">{notice}</p> : null}
-      {session ? (
-        <>
-          <ReportPanel
-            token={session.token}
-            packs={settings?.enabled_packs ?? null}
-            onReportPublished={onReportPublished}
-          />
-          {settings?.enabled_packs.includes("actions") ? (
-            <ActionsPanel token={session.token} source={reportSource} />
-          ) : null}
-          <DocumentsPanel
-            token={session.token}
-            canUpload={
-              session.identity.capabilities.some((c) => c.capability === "resource.admin") &&
-              Boolean(settings?.enabled_connectors.includes("upload"))
-            }
-          />
-          {bridge && settings?.enabled_connectors.includes("local_folder") ? (
-            desktopSession?.session === session && desktopSession.ready ? (
-              <LocalFoldersPanel token={session.token} groups={session.identity.groups} />
+    // Keyed by session: a new sign-in starts with an empty, memory-only chat history.
+    <ChatPage
+      key={session.token}
+      token={session.token}
+      identity={session.identity}
+      packs={settings?.enabled_packs ?? null}
+      modelLabel={
+        status.kind === "unreachable"
+          ? "API unreachable"
+          : fake
+            ? "FAKE model (development double)"
+            : null
+      }
+      canEmail={Boolean(settings?.enabled_packs.includes("actions"))}
+      showActivity={showActivity}
+      view={view}
+      onNavigate={setView}
+      onReportPublished={onReportPublished}
+      onEmailReport={onEmailReport}
+      onSignOut={() => void signOut()}
+      pages={{
+        files: (
+          <>
+            <h1>Files and sources</h1>
+            <DocumentsPanel
+              token={session.token}
+              canUpload={
+                caps.includes("resource.admin") && Boolean(settings?.enabled_connectors.includes("upload"))
+              }
+            />
+            {bridge && settings?.enabled_connectors.includes("local_folder") ? (
+              desktopSession?.session === session && desktopSession.ready ? (
+                <LocalFoldersPanel token={session.token} groups={session.identity.groups} />
+              ) : (
+                <Card title="Local folders">
+                  {desktopSession?.session === session ? (
+                    <Alert>Could not connect local folders to this account. Sign in again to retry.</Alert>
+                  ) : (
+                    <p className="text-sm text-muted-fg" role="status">Loading local folders…</p>
+                  )}
+                </Card>
+              )
+            ) : null}
+          </>
+        ),
+        approvals: (
+          <>
+            <h1>Approvals</h1>
+            <p className="note">
+              Emails are drafted from a verified report — the latest one from chat, or one you run
+              here — and are sent only after you approve the exact version.
+            </p>
+            {settings?.enabled_packs.includes("actions") ? (
+              <>
+                {newerThanPinned(emailSource) ? (
+                  <p className="note">
+                    A newer report finished; this form keeps the report you chose.{" "}
+                    <button
+                      type="button"
+                      className="btn small"
+                      onClick={() => {
+                        const n = newerThanPinned(emailSource);
+                        if (n) dispatchEmailSource({ type: "select", runId: n.runId, title: n.title });
+                      }}
+                    >
+                      Use the newer report instead
+                    </button>
+                  </p>
+                ) : null}
+                <ActionsPanel token={session.token} source={emailSource.source} />
+              </>
             ) : (
-              <Card title="Local folders">
-                {desktopSession?.session === session ? (
-                  <Alert>Could not connect local folders to this account. Sign in again to retry.</Alert>
-                ) : (
-                  <p className="text-sm text-muted-fg" role="status">Loading local folders…</p>
-                )}
-              </Card>
-            )
-          ) : null}
-          <AdminPanel
-            token={session.token}
-            identity={session.identity}
-            settings={settings}
-            onSettings={setSettings}
-          />
-          <IdentityView session={session} onSignOut={() => void signOut()} />
-        </>
-      ) : (
-        <SignInForm
-          disabled={status.kind === "unreachable"}
-          onSignedIn={(s) => {
-            setNotice(null);
-            setSession(s);
-          }}
-        />
-      )}
-    </main>
+              <p className="note">The actions pack is not enabled for your organization.</p>
+            )}
+            <ReportPanel
+              token={session.token}
+              packs={settings?.enabled_packs ?? null}
+              onReportPublished={onReportPublished}
+            />
+          </>
+        ),
+        activity: (
+          <>
+            <h1>Activity log and administration</h1>
+            <AdminPanel
+              token={session.token}
+              identity={session.identity}
+              settings={settings}
+              onSettings={setSettings}
+            />
+          </>
+        ),
+        settings: (
+          <>
+            <h1>Settings</h1>
+            <AppearanceSettings appearance={appearance} onChange={setAppearance} />
+            <h2>Account</h2>
+            <ApiStatusBar status={status} />
+            <IdentityView session={session} onSignOut={() => void signOut()} />
+          </>
+        ),
+      }}
+    />
   );
 }

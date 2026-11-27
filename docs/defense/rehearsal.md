@@ -28,8 +28,9 @@ Use this list for every rehearsal and on the defense day. Steps refer to [demo-s
 
 - [ ] Say "FAKE INFERENCE is a labelled stand-in; real-model evidence comes at the end."
 - [ ] Sign in fresh at each section. Never reload the page (a reload signs you out).
-- [ ] Click **Run report**; Enter only adds a new line.
-- [ ] Open document citations from the blue **[n]** inside the answer text.
+- [ ] Pick the **Source** inside the composer before sending (Automatic sends period questions to the SQL report); **Enter** sends.
+- [ ] Open citations from the small teal numbers in the answer; they open the **Sources** panel.
+- [ ] Use **Email this report for approval** under the report you want to send; it opens **Approvals** for that report.
 - [ ] Approve and send within 15 minutes.
 
 ## Rehearsal results (27 November 2026)
@@ -56,7 +57,7 @@ One full rehearsal on the disposable `eaios-m8def` stack, built from a fresh clo
 
 | Item | Time |
 | --- | --- |
-| Each report/answer from **Run report** to the published result (fake model) | under 1 s (M2 capture: done at 0.64 s) |
+| Each report/answer from sending the question to the published result (fake model) | under 1 s (M2 capture: done at 0.64 s) |
 | Sections 1–4, clicking only (no talking) | about 6 minutes |
 | Expected with talking points | 11–13 minutes, plus 1–2 minutes closing |
 | `up` with a warm Docker cache | 63 s |

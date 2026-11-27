@@ -3,7 +3,7 @@
  * review-only scheduled briefings. Approval tokens are kept in memory only.
  */
 
-import { API_BASE_URL, ApiError, type ApiErrorBody } from "./api";
+import { API_BASE_URL, ApiError, type ApiErrorBody } from "./api.js";
 
 export interface Recipient {
   user_id: string;

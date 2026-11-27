@@ -3,10 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import { actions, STATUS_TEXT, type Approval, type Draft, type Recipient, type Schedule } from "./actions";
 import { ApiError } from "./api";
 
-export interface ReportSource {
-  runId: string;
-  title: string;
-}
+export type { ReportSource } from "./emailSource";
+import type { ReportSource } from "./emailSource";
 
 function tone(status: string): StatusTone {
   if (status === "delivered") return "ok";
