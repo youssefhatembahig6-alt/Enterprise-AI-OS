@@ -88,6 +88,8 @@ Changes from revision 1: all 11 former train retrieval pairs and all 78 former t
 
 **Human review actually received: 0 of 37 gold pairs, and 0 of every other record.** Cohen's kappa is n/a.
 
+*Later (26 November 2026):* all 37 dev gold pairs were double-labelled and agreed (kappa 1.00) and the three checker baselines were scored on them; see [m7-baseline-run.md](m7-baseline-run.md).
+
 Claims are atomic: one sentence, no semicolons, at most 30 words. Evidence is an exact span of the app's canonical parser text, or an exact frozen SQL fixture value.
 
 ## 6. Blind two-annotator labelling

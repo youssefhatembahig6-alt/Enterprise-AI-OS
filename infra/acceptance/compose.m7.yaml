@@ -24,9 +24,8 @@ services:
     image: eaios-backend:m7acc
   frontend:
     image: eaios-web:m7acc
-    # Bug B1 workaround: the image's CSP hard-codes the API at :8000.
-    volumes:
-      - ./infra/acceptance/nginx.m7.conf:/etc/nginx/conf.d/default.conf:ro
+    # No nginx override: the image renders its CSP from VITE_API_BASE_URL (B1 fix), which
+    # scripts/m7_acceptance.py sets to the disposable API at :18000.
     ports: !override
       - "127.0.0.1:13000:3000"
   backend-tests:

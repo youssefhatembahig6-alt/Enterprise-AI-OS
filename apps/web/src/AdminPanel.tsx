@@ -386,7 +386,7 @@ function UserRow({ token, user, onChange, canGroups, authority }: { token: strin
                  className="h-9 w-full min-w-32 rounded-md border border-border bg-bg px-2 text-xs disabled:opacity-60"
                  value={groups} onChange={(e) => setGroups(e.target.value)} />
           {canGroups ? (
-            <Button variant="secondary" onClick={() => void act(() => admin.setGroups(token, user.user_id, groups.split(",").map((g) => g.trim()).filter(Boolean)))}>
+            <Button variant="secondary" aria-label={`Save groups of ${user.email}`} onClick={() => void act(() => admin.setGroups(token, user.user_id, groups.split(",").map((g) => g.trim()).filter(Boolean)))}>
               Save
             </Button>
           ) : null}
@@ -477,7 +477,7 @@ function GithubLogins({ token }: { token: string }) {
                 />
               </td>
               <td className="py-2 pr-3">
-                <Button variant="secondary" onClick={() => void save(u.user_id, value)}>
+                <Button variant="secondary" aria-label={`Save GitHub login of ${u.email}`} onClick={() => void save(u.user_id, value)}>
                   Save
                 </Button>
               </td>

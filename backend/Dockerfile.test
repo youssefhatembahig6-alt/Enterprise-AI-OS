@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1
+# Backend test image (`python3 scripts/dev.py test-backend`). Never used for the running
+# stack. The build context is NOT the checkout: scripts/test_context.py stages a fresh
+# directory with only git-indexed files of backend/, scripts/, ml/ and docs/, minus
+# anything ignored, private by name (.env, keys, var/, virtualenvs) or a label file, and
+# with every path checked to resolve inside the checkout. It contains no git repository:
+# the tests need only the git binary. The tree is laid out as in a checkout
+# (/repo/backend, /repo/scripts, ...) so checkout-dependent tests resolve their files as
+# CI does.
+FROM python:3.13.7-slim-bookworm
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=/repo/backend
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app --create-home app
+# Fails unless the context was staged by scripts/test_context.py.
+COPY .eaios-test-context /repo/.eaios-test-context
+WORKDIR /repo/backend
+COPY backend/requirements.lock backend/requirements-dev.lock ./
+RUN pip install --require-hashes --no-deps -r requirements.lock \
+    && pip install --require-hashes --no-deps -r requirements-dev.lock
+COPY --chown=app:app . /repo
+# WORKDIR created /repo/backend as root; the tests write caches and temp files there.
+RUN chown app:app /repo /repo/backend && mkdir -p /app/var && chown app:app /app/var
+USER app
+CMD ["pytest", "-q"]

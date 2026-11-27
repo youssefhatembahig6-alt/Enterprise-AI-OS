@@ -19,11 +19,4 @@ USER app
 EXPOSE 8000
 CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-server-header"]
 
-# Test image: adds dev tools and the test suite; never used for the running stack.
-FROM runtime AS test
-USER root
-COPY requirements-dev.lock ./
-RUN pip install --require-hashes --no-deps -r requirements-dev.lock
-COPY tests ./tests
-USER app
-CMD ["pytest", "-q"]
+# The test image is backend/Dockerfile.test (repository-root context, see compose.yaml).
