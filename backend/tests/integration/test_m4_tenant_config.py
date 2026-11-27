@@ -28,8 +28,9 @@ def settings_of(m4: M4, ref: str) -> dict[str, Any]:
     return dict(response.json())
 
 
-# M5: the NileTech fixture enables the legal and code packs and two more connectors.
-NILE_PACKS = ["documents", "sales_reports", "legal", "code", "actions"]
+# M5: the NileTech fixture enables the legal and code packs and two more connectors;
+# M8 adds the General chat pack (NileTech only; the isolation tenant keeps documents).
+NILE_PACKS = ["documents", "sales_reports", "legal", "code", "actions", "general"]
 NILE_CONNECTORS = ["upload", "google_drive", "github", "local_folder", "mailpit"]
 
 
@@ -67,7 +68,8 @@ def test_two_tenants_have_different_configuration_from_fixtures(m4: M4) -> None:
     assert nile["enabled_packs"] == sorted(NILE_PACKS)
     assert nile["enabled_connectors"] == sorted(NILE_CONNECTORS)
     assert (nile["sync_mode"], nile["sync_interval_seconds"]) == ("demo", 900)
-    assert iso["enabled_packs"] == ["documents"]
+    assert "general" in nile["enabled_packs"]
+    assert iso["enabled_packs"] == ["documents"]  # no General for the isolation tenant
     assert iso["enabled_connectors"] == ["upload"]
     assert (iso["sync_mode"], iso["sync_interval_seconds"]) == ("nightly", 86400)
 

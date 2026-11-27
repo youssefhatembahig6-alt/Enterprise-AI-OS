@@ -56,8 +56,16 @@ def env(**extra: str) -> dict[str, str]:
 def start_api() -> subprocess.Popen[bytes]:
     port = m3.API.rsplit(":", 1)[1]
     proc = subprocess.Popen(  # noqa: S603
-        [f"{m3.VENV}/bin/uvicorn", "app.main:create_app", "--factory", "--host", "127.0.0.1",
-         "--port", port, "--no-server-header"],
+        [
+            f"{m3.VENV}/bin/uvicorn",
+            "app.main:create_app",
+            "--factory",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            port,
+            "--no-server-header",
+        ],
         cwd=m3.BACKEND,
         env=env(),
         stdout=open(m3.LOGS / "api.log", "w"),  # noqa: SIM115 - child process owns the log
@@ -105,8 +113,16 @@ def build_web() -> None:
 def serve_web() -> None:
     dist = m3.REPO / "apps" / "web" / "dist"
     subprocess.Popen(  # noqa: S603
-        [sys.executable, "-m", "http.server", WEB.rsplit(":", 1)[1], "--bind", "127.0.0.1",
-         "--directory", str(dist)],
+        [
+            sys.executable,
+            "-m",
+            "http.server",
+            WEB.rsplit(":", 1)[1],
+            "--bind",
+            "127.0.0.1",
+            "--directory",
+            str(dist),
+        ],
         stdout=open(m3.LOGS / "web.log", "a"),  # noqa: SIM115 - child process owns the log
         stderr=subprocess.STDOUT,
     )
@@ -118,18 +134,36 @@ def playwright() -> Path:
     if not py.exists():
         m3.sh(f"python3 -m venv {PW_VENV}", "playwright.log")
         m3.sh(f"{py} -m pip install -q playwright=={PLAYWRIGHT}", "playwright.log")
-        m3.sh(f"{PW_VENV}/bin/playwright install --with-deps chromium-headless-shell",
-              "playwright.log")
+        m3.sh(
+            f"{PW_VENV}/bin/playwright install --with-deps chromium-headless-shell",
+            "playwright.log",
+        )
     return py
 
 
 def ui_check(py: Path) -> dict[str, object]:
     out = m3.OUT / "ui"
     done = subprocess.run(  # noqa: S603
-        [str(py), str(m3.REPO / "scripts" / "m8_chat_ui_check.py"), "--web", WEB,
-         "--api", m3.API, "--credentials", str(m3.SECRETS / "dev-credentials.json"),
-         "--out", str(out), "--expect-inference", "gateway", "--timeout", "420"],
-        cwd=m3.REPO, text=True, capture_output=True, check=False,
+        [
+            str(py),
+            str(m3.REPO / "scripts" / "m8_chat_ui_check.py"),
+            "--web",
+            WEB,
+            "--api",
+            m3.API,
+            "--credentials",
+            str(m3.SECRETS / "dev-credentials.json"),
+            "--out",
+            str(out),
+            "--expect-inference",
+            "gateway",
+            "--timeout",
+            "420",
+        ],
+        cwd=m3.REPO,
+        text=True,
+        capture_output=True,
+        check=False,
     )
     (m3.OUT / "ui-check-stdout.txt").write_text(done.stdout + "\n" + done.stderr)
     print(done.stdout[-4000:], done.stderr[-2000:], sep="\n")
@@ -153,7 +187,8 @@ def bundle() -> Path:
             "MODEL_MODE": "gateway",
             "REPORT_DISPATCH": "inline",
             "USE_DOCLING": "false",
-            "network": "loopback only (web 127.0.0.1:13000, API 127.0.0.1:18000, gateway 127.0.0.1:8100)",
+            "network": "loopback only: web 127.0.0.1:13000, API 127.0.0.1:18000, "
+            "gateway 127.0.0.1:8100",
         },
         "steps": STEPS,
     }
@@ -163,11 +198,19 @@ def bundle() -> Path:
     needles = [p.read_text() for p in m3.SECRETS.iterdir() if p.is_file() and p.suffix == ""]
     needles.append(os.environ["GATEWAY_TOKEN"])
     creds = json.loads((m3.SECRETS / "dev-credentials.json").read_text())
-    needles += [pw for users in creds.values() if isinstance(users, dict)
-                for pw in users.values() if isinstance(pw, str)]
+    needles += [
+        pw
+        for users in creds.values()
+        if isinstance(users, dict)
+        for pw in users.values()
+        if isinstance(pw, str)
+    ]
     files = sorted(p for p in m3.OUT.rglob("*") if p.is_file())
-    leaks = [str(f.relative_to(m3.OUT)) for f in files if f.suffix != ".png"
-             and any(n and n in f.read_text(errors="ignore") for n in needles)]
+    leaks = [
+        str(f.relative_to(m3.OUT))
+        for f in files
+        if f.suffix != ".png" and any(n and n in f.read_text(errors="ignore") for n in needles)
+    ]
     if leaks:
         raise SystemExit(f"secret scan failed; not bundling: {leaks}")
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

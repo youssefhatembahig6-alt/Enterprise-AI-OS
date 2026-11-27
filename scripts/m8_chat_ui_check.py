@@ -147,21 +147,30 @@ def run_record(api: str, token: str, run_id: str | None) -> dict[str, Any]:
     }
 
 
-def real(record: dict[str, Any], expect: str) -> list[str]:
+def real(record: dict[str, Any], expect: str, purpose: str) -> list[str]:
+    """The run was answered by the expected inference. For the real gateway: the pinned
+    Qwen revision was verified for this run and an actual model call with ``purpose``
+    is recorded (measured duration and completion tokens)."""
+
     problems = []
     if record.get("inference_mode") != expect:
         problems.append(f"inference_mode={record.get('inference_mode')!r}, expected {expect!r}")
+    calls = [c for c in record.get("model_calls") or [] if c.get("purpose") == purpose]
+    if not calls:
+        problems.append(f"no {purpose!r} model call recorded")
     if expect == "gateway":
         chat = record.get("served_chat") or {}
         if (chat.get("model"), chat.get("revision")) != PINNED_CHAT:
             problems.append(f"served chat {chat!r} is not the pinned {PINNED_CHAT}")
-        if not record.get("model_calls"):
-            problems.append("no model call recorded")
+        if calls and not any((c.get("seconds") or 0) > 0 and c.get("tokens") for c in calls):
+            problems.append(f"{purpose!r} call has no measured duration or token count")
     return problems
 
 
 def main() -> int:  # noqa: PLR0915
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--web", required=True)
     ap.add_argument("--api", required=True)
     ap.add_argument("--credentials", required=True)
@@ -173,9 +182,11 @@ def main() -> int:  # noqa: PLR0915
     out.mkdir(parents=True, exist_ok=True)
     creds = json.loads(Path(args.credentials).read_text())[TENANT]
     tokens = {
-        u: api_json(args.api, "/api/v1/auth/login", body={"tenant": TENANT, "email": u, "password": creds[u]})[
-            "access_token"
-        ]
+        u: api_json(
+            args.api,
+            "/api/v1/auth/login",
+            body={"tenant": TENANT, "email": u, "password": creds[u]},
+        )["access_token"]
         for u in (FINANCE, SALES)
     }
     status = api_json(args.api, "/api/v1/model/status", tokens[FINANCE])
@@ -206,7 +217,7 @@ def main() -> int:  # noqa: PLR0915
                 }
             leave_rec = run_record(args.api, tokens[FINANCE], leave["run_id"])
             leave["screenshot"] = ui.shot("1-documents-leave")
-            problems = real(leave_rec, args.expect_inference)
+            problems = real(leave_rec, args.expect_inference, "answer")
             if leave_rec.get("status") != "published":
                 problems.append(f"run status {leave_rec.get('status')!r}")
             if not leave["citations"]:
@@ -229,7 +240,7 @@ def main() -> int:  # noqa: PLR0915
             gen = ui.ask(GENERAL_Q, "General (no company data)", args.timeout)
             gen_rec = run_record(args.api, tokens[FINANCE], gen["run_id"])
             gen["screenshot"] = ui.shot("3-general")
-            problems = real(gen_rec, args.expect_inference)
+            problems = real(gen_rec, args.expect_inference, "general")
             if gen_rec.get("status") != "published":
                 problems.append(f"run status {gen_rec.get('status')!r}")
             if gen_rec.get("outcome_code") != "general_model_reply_unverified":
@@ -238,6 +249,12 @@ def main() -> int:  # noqa: PLR0915
                 problems.append("reply is not labelled as general")
             if gen["citations"]:
                 problems.append("general reply has citations")
+            reply = page.locator(".a").last.locator(".body > p:not(.note):not(.refuse)").all_inner_texts()
+            if not any(t.strip() for t in reply):
+                problems.append("general reply is empty")
+            if args.expect_inference == "gateway" and any("FAKE" in t for t in reply):
+                problems.append("general reply carries a FAKE label")
+            gen["reply"] = reply
             result["checks"]["general"] = {
                 "question": GENERAL_Q,
                 "ui": gen,
@@ -270,11 +287,17 @@ def main() -> int:  # noqa: PLR0915
         finally:
             browser.close()
     result["finished_at"] = datetime.now(UTC).isoformat()
-    result["pass"] = all(c["pass"] for c in result["checks"].values()) and len(result["checks"]) == 3
-    (out / "m8-chat-ui-check.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
+    result["pass"] = (
+        all(c["pass"] for c in result["checks"].values()) and len(result["checks"]) == 3
+    )
+    (out / "m8-chat-ui-check.json").write_text(
+        json.dumps(result, indent=2, ensure_ascii=False) + "\n"
+    )
     for name, check in result["checks"].items():
         print(f"{name}: {'PASS' if check['pass'] else 'FAIL ' + '; '.join(check['problems'])}")
-    print("UI check", "PASSED" if result["pass"] else "FAILED", f"-> {out / 'm8-chat-ui-check.json'}")
+    print(
+        "UI check", "PASSED" if result["pass"] else "FAILED", f"-> {out / 'm8-chat-ui-check.json'}"
+    )
     return 0 if result["pass"] else 1
 
 

@@ -159,6 +159,48 @@ Clean-checkout setup, the defense demo script, the architecture and evidence ind
 
 Every question is a separate `POST /api/v1/chat` run with your token: earlier messages are not sent to the backend. Clicking a numbered citation opens the passage or SQL evidence in the **Sources** panel through the same endpoints as before, so access is checked again. Chat history lives in memory only and is cleared on sign-out or reload. **Automatic** routes sales and period questions (for example anything naming "Q1 2026") to the SQL sales report; choose **Documents you can access** under the composer to ask the documents. A verified sales report has **Email this report for approval**, which opens **Approvals** with that report selected. The defense demo script (`defense/demo-script.md`) still describes the earlier single-page dashboard; its steps map to **Ask** and **Approvals**.
 
+## Real-model chat: General mode and the Colab browser test (M8)
+
+**General mode.** The chat composer's **Source** menu has **General (no company data)**. The backend sends the question alone to the same chat model, with no documents, SQL results, email or briefing tools and no earlier turns. The reply is published as `general_model_reply_unverified` and labelled in the UI as a general reply that was not checked against sources. Only its owner can replay it, and it can never be emailed. **Automatic** never chooses General. The tenant pack `general` switches it on. The NileTech seed enables it; the isolation tenant keeps documents only. Applying migration `0016_general_chat` and re-running `seed` enables it on an existing stack.
+
+**Model status and failures.** `GET /api/v1/model/status` (signed-in users) runs the same check as every real run: the gateway's `/health` must report the pinned `Qwen/Qwen3-8B-AWQ@4da05a8edb55c6046cce958586c33b61da07bb79`. The chat top bar shows the result:
+- **Real model · Qwen3-8B-AWQ @4da05a8 · verified**;
+- **Model gateway: <reason>** (not configured, unreachable, timeout, credentials rejected, revision mismatch);
+- **FAKE model**.
+
+A run that fails on the model ends with `model_unavailable` plus a `detail` class, and the answer shows the reason in words. Document answers now also verify the served model and revision before calling it (SQL reports already did; the legal pack uses no model). The gateway token stays server-side (`MODEL_GATEWAY_TOKEN`).
+
+**Browser test on the real gateway (Colab T4, loopback only).** Open [`ml/colab-m8-chat/m8_real_model_chat.ipynb` in Colab](https://colab.research.google.com/github/youssefhatembahig6-alt/Enterprise-AI-OS/blob/feature/m8-real-model-chat/ml/colab-m8-chat/m8_real_model_chat.ipynb). Choose **Runtime → Change runtime type → T4 GPU**, then run the cells in order:
+
+| Cell | Does | Time |
+| --- | --- | --- |
+| 1 | Clone the branch, show the commit and the GPU | < 1 min |
+| 2 | Install the pinned vLLM environment | about 5 min |
+| 3 | Launch the gateway on 127.0.0.1:8100 (pinned Qwen3-8B-AWQ, BGE-M3, development checker; utilization 0.75, context 4096) | 10–20 min first time |
+| 4 | `run_m8_chat_colab.py all`. Starts PostgreSQL/Redis/Qdrant, migrates and seeds the synthetic NileTech data, starts the API (`MODEL_MODE=gateway`) on 127.0.0.1:18000, seeds the document corpus with real BGE-M3 embeddings, builds the web UI with Node 20.19.2 (checksum-verified) and serves it on 127.0.0.1:13000, then runs `scripts/m8_chat_ui_check.py --expect-inference gateway` in headless Chromium (Playwright 1.55.0) | 20–30 min |
+| 5 | Download **`m8-chat-evidence-<UTC stamp>.zip`** | — |
+
+The bundle holds `ui/m8-chat-ui-check.json`, three screenshots, `gateway-health.json`, `versions.json` (commit, clean worktree, GPU, settings) and the service logs. It is secret-scanned (database, Redis and JWT secrets, the gateway token and fixture passwords) before it is written. It passes only if all three browser checks pass:
+
+1. **Documents:** finance.reader asks *"If I don't use all my vacation this year, how many days can I roll over, and until when?"*. The reply is published with a citation; clicking it opens the passage with **text hash verified** (`GET …/citations/{id}` returns 200).
+2. **Refusal:** sales.reader asks *"Why did collections lag revenue in Q1 2026?"* with **Documents**. The reply is the no-sources refusal, and the page shows none of the restricted figures.
+3. **General:** finance.reader asks an open-ended question with **General**. The reply is non-empty, has no citations and no FAKE label, and is labelled as general.
+
+For 1 and 3, the run record (`GET /api/v1/runs/{id}` with the user's own token) must show:
+- `inference_mode = gateway`;
+- the pinned chat model and revision in `served_models`;
+- an actual model call (purpose `answer` / `general`, with a measured duration and a token count).
+
+The same script runs locally against the disposable stack with `--expect-inference fake`. That run checks the UI only and is never model evidence:
+
+```bash
+PLAYWRIGHT_BROWSERS_PATH=<browsers> <venv>/bin/python scripts/m8_chat_ui_check.py --web http://localhost:13000 --api http://localhost:18000 --credentials var/m7-acceptance/dev-credentials.json --out var/m8-ui-fake --expect-inference fake
+```
+
+**Still required for an interactive URL on the real model.** The test above runs the app, browser and gateway together inside one Colab runtime. It produces evidence but no URL anyone can open, because the gateway, API and UI listen on 127.0.0.1 inside that runtime, and Colab's usage rules restrict exposing web services and remote proxies. Making the chat usable interactively on Qwen needs one explicit project decision:
+- **Colab's own port window:** `google.colab.output.serve_kernel_port_as_window`, with UI and API behind one origin. It is visible only in the notebook owner's own session and only while the runtime lives. Whether this is permitted interactive use is the owner's decision; nothing in the repository enables it.
+- **An approved GPU host, or an approved tunnel to the gateway:** the laptop stack then sets `MODEL_MODE=gateway`, `LLM_BASE_URL=https://<approved host>` (root, no `/v1`) and `MODEL_GATEWAY_TOKEN` in `var/m7-acceptance/.env` (or `.env`) and runs `up`. This changes the Colab-only hosting decision (roadmap: "changing hosts then needs an explicit project decision").
+
 ## Restart
 
 ```bash
