@@ -4,7 +4,7 @@
 // exactly that origin: no wildcard, no scheme-only source, nothing else. Both come from
 // the same build argument, so they cannot disagree. Run in the image build:
 //
-//   node render-nginx.mjs "$VITE_API_BASE_URL" nginx.conf.template > nginx.conf
+//   node render-nginx.mjs nginx.conf.template > nginx.conf   # reads VITE_API_BASE_URL
 //
 // The build fails on anything that is not a plain http(s) origin, naming the reason but
 // never the rejected value.
@@ -80,12 +80,16 @@ export function renderNginx(template, apiBaseUrl) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [apiBaseUrl, templatePath] = process.argv.slice(2);
-  if (!templatePath) {
-    console.error("usage: node render-nginx.mjs <api base url> <template>");
+  // The value comes from the environment, never the command line: Docker prints each
+  // RUN instruction with build arguments expanded, so a value on the command line would
+  // appear in the build log even though the error message omits it.
+  const [templatePath, ...extra] = process.argv.slice(2);
+  if (!templatePath || extra.length) {
+    console.error("usage: VITE_API_BASE_URL=<api base url> node render-nginx.mjs <template>");
     process.exit(2);
   }
   try {
+    const apiBaseUrl = process.env.VITE_API_BASE_URL;
     process.stdout.write(renderNginx(readFileSync(templatePath, "utf8"), apiBaseUrl));
   } catch (error) {
     console.error(`render-nginx: ${error.message}`);

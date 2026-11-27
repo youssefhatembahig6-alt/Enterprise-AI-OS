@@ -146,7 +146,10 @@ test("the build step's CLI fails without printing the value", () => {
   for (const value of SECRET_INPUTS) {
     let failure;
     try {
-      execFileSync(process.execPath, [SCRIPT, value, TEMPLATE_PATH], { stdio: "pipe" });
+      execFileSync(process.execPath, [SCRIPT, TEMPLATE_PATH], {
+        stdio: "pipe",
+        env: { ...process.env, VITE_API_BASE_URL: value },
+      });
     } catch (error) {
       failure = error;
     }
@@ -156,6 +159,20 @@ test("the build step's CLI fails without printing the value", () => {
     assert.match(output, /^render-nginx: VITE_API_BASE_URL .+ \(value not shown\)\n$/);
     assert.ok(!output.includes(SECRET), output);
   }
+});
+
+test("the CLI reads the value from the environment and renders the default", () => {
+  const out = execFileSync(process.execPath, [SCRIPT, TEMPLATE_PATH], {
+    env: { ...process.env, VITE_API_BASE_URL: "http://localhost:8000" },
+  }).toString();
+  assert.equal(connectSrc(out), "'self' http://localhost:8000 http://127.0.0.1:8000");
+  let failure;
+  try {
+    execFileSync(process.execPath, [SCRIPT, "http://localhost:8000", TEMPLATE_PATH], { stdio: "pipe" });
+  } catch (error) {
+    failure = error;
+  }
+  assert.equal(failure?.status, 2, "a value on the command line is refused (usage)");
 });
 
 test("a template without the placeholder in the CSP is refused", () => {
