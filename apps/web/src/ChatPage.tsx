@@ -10,13 +10,13 @@
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode } from "react";
-import type { Identity } from "./api";
+import { api, modelFailureText, type Identity, type ModelStatus } from "./api";
 import { activeConversation, chatReducer, INITIAL_CHAT, type Turn } from "./chatState";
 import { cancelReport, type AskMode, type Citation } from "./reports";
 import { executeChatTurn } from "./runStream";
 import { citationKind, citationNumber, EMPTY_RUN, newRequestId, runKind, type RunView } from "./runView";
 import { EvidenceDetail, PassageDetail } from "./sourceViews";
-import { LEGAL_LABEL, verificationText } from "./verification";
+import { GENERAL_LABEL, LEGAL_LABEL, verificationText } from "./verification";
 
 export type ShellView = "chat" | "files" | "approvals" | "activity" | "settings";
 
@@ -28,6 +28,7 @@ const MODE_LABELS: Record<AskMode, string> = {
   report: "Sales report (SQL)",
   legal: "Contracts (clauses and expiry)",
   code: "Code repositories",
+  general: "General (no company data)",
 };
 
 const INDEPENDENT_NOTE =
@@ -86,11 +87,19 @@ function scopeText(identity: Identity): string {
     .join(" · ");
 }
 
-function verifyPills(view: RunView): { text: string; warn: boolean }[] {
+function shortModel(name: string | null | undefined, revision: string | null | undefined): string {
+  const base = (name ?? "model").split("/").pop() ?? "model";
+  return revision ? `${base} @${revision.slice(0, 7)}` : base;
+}
+
+function verifyPills(view: RunView, served: ModelStatus | null): { text: string; warn: boolean }[] {
   const pills: { text: string; warn: boolean }[] = [];
   const v = view.done?.verification;
   if (v) {
-    if (v.label === LEGAL_LABEL) {
+    if (v.label === GENERAL_LABEL) {
+      pills.push({ text: "General reply · no company data", warn: false });
+      pills.push({ text: "Not checked against sources", warn: true });
+    } else if (v.label === LEGAL_LABEL) {
       pills.push({ text: "Exact contract passages", warn: false });
       pills.push({ text: "Dates re-derived by fixed rules · no model", warn: false });
     } else if (v.label.startsWith("figures_verified_")) {
@@ -113,6 +122,10 @@ function verifyPills(view: RunView): { text: string; warn: boolean }[] {
   }
   if (view.done?.abstention) pills.push({ text: "No sources used", warn: true });
   if (view.fakeLabel) pills.push({ text: "FAKE inference — not a model", warn: true });
+  if (view.done?.inference === "gateway" && view.done.outcome === "published") {
+    const m = v?.model ?? (served?.verified ? { name: served.chat?.model, revision: served.chat?.revision } : null);
+    pills.push({ text: `Real model · ${m ? shortModel(m.name, m.revision) : "gateway"}`, warn: false });
+  }
   return pills;
 }
 
@@ -196,6 +209,7 @@ function Composer({
 
 function Answer({
   turn,
+  served,
   badge,
   focused,
   onCite,
@@ -204,6 +218,7 @@ function Answer({
   onEmail,
 }: {
   turn: Turn;
+  served: ModelStatus | null;
   badge: string;
   focused: string | null;
   onCite: (citationId: string) => void;
@@ -264,7 +279,8 @@ function Answer({
         {kind === "error" ? (
           <div className="errbox" role="alert">
             {failure ?? view.error?.message ?? "The request did not complete."}
-            {view.error?.code ? ` (${view.error.code})` : ""}
+            {modelFailureText(view.error?.detail) ? ` Reason: ${modelFailureText(view.error?.detail)}.` : ""}
+            {view.error?.code ? ` (${view.error.code}${view.error.detail ? ` · ${view.error.detail}` : ""})` : ""}
           </div>
         ) : null}
         {kind === "refusal" && view.done?.abstention ? <p className="refuse">{view.done.abstention.message}</p> : null}
@@ -310,7 +326,7 @@ function Answer({
 
         {finished ? (
           <div className="verify">
-            {verifyPills(view).map((p) => (
+            {verifyPills(view, served).map((p) => (
               <span key={p.text} className={`vpill${p.warn ? " w" : ""}`}>
                 {p.text}
               </span>
@@ -438,6 +454,44 @@ export function ChatPage({
   // (and the server re-checks access). 0 / missing = collapsed.
   const [opens, setOpens] = useState<Record<string, number>>({});
   const controllers = useRef(new Map<string, AbortController>());
+  // M8: which inference the server uses and, for the real gateway, the verified served
+  // model (or the failure class). Rechecked every minute while signed in.
+  const [served, setServed] = useState<ModelStatus | null>(null);
+  const [servedError, setServedError] = useState(false);
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      api.modelStatus(token).then(
+        (s) => {
+          if (!live) return;
+          setServed(s);
+          setServedError(false);
+        },
+        () => live && setServedError(true),
+      );
+    void load();
+    const timer = setInterval(() => void load(), 60_000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [token]);
+  const modelChip: { text: string; tone: "ok" | "warn" | "crit"; title?: string } | null = served
+    ? served.mode === "fake"
+      ? { text: "FAKE model (development double)", tone: "warn" }
+      : served.verified
+        ? {
+            text: `Real model · ${shortModel(served.chat?.model, served.chat?.revision)} · verified`,
+            tone: "ok",
+            title: `${served.chat?.model ?? ""}@${served.chat?.revision ?? ""}`,
+          }
+        : {
+            text: `Model gateway: ${modelFailureText(served.error) ?? served.error ?? "unavailable"}`,
+            tone: "crit",
+          }
+    : servedError
+      ? { text: "Model status unavailable", tone: "warn" }
+      : null;
   const threadEnd = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -451,6 +505,7 @@ export function ChatPage({
   if (has("sales_reports")) modes.push("report");
   if (packs?.includes("legal")) modes.push("legal");
   if (packs?.includes("code")) modes.push("code");
+  if (packs?.includes("general")) modes.push("general");
 
   const conversation = activeConversation(state);
   const turns = conversation?.turns ?? EMPTY_TURNS;
@@ -653,6 +708,11 @@ export function ChatPage({
             <span>can open:</span>
             <span className="chip">{scopeText(identity)}</span>
             {modelLabel ? <span className="chip warn">{modelLabel}</span> : null}
+            {modelChip ? (
+              <span className={`chip ${modelChip.tone}`} title={modelChip.title} role="status">
+                {modelChip.text}
+              </span>
+            ) : null}
           </div>
           <div className="right">
             {view === "chat" ? (
@@ -703,6 +763,7 @@ export function ChatPage({
                   </div>
                   <Answer
                     turn={turn}
+                    served={served}
                     badge={badge}
                     focused={focus?.turnId === turn.id ? focus.citationId : null}
                     onCite={(id) => openCitation(turn.id, id)}

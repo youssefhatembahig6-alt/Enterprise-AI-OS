@@ -37,6 +37,7 @@ def test_published_openapi_matches_app() -> None:
         "/api/v1/runs/{run_id}/events",
         "/api/v1/runs/{run_id}/cancel",
         "/api/v1/evidence/{evidence_id}",
+        "/api/v1/model/status",
         "/api/v1/documents",
         "/api/v1/documents/{document_id}",
         "/api/v1/documents/{document_id}/permissions",

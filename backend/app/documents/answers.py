@@ -34,7 +34,7 @@ from uuid import UUID
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import text
 
-from app.config import RelevanceFilter, RetrievalMode
+from app.config import ModelMode, RelevanceFilter, RetrievalMode
 from app.documents import access, store
 from app.documents.qdrant import QdrantClient, SparseVector
 from app.reporting import store as runs
@@ -264,6 +264,8 @@ class DocumentAnswerWorkflow(ReportWorkflow):
     change only the pack, the source scope, the prompt and the citation fields."""
 
     kind = "documents"
+    # Whether answers call the model (legal: deterministic extraction, no model).
+    uses_model = True
 
     def __init__(
         self, deps: WorkflowDeps, qdrant: QdrantClient, collection: Callable[[], str]
@@ -327,6 +329,9 @@ class DocumentAnswerWorkflow(ReportWorkflow):
         stats["model"] = self.deps.model.describe()
         stats["retrieval_mode"] = self.deps.settings.retrieval_mode.value
         stats["embedding_space"] = self.deps.model.embedding_space().slug
+        if self.uses_model and self.deps.model.mode is ModelMode.GATEWAY:
+            # M8: same pinned model/revision check as SQL reports, before any call.
+            stats["served_models"] = self.deps.model.served_models(self._token(state)).summary()
         return {"answer_attempt": 0, "passages": []}
 
     def retrieve(self, state: DocState) -> dict[str, Any]:  # noqa: PLR0915

@@ -17,6 +17,7 @@ from app.actions.service import ActionService
 from app.actions.store import mark_outbox_dispatched
 from app.admin.service import AdminService
 from app.api import actions, admin, auth, documents, health, local_folders, reports
+from app.api import model as model_api
 from app.api.errors import install_error_handlers
 from app.config import Settings, get_settings
 from app.connectors.drive import ConnectorConfig, DriveClientFactory, http_client_factory
@@ -109,12 +110,15 @@ def create_app(  # noqa: PLR0915
             "configuration (M4); legal clause/expiry answers, GitHub repositories with "
             "code citations and desktop local folders (M5); human-approved email drafts from "
             "verified reports delivered through a durable outbox to Mailpit, and "
-            "review-only scheduled briefings (M6)."
+            "review-only scheduled briefings (M6); a General chat mode answered by the model "
+            "alone and a model status check (M8)."
         ),
         lifespan=lifespan,
     )
     app.state.settings = settings
     app.state.engine = engine
+    app.state.model = model_client  # M8: /api/v1/model/status
+    app.state.model_status_cache = model_api.new_cache()
     limiter = LoginRateLimiter(
         redis,
         prefix=settings.rate_limit_key_prefix,
@@ -271,6 +275,7 @@ def create_app(  # noqa: PLR0915
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(reports.router)
+    app.include_router(model_api.router)
     app.include_router(documents.router)
     app.include_router(admin.router)
     app.include_router(local_folders.router)

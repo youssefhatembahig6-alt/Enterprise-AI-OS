@@ -78,7 +78,7 @@ class ReportRunner:
             self._fail_exhausted(run_id, tenant_id, run.owner_user_id)
             return "attempts_exhausted"
         workflow: ReportWorkflow | None = self.workflow
-        if run.kind in DOCUMENT_RUN_KINDS:
+        if run.kind != "report":
             workflow = (
                 self.documents_workflow
                 if run.kind == "documents"
@@ -202,6 +202,10 @@ def content_decision(conn: Any, user_id: UUID, run: store.RunRow) -> Decision:
     run owner (replay, evidence) and, in M6, for email recipients of that content.
     """
 
+    if run.kind == "general":
+        # M8: a general reply uses no company data; only its owner may see it, and it
+        # can never be an email source (actions accept published reports only).
+        return Decision.allow() if user_id == run.owner_user_id else Decision.deny(Reason.NO_GRANT)
     if run.kind not in DOCUMENT_RUN_KINDS:
         return authorize_dataset(conn, user_id, run.resource_id)
     from app.documents import access as doc_access  # noqa: PLC0415 - avoid cycle

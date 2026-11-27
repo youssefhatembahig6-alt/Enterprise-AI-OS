@@ -34,7 +34,7 @@ import httpx
 
 from app.config import ModelMode, Settings
 
-Purpose = Literal["router", "sql", "report", "answer"]
+Purpose = Literal["router", "sql", "report", "answer", "general"]
 
 
 class ModelError(Exception):
@@ -608,6 +608,11 @@ def _fake_answer(prompt: str) -> str:
 
 def _default_fake(purpose: Purpose, messages: list[dict[str, str]]) -> str:
     prompt = messages[-1]["content"] if purpose != "answer" else messages[1]["content"]
+    if purpose == "general":
+        return (
+            "FAKE general reply (deterministic development double, not model output). "
+            f"You asked: {prompt.strip()[:200]}"
+        )
     if purpose == "answer":
         return _fake_answer(prompt)
     if purpose == "router":

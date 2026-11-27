@@ -67,8 +67,8 @@ def choose_kind(question: str, mode: str, enabled: frozenset[str] | None = None)
     def on(kind: str) -> bool:
         return enabled is None or RUN_KIND_PACK[kind] in enabled
 
-    if mode in ("report", "documents", "legal", "code"):
-        kind = mode
+    if mode in ("report", "documents", "legal", "code", "general"):
+        kind = mode  # general (M8) is explicit only; auto never routes there
     elif _LEGAL.search(question) and on("legal"):
         kind = "legal"
     elif _CODE.search(question) and on("code"):

@@ -29,7 +29,7 @@ export interface RunView {
   sentences: Sentence[];
   citations: Citation[];
   done: DonePayload | null;
-  error: { code: string; message: string } | null;
+  error: { code: string; message: string; detail?: string } | null;
   fakeLabel: string | null;
   reconnecting: boolean;
 }
@@ -89,7 +89,11 @@ export function applyEvent(view: RunView, event: ReportEvent): RunView {
       next.citations = [...view.citations, d as unknown as Citation];
       break;
     case "error":
-      next.error = { code: String(d.code), message: String(d.message) };
+      next.error = {
+        code: String(d.code),
+        message: String(d.message),
+        ...(typeof d.detail === "string" ? { detail: d.detail } : {}),
+      };
       break;
     case "done":
       next.done = d as unknown as DonePayload;

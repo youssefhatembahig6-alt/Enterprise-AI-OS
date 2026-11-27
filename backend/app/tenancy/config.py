@@ -22,6 +22,7 @@ PACKS: dict[str, str] = {
     "legal": "Contract clause comparison and expiry answers with exact citations (M5)",
     "code": "Code answers over synced repositories with file, revision and line citations (M5)",
     "actions": "Human-approved email drafts from verified reports and scheduled briefings (M6)",
+    "general": "General questions answered by the model alone, without company data (M8)",
 }
 CONNECTORS: dict[str, str] = {
     "upload": "Manual upload with explicit sharing",
@@ -36,6 +37,7 @@ RUN_KIND_PACK: dict[str, str] = {
     "documents": "documents",
     "legal": "legal",
     "code": "code",
+    "general": "general",
 }
 # Run kinds whose published content is document citations (re-authorized per document).
 DOCUMENT_RUN_KINDS: frozenset[str] = frozenset({"documents", "legal", "code"})

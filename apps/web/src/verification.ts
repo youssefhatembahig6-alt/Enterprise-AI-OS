@@ -11,6 +11,7 @@ import type { DonePayload } from "./reports";
 export type VerificationLine = { tone: "ok" | "warn"; text: string };
 
 export const LEGAL_LABEL = "legal_facts_extracted_and_rechecked";
+export const GENERAL_LABEL = "general_model_reply_unverified";
 const DOCUMENT_LABEL = "answer_quotes_verified_dev_checked";
 const REPORT_LABEL_PREFIX = "figures_verified_";
 
@@ -21,6 +22,12 @@ export function verificationText(done: DonePayload): VerificationLine | null {
     return {
       tone: "ok",
       text: "Every sentence quotes an exact passage of a document you can access (re-checked at publication); claims checked by the development baseline checker (not the final trained checker).",
+    };
+  }
+  if (v.label === GENERAL_LABEL) {
+    return {
+      tone: "warn",
+      text: "General reply from the model. It did not use your organization's documents, data or email, and it was not checked against any source.",
     };
   }
   if (v.label === LEGAL_LABEL) {

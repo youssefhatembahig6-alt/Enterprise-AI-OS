@@ -26,6 +26,7 @@ from app.documents.answers import DocumentAnswerWorkflow
 from app.documents.ingest import IngestionRunner, collection_name
 from app.documents.qdrant import QdrantClient
 from app.documents.storage import FileSystemStore, ObjectStore, S3Store
+from app.general.workflow import GeneralAnswerWorkflow
 from app.legal.workflow import LegalAnswerWorkflow
 from app.reporting.executor import ReportExecutor, create_report_engine
 from app.reporting.model_client import ModelClient, build_model_client
@@ -98,6 +99,7 @@ def build_components(
     extra = {
         "legal": LegalAnswerWorkflow(doc_deps, qdrant, collection),
         "code": CodeAnswerWorkflow(doc_deps, qdrant, collection),
+        "general": GeneralAnswerWorkflow(doc_deps),
     }
     runner = ReportRunner(app_engine, ReportWorkflow(deps), settings, documents, extra)
     ingestion = IngestionRunner(app_engine, settings, objects, qdrant, model)

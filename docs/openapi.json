@@ -125,13 +125,14 @@
           },
           "mode": {
             "default": "auto",
-            "description": "auto: sales/period questions go to the verified SQL report, contract clause and expiry questions to the legal pack, repository code questions to the code pack, everything else to authorized document answers (enabled packs only).",
+            "description": "auto: sales/period questions go to the verified SQL report, contract clause and expiry questions to the legal pack, repository code questions to the code pack, everything else to authorized document answers (enabled packs only). general (M8, explicit only): the model answers from general knowledge, without company documents, data or actions; never chosen by auto.",
             "enum": [
               "auto",
               "report",
               "documents",
               "legal",
-              "code"
+              "code",
+              "general"
             ],
             "title": "Mode",
             "type": "string"
@@ -1070,6 +1071,97 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "ModelStatus": {
+        "properties": {
+          "chat": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServedModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checked_at": {
+            "title": "Checked At",
+            "type": "number"
+          },
+          "checker": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServedModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "embed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServedModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "mode": {
+            "enum": [
+              "fake",
+              "gateway"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mode",
+          "verified",
+          "checked_at"
+        ],
+        "title": "ModelStatus",
+        "type": "object"
+      },
       "OccurrenceOut": {
         "properties": {
           "action_id": {
@@ -1497,6 +1589,34 @@
           "approval_token"
         ],
         "title": "SendRequest",
+        "type": "object"
+      },
+      "ServedModel": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          }
+        },
+        "title": "ServedModel",
         "type": "object"
       },
       "SharingIn": {
@@ -2059,7 +2179,7 @@
     }
   },
   "info": {
-    "description": "Identity, tenant isolation and health (M0); verified SQL reports (M2) and authorized document answers with exact citations (M3), streamed over Server-Sent Events; Google Drive sync, scoped administration and tenant configuration (M4); legal clause/expiry answers, GitHub repositories with code citations and desktop local folders (M5); human-approved email drafts from verified reports delivered through a durable outbox to Mailpit, and review-only scheduled briefings (M6).",
+    "description": "Identity, tenant isolation and health (M0); verified SQL reports (M2) and authorized document answers with exact citations (M3), streamed over Server-Sent Events; Google Drive sync, scoped administration and tenant configuration (M4); legal clause/expiry answers, GitHub repositories with code citations and desktop local folders (M5); human-approved email drafts from verified reports delivered through a durable outbox to Mailpit, and review-only scheduled briefings (M6); a General chat mode answered by the model alone and a model status check (M8).",
     "title": "Enterprise AI OS API",
     "version": "0.6.0-m6"
   },
@@ -5765,6 +5885,33 @@
         "summary": "Me",
         "tags": [
           "identity"
+        ]
+      }
+    },
+    "/api/v1/model/status": {
+      "get": {
+        "description": "The inference mode and, for the real gateway, the verified served chat model.",
+        "operationId": "model_status_api_v1_model_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Model Status",
+        "tags": [
+          "model"
         ]
       }
     },

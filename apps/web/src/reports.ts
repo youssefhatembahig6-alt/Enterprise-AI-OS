@@ -82,13 +82,15 @@ export interface DocumentCitation {
   url?: string | null;
 }
 
-export type AskMode = "auto" | "documents" | "report" | "legal" | "code";
+export type AskMode = "auto" | "documents" | "report" | "legal" | "code" | "general";
 
 export interface Verification {
   label: string;
   narrative: string;
   inference_mode: "gateway" | "fake";
   inference_label?: string;
+  /** M8 general replies: the served chat model that produced it (gateway mode). */
+  model?: { name: string | null; revision: string | null };
   checker: null | {
     model: string;
     revision: string;
