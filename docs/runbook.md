@@ -150,6 +150,8 @@ After pulling M6: `python3 scripts/dev.py up` (starts Mailpit and runs migration
 
 Clean-checkout setup, the defense demo script, the architecture and evidence index, and the rehearsal checklist: [defense/README.md](defense/README.md).
 
+**Chat page.** After signing in, click **Chat** next to **Dashboard**. The page has a conversation sidebar (**New chat**, history for this session), a composer with a **Source** selector, message bubbles, and a **Sources** panel. Every question is a separate `POST /api/v1/chat` run with your token: earlier messages are not sent to the backend. Clicking a numbered citation opens the passage or SQL evidence through the same endpoints the dashboard uses, so access is checked again. The history lives in memory only and is cleared on sign-out or reload. **Automatic** routes sales and period questions (for example anything naming "Q1 2026") to the SQL sales report; choose **Documents you can access** to ask the documents. A verified sales report has **Email this report for approval**, which opens the dashboard's email card with that report selected.
+
 ## Restart
 
 ```bash

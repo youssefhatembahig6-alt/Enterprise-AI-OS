@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { admin, type TenantSettings } from "./admin";
 import { ActionsPanel, type ReportSource } from "./ActionsPanel";
 import { AdminPanel } from "./AdminPanel";
+import { ChatPage } from "./ChatPage";
 import { api, ApiError, type Identity } from "./api";
 import { desktop } from "./desktop";
 import { DocumentsPanel } from "./DocumentsPanel";
@@ -183,6 +184,7 @@ export function App() {
   const [settings, setSettings] = useState<TenantSettings | null>(null);
   const [desktopSession, setDesktopSession] = useState<{ session: Session; ready: boolean } | null>(null);
   const [reportSource, setReportSource] = useState<ReportSource | null>(null);
+  const [view, setView] = useState<"dashboard" | "chat">("dashboard");
   const onReportPublished = useCallback((runId: string, title: string) => setReportSource({ runId, title }), []);
 
   useEffect(() => {
@@ -216,62 +218,106 @@ export function App() {
     }
   }, [session]);
 
-  return (
-    <main
-      className={`mx-auto flex min-h-screen w-full flex-col gap-6 px-4 py-10 ${session ? "max-w-3xl" : "max-w-xl"}`}
-    >
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">Enterprise AI OS</h1>
-        <ApiStatusBar status={status} />
-      </header>
-      {notice && !session ? <p className="text-sm text-muted-fg">{notice}</p> : null}
-      {session ? (
-        <>
-          <ReportPanel
-            token={session.token}
-            packs={settings?.enabled_packs ?? null}
-            onReportPublished={onReportPublished}
-          />
-          {settings?.enabled_packs.includes("actions") ? (
-            <ActionsPanel token={session.token} source={reportSource} />
-          ) : null}
-          <DocumentsPanel
-            token={session.token}
-            canUpload={
-              session.identity.capabilities.some((c) => c.capability === "resource.admin") &&
-              Boolean(settings?.enabled_connectors.includes("upload"))
-            }
-          />
-          {bridge && settings?.enabled_connectors.includes("local_folder") ? (
-            desktopSession?.session === session && desktopSession.ready ? (
-              <LocalFoldersPanel token={session.token} groups={session.identity.groups} />
-            ) : (
-              <Card title="Local folders">
-                {desktopSession?.session === session ? (
-                  <Alert>Could not connect local folders to this account. Sign in again to retry.</Alert>
-                ) : (
-                  <p className="text-sm text-muted-fg" role="status">Loading local folders…</p>
-                )}
-              </Card>
-            )
-          ) : null}
-          <AdminPanel
-            token={session.token}
-            identity={session.identity}
-            settings={settings}
-            onSettings={setSettings}
-          />
-          <IdentityView session={session} onSignOut={() => void signOut()} />
-        </>
-      ) : (
+  const nav = (
+    <nav aria-label="Pages" className="flex flex-wrap gap-2">
+      <Button variant={view === "dashboard" ? "primary" : "secondary"} onClick={() => setView("dashboard")}
+        aria-current={view === "dashboard" ? "page" : undefined}>
+        Dashboard
+      </Button>
+      <Button variant={view === "chat" ? "primary" : "secondary"} onClick={() => setView("chat")}
+        aria-current={view === "chat" ? "page" : undefined}>
+        Chat
+      </Button>
+    </nav>
+  );
+
+  if (!session) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-xl flex-col gap-6 px-4 py-10">
+        <header className="flex flex-col gap-2">
+          <h1 className="text-2xl font-semibold">Enterprise AI OS</h1>
+          <ApiStatusBar status={status} />
+        </header>
+        {notice ? <p className="text-sm text-muted-fg">{notice}</p> : null}
         <SignInForm
           disabled={status.kind === "unreachable"}
           onSignedIn={(s) => {
             setNotice(null);
+            setView("dashboard");
             setSession(s);
           }}
         />
-      )}
-    </main>
+      </main>
+    );
+  }
+
+  return (
+    <>
+      <div hidden={view !== "chat"}>
+        {/* Keyed by session: a new sign-in starts with an empty, memory-only history. */}
+        <ChatPage
+          key={session.token}
+          token={session.token}
+          identity={session.identity}
+          packs={settings?.enabled_packs ?? null}
+          header={<ApiStatusBar status={status} />}
+          canEmail={Boolean(settings?.enabled_packs.includes("actions"))}
+          onReportPublished={onReportPublished}
+          onOpenDashboard={() => setView("dashboard")}
+          onSignOut={() => void signOut()}
+        />
+      </div>
+      <main
+        hidden={view !== "dashboard"}
+        className="mx-auto flex min-h-screen w-full max-w-3xl flex-col gap-6 px-4 py-10"
+      >
+        <header className="flex flex-col gap-3">
+          <h1 className="text-2xl font-semibold">Enterprise AI OS</h1>
+          <ApiStatusBar status={status} />
+          <div className="flex flex-wrap items-center gap-3">
+            {nav}
+            <span className="text-sm text-muted-fg">
+              Open <strong>Chat</strong> for a conversation view with sources; the dashboard keeps
+              reports, email approval, documents and administration.
+            </span>
+          </div>
+        </header>
+        <ReportPanel
+          token={session.token}
+          packs={settings?.enabled_packs ?? null}
+          onReportPublished={onReportPublished}
+        />
+        {settings?.enabled_packs.includes("actions") ? (
+          <ActionsPanel token={session.token} source={reportSource} />
+        ) : null}
+        <DocumentsPanel
+          token={session.token}
+          canUpload={
+            session.identity.capabilities.some((c) => c.capability === "resource.admin") &&
+            Boolean(settings?.enabled_connectors.includes("upload"))
+          }
+        />
+        {bridge && settings?.enabled_connectors.includes("local_folder") ? (
+          desktopSession?.session === session && desktopSession.ready ? (
+            <LocalFoldersPanel token={session.token} groups={session.identity.groups} />
+          ) : (
+            <Card title="Local folders">
+              {desktopSession?.session === session ? (
+                <Alert>Could not connect local folders to this account. Sign in again to retry.</Alert>
+              ) : (
+                <p className="text-sm text-muted-fg" role="status">Loading local folders…</p>
+              )}
+            </Card>
+          )
+        ) : null}
+        <AdminPanel
+          token={session.token}
+          identity={session.identity}
+          settings={settings}
+          onSettings={setSettings}
+        />
+        <IdentityView session={session} onSignOut={() => void signOut()} />
+      </main>
+    </>
   );
 }

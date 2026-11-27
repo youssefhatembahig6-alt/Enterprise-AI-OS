@@ -1,118 +1,12 @@
 import { Alert, Button, Card, StatusPill } from "@eaios/ui";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ApiError } from "./api";
 import { verificationText } from "./verification";
-import {
-  cancelReport,
-  fetchDocumentCitation,
-  fetchEvidence,
-  resumeReport,
-  startReport,
-  type AskMode,
-  type Citation,
-  type DocumentCitation,
-  type DonePayload,
-  type Evidence,
-  type ReportEvent,
-  type ReportTable,
-} from "./reports";
+import { cancelReport, type AskMode, type Citation } from "./reports";
+import { executeRun } from "./runStream";
+import { citationNumber as numberOf, EMPTY_RUN, type RunView } from "./runView";
+import { EvidenceDetail, PassageDetail } from "./sourceViews";
 
 const EXAMPLE = "What were net (tax-exclusive) fulfilled sales for Q1 2026, in USD?";
-const MAX_RECONNECTS = 5;
-
-interface Step {
-  step: string;
-  label: string;
-  state: string;
-  attempt?: number;
-  maxAttempts?: number;
-}
-
-interface Sentence {
-  text: string;
-  citations: string[];
-}
-
-interface RunView {
-  runId: string | null;
-  lastId: number;
-  steps: Step[];
-  title: string | null;
-  table: ReportTable | null;
-  definition: Record<string, unknown> | null;
-  sentences: Sentence[];
-  citations: Citation[];
-  done: DonePayload | null;
-  error: { code: string; message: string } | null;
-  fakeLabel: string | null;
-  reconnecting: boolean;
-}
-
-const EMPTY: RunView = {
-  runId: null,
-  lastId: 0,
-  steps: [],
-  title: null,
-  table: null,
-  definition: null,
-  sentences: [],
-  citations: [],
-  done: null,
-  error: null,
-  fakeLabel: null,
-  reconnecting: false,
-};
-
-function newRequestId(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(12));
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function apply(view: RunView, event: ReportEvent): RunView {
-  const next: RunView = { ...view, reconnecting: false };
-  if (event.id !== null) next.lastId = Math.max(view.lastId, event.id);
-  const d = event.data;
-  if (typeof d.inference_label === "string") next.fakeLabel = d.inference_label;
-  if (!next.runId && typeof d.run_id === "string") next.runId = d.run_id;
-  switch (event.event) {
-    case "status": {
-      const step: Step = {
-        step: String(d.step),
-        label: String(d.label),
-        state: String(d.state),
-        attempt: typeof d.attempt === "number" ? d.attempt : undefined,
-        maxAttempts: typeof d.max_attempts === "number" ? d.max_attempts : undefined,
-      };
-      const others = view.steps.filter((s) => s.step !== step.step);
-      next.steps = [...others, step];
-      break;
-    }
-    case "token":
-      if (d.part === "table") {
-        next.table = d.table as ReportTable;
-        next.title = typeof d.title === "string" ? d.title : null;
-        next.definition = (d.definition as Record<string, unknown>) ?? null;
-      } else if (d.part === "text") {
-        next.sentences = [
-          ...view.sentences,
-          { text: String(d.text), citations: (d.citations as string[]) ?? [] },
-        ];
-      }
-      break;
-    case "citation":
-      next.citations = [...view.citations, d as unknown as Citation];
-      break;
-    case "error":
-      next.error = { code: String(d.code), message: String(d.message) };
-      break;
-    case "done":
-      next.done = d as unknown as DonePayload;
-      break;
-    case "approval_required":
-      break; // reserved for wave 3; never sent in M2
-  }
-  return next;
-}
 
 function EvidencePanel({
   token,
@@ -123,96 +17,10 @@ function EvidencePanel({
   citation: Citation;
   onClose: () => void;
 }) {
-  const [evidence, setEvidence] = useState<Evidence | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    setEvidence(null);
-    setError(null);
-    fetchEvidence(token, citation.evidence_id ?? "")
-      .then((e) => live && setEvidence(e))
-      .catch((err: unknown) => {
-        if (!live) return;
-        setError(
-          err instanceof ApiError && err.status === 404
-            ? "This evidence is not available to you (your access may have changed)."
-            : "Could not load the evidence.",
-        );
-      });
-    return () => {
-      live = false;
-    };
-  }, [token, citation.evidence_id]);
-
   return (
     <Card title="Evidence">
       <div className="flex flex-col gap-3 text-sm">
-        <p className="text-muted-fg">
-          Exact stored query result for <strong>{citation.label}</strong> (row {(citation.row ?? 0) + 1},
-          column <code>{citation.column}</code>). Access is re-checked every time it is opened.
-        </p>
-        {error ? <Alert>{error}</Alert> : null}
-        {!evidence && !error ? <p className="text-muted-fg">Loading…</p> : null}
-        {evidence ? (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr>
-                    {evidence.columns.map((c) => (
-                      <th key={c.name} className="border-b border-border px-2 py-1 font-medium">
-                        {c.name} <span className="text-muted-fg">({c.type})</span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {evidence.rows.map((row, r) => (
-                    <tr key={r}>
-                      {row.map((cell, c) => {
-                        const hit = r === citation.row && evidence.columns[c]?.name === citation.column;
-                        return (
-                          <td
-                            key={c}
-                            className={`px-2 py-1 font-mono ${hit ? "bg-warn-bg text-warn-fg" : ""}`}
-                          >
-                            {cell === null ? "NULL" : String(cell)}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div>
-              <div className="mb-1 font-medium">Read-only SQL that produced it</div>
-              <pre className="overflow-x-auto rounded-md bg-muted p-2 text-xs whitespace-pre-wrap break-words">
-                {evidence.executed_sql}
-              </pre>
-              <div className="mt-1 text-xs text-muted-fg">
-                Bound parameters: <code>{JSON.stringify(evidence.parameters)}</code>
-              </div>
-            </div>
-            <dl className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-3">
-              <dt className="text-muted-fg">Integrity</dt>
-              <dd className="sm:col-span-2">
-                <StatusPill tone={evidence.integrity === "verified" ? "ok" : "error"}>
-                  {evidence.integrity === "verified" ? "hash verified" : "hash mismatch"}
-                </StatusPill>
-              </dd>
-              <dt className="text-muted-fg">Result SHA-256</dt>
-              <dd className="font-mono break-all sm:col-span-2">{evidence.result_sha256}</dd>
-              <dt className="text-muted-fg">Dataset</dt>
-              <dd className="font-mono break-all sm:col-span-2">{evidence.dataset_fingerprint}</dd>
-              <dt className="text-muted-fg">Executed</dt>
-              <dd className="sm:col-span-2">{new Date(evidence.executed_at).toLocaleString()}</dd>
-              <dt className="text-muted-fg">Policy version</dt>
-              <dd className="sm:col-span-2">{evidence.policy_epoch}</dd>
-            </dl>
-          </>
-        ) : null}
+        <EvidenceDetail token={token} citation={citation} />
         <div className="flex justify-end">
           <Button variant="secondary" onClick={onClose}>
             Close evidence
@@ -234,58 +42,10 @@ function DocumentCitationPanel({
   citation: Citation;
   onClose: () => void;
 }) {
-  const [passage, setPassage] = useState<DocumentCitation | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    setPassage(null);
-    setError(null);
-    fetchDocumentCitation(token, runId, citation.citation_id)
-      .then((p) => live && setPassage(p))
-      .catch((err: unknown) => {
-        if (!live) return;
-        setError(
-          err instanceof ApiError && err.status === 404
-            ? "This source is not available to you (your access may have changed or the document was removed)."
-            : "Could not load the source.",
-        );
-      });
-    return () => {
-      live = false;
-    };
-  }, [token, runId, citation.citation_id]);
-
   return (
     <Card title="Source">
       <div className="flex flex-col gap-3 text-sm">
-        {error ? <Alert>{error}</Alert> : null}
-        {!passage && !error ? <p className="text-muted-fg">Loading…</p> : null}
-        {passage ? (
-          <>
-            <p className="text-muted-fg">
-              <strong>{passage.title}</strong> · {passage.filename} · version {passage.version}
-              {passage.is_current_version ? "" : ` (current is ${passage.current_version}; this is the version the answer used)`}
-            </p>
-            {passage.repository && passage.commit ? (
-              <p className="text-xs text-muted-fg break-all">
-                {passage.repository} · {passage.path} · commit <code>{passage.commit.slice(0, 12)}</code>
-                {passage.line_start ? ` · lines ${passage.line_start}–${passage.line_end}` : ""}
-              </p>
-            ) : null}
-            <blockquote className="rounded-md bg-muted p-3 whitespace-pre-wrap break-words">
-              <span className="text-muted-fg">…{passage.before}</span>
-              <mark className="bg-warn-bg text-warn-fg">{passage.quote}</mark>
-              <span className="text-muted-fg">{passage.after}…</span>
-            </blockquote>
-            <p className="text-xs text-muted-fg">
-              Characters {passage.char_start}–{passage.char_end} (Unicode code points) ·{" "}
-              <StatusPill tone={passage.integrity === "verified" ? "ok" : "error"}>
-                {passage.integrity === "verified" ? "text hash verified" : "text hash mismatch"}
-              </StatusPill>
-            </p>
-          </>
-        ) : null}
+        <PassageDetail token={token} runId={runId} citation={citation} />
         <div className="flex justify-end">
           <Button variant="secondary" onClick={onClose}>
             Close source
@@ -313,16 +73,16 @@ export function ReportPanel({
   const reportsOn = packs === null || packs.includes("sales_reports");
   const [question, setQuestion] = useState("");
   const [mode, setMode] = useState<AskMode>("auto");
-  const [view, setView] = useState<RunView>(EMPTY);
+  const [view, setView] = useState<RunView>(EMPTY_RUN);
   const [running, setRunning] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [selected, setSelected] = useState<Citation | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const viewRef = useRef<RunView>(EMPTY);
+  const viewRef = useRef<RunView>(EMPTY_RUN);
 
-  const onEvent = useCallback((event: ReportEvent) => {
-    viewRef.current = apply(viewRef.current, event);
-    setView(viewRef.current);
+  const onView = useCallback((next: RunView) => {
+    viewRef.current = next;
+    setView(next);
   }, []);
 
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -338,54 +98,13 @@ export function ReportPanel({
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    viewRef.current = EMPTY;
-    setView(EMPTY);
+    onView(EMPTY_RUN);
     setSelected(null);
     setFailure(null);
     setRunning(true);
     try {
-      const { runId, ended } = await startReport(
-        token,
-        question.trim(),
-        newRequestId(),
-        onEvent,
-        controller.signal,
-        mode,
-      );
-      if (runId && !viewRef.current.runId) {
-        viewRef.current = { ...viewRef.current, runId };
-        setView(viewRef.current);
-      }
-      let state = ended;
-      for (let attempt = 1; state === "dropped" && attempt <= MAX_RECONNECTS; attempt++) {
-        const id = viewRef.current.runId;
-        if (!id || controller.signal.aborted) break;
-        viewRef.current = { ...viewRef.current, reconnecting: true };
-        setView(viewRef.current);
-        await new Promise((r) => setTimeout(r, Math.min(1000 * attempt, 4000)));
-        try {
-          state = await resumeReport(token, id, viewRef.current.lastId, onEvent, controller.signal);
-        } catch (err) {
-          if (err instanceof ApiError) throw err;
-          state = "dropped";
-        }
-      }
-      if (state === "dropped" && !controller.signal.aborted) {
-        setFailure("Lost the connection to the server. The run may still finish; try again later.");
-      }
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      if (err instanceof ApiError) {
-        setFailure(
-          err.status === 503
-            ? "Reporting is not configured on this server."
-            : err.status === 401
-              ? "Your session has ended. Sign in again."
-              : err.message,
-        );
-      } else {
-        setFailure("Could not reach the API.");
-      }
+      const message = await executeRun(token, question.trim(), mode, controller.signal, onView);
+      if (message && !controller.signal.aborted) setFailure(message);
     } finally {
       setRunning(false);
     }
@@ -402,7 +121,7 @@ export function ReportPanel({
   };
 
   const cite = (id: string) => view.citations.find((c) => c.citation_id === id) ?? null;
-  const citationNumber = (id: string) => view.citations.findIndex((c) => c.citation_id === id) + 1;
+  const citationNumber = (id: string) => numberOf(view, id);
   const verification = view.done ? verificationText(view.done) : null;
   const fake = view.fakeLabel;
 

@@ -11,6 +11,8 @@
   },
   "include": [
     "src/verification.ts",
+    "src/runView.ts",
+    "src/chatState.ts",
     "test"
   ]
 }
