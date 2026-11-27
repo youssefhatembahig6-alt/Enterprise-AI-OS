@@ -109,7 +109,7 @@ Suggested fix: `aria-label={"Save groups of " + email}`, matching the roles butt
 
 ### Test-harness finding (not a product bug) — the backend test container lacks `scripts/`
 
-**Fixed** in the closeout PR. `test-backend` builds the test image from a staged context: only git-indexed files of backend, scripts, ml and docs, no label files, and a one-commit git snapshot instead of the checkout's `.git`. Files use a checkout layout, `git` is installed, and no extra mounts are needed. See [the closeout record](2026-11-26-closeout.md#backend-test-container).
+**Fixed** in the closeout PR. `test-backend` builds the test image from a staged context: only git-indexed files of backend, scripts, ml and docs, minus anything ignored, private by name or a label file. Every path is checked to resolve inside the checkout, and the context has no git repository. Files use a checkout layout, `git` is installed, and no extra mounts are needed. See [the closeout record](2026-11-26-closeout.md#backend-test-container).
 
 `tests/integration/test_m5_acceptance_runner.py` loads `Path(__file__).parents[3] / "scripts" / "m5_github_acceptance.py"`. Inside the `backend-tests` image that resolves to `/scripts/…`, but the image copies only `backend/`. Collection therefore fails with `FileNotFoundError: '/scripts/m5_github_acceptance.py'` ([first attempt](2026-11-26-pytest-first-attempt-collection-error.log)). `python3 scripts/dev.py test-backend` uses the same container and would stop at collection too. CI runs pytest from a full checkout, which hides it. This pass mounted `scripts/` read-only at `/scripts` (command below). Suggested fix: add that mount to the `backend-tests` service, or skip the test when the script is absent.
 
