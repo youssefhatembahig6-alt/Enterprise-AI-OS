@@ -1,7 +1,9 @@
 // B1 regression (docs/evidence/m7-functional/README.md): the image's CSP hard-coded
 // the API at localhost:8000, so any other VITE_API_BASE_URL gave a dead UI.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { apiConnectSources, renderNginx } from "../render-nginx.mjs";
 
@@ -109,6 +111,51 @@ test("the loopback alias applies to exactly localhost and 127.0.0.1", () => {
     assert.equal(apiConnectSources(`http://${host}:8000`).length, 1, host);
   }
   assert.throws(() => apiConnectSources("http://__proto__:8000"), /not a plain/);
+});
+
+const SECRET = "SYNTHETIC-PW-7f3a9c";
+const SCRIPT = fileURLToPath(new URL("../render-nginx.mjs", import.meta.url));
+const TEMPLATE_PATH = fileURLToPath(new URL("../nginx.conf.template", import.meta.url));
+const SECRET_INPUTS = [
+  `http://user:${SECRET}@api.example.test`,
+  `https://${SECRET}@api.example.test:8443/`,
+  `http://api.example.test/?token=${SECRET}`,
+  `http://api.example.test/#${SECRET}`,
+  `http:${SECRET}.example.test`,
+  `http://${SECRET}.example.test:99999`,
+  `ftp://${SECRET}.example.test`,
+  `http://*.${SECRET}.example.test`,
+  `http://api.example.test/${SECRET} x`,
+];
+
+test("rejections state the reason but never echo the value", () => {
+  for (const value of SECRET_INPUTS) {
+    let message = "";
+    assert.throws(() => apiConnectSources(value), (error) => {
+      message = error.message;
+      return true;
+    });
+    assert.match(message, /^VITE_API_BASE_URL .+ \(value not shown\)$/, value);
+    assert.ok(!message.includes(SECRET), `${value} -> ${message}`);
+    assert.ok(!message.includes(value), `${value} -> ${message}`);
+  }
+  assert.throws(() => apiConnectSources(`http://user:${SECRET}@api.example.test`), /must not contain credentials/);
+});
+
+test("the build step's CLI fails without printing the value", () => {
+  for (const value of SECRET_INPUTS) {
+    let failure;
+    try {
+      execFileSync(process.execPath, [SCRIPT, value, TEMPLATE_PATH], { stdio: "pipe" });
+    } catch (error) {
+      failure = error;
+    }
+    assert.ok(failure, `accepted: ${value}`);
+    assert.equal(failure.status, 1);
+    const output = `${failure.stdout}${failure.stderr}`;
+    assert.match(output, /^render-nginx: VITE_API_BASE_URL .+ \(value not shown\)\n$/);
+    assert.ok(!output.includes(SECRET), output);
+  }
 });
 
 test("a template without the placeholder in the CSP is refused", () => {

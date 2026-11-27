@@ -6,7 +6,8 @@
 //
 //   node render-nginx.mjs "$VITE_API_BASE_URL" nginx.conf.template > nginx.conf
 //
-// The build fails on anything that is not a plain http(s) origin.
+// The build fails on anything that is not a plain http(s) origin, naming the reason but
+// never the rejected value.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -24,39 +25,41 @@ const LOOPBACK_ALIAS = new Map([
   ["127.0.0.1", "localhost"],
 ]);
 
-function reject(reason, value) {
-  throw new Error(`VITE_API_BASE_URL ${reason}: ${JSON.stringify(value)}`);
+// Errors name the reason only. The rejected value is never echoed: it may carry a
+// credential or other secret, and build logs are widely readable.
+function reject(reason) {
+  throw new Error(`VITE_API_BASE_URL ${reason} (value not shown)`);
 }
 
 /** The connect-src sources for an API base URL: its origin, plus the other spelling
  * of the loopback host when it is exactly localhost or 127.0.0.1 (the policy allowed
  * both before this change). Throws a descriptive error on anything else. */
 export function apiConnectSources(apiBaseUrl) {
-  if (typeof apiBaseUrl !== "string" || apiBaseUrl === "") reject("must be set", apiBaseUrl);
-  if (/\s/.test(apiBaseUrl)) reject("must not contain whitespace", apiBaseUrl);
-  if (apiBaseUrl.includes("*")) reject("must not contain a wildcard", apiBaseUrl);
-  if (!/^https?:/i.test(apiBaseUrl)) reject("must use http or https", apiBaseUrl);
+  if (typeof apiBaseUrl !== "string" || apiBaseUrl === "") reject("must be set");
+  if (/\s/.test(apiBaseUrl)) reject("must not contain whitespace");
+  if (apiBaseUrl.includes("*")) reject("must not contain a wildcard");
+  if (!/^https?:/i.test(apiBaseUrl)) reject("must use http or https");
   if (!/^https?:\/\//.test(apiBaseUrl)) {
-    reject('must start with "http://" or "https://" (lower case, with both slashes)', apiBaseUrl);
+    reject('must start with "http://" or "https://" (lower case, with both slashes)');
   }
-  if (apiBaseUrl.includes("?")) reject("must not contain a query or a trailing '?'", apiBaseUrl);
-  if (apiBaseUrl.includes("#")) reject("must not contain a fragment or a trailing '#'", apiBaseUrl);
-  if (apiBaseUrl.includes("@")) reject("must not contain credentials", apiBaseUrl);
+  if (apiBaseUrl.includes("?")) reject("must not contain a query or a trailing '?'");
+  if (apiBaseUrl.includes("#")) reject("must not contain a fragment or a trailing '#'");
+  if (apiBaseUrl.includes("@")) reject("must not contain credentials");
   const match = BASE_URL.exec(apiBaseUrl);
-  if (!match) reject("is not a plain http(s) base URL (host, optional port and path)", apiBaseUrl);
+  if (!match) reject("is not a plain http(s) base URL (host, optional port and path)");
   const [, scheme, , port] = match;
   if (port !== undefined && (Number(port) < 1 || Number(port) > 65535)) {
-    reject("has a port outside 1-65535", apiBaseUrl);
+    reject("has a port outside 1-65535");
   }
   let url;
   try {
     url = new URL(apiBaseUrl);
   } catch {
-    reject("is not a valid URL", apiBaseUrl);
+    reject("is not a valid URL");
   }
   // The parser must agree with the raw text: same scheme, no repairs.
   if (url.protocol !== `${scheme}:` || url.username || url.password || url.search || url.hash) {
-    reject("was changed by URL parsing; write it in canonical form", apiBaseUrl);
+    reject("was changed by URL parsing; write it in canonical form");
   }
   const sources = [url.origin];
   const alias = LOOPBACK_ALIAS.get(url.hostname);

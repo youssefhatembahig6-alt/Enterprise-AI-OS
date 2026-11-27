@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 # Backend test image (`python3 scripts/dev.py test-backend`). Never used for the running
 # stack. The build context is NOT the checkout: scripts/test_context.py stages a fresh
-# directory with only git-indexed files of backend/, scripts/, ml/ and docs/ (no
-# untracked, ignored or label files) and a one-commit git snapshot of exactly those
-# files. Nothing from the checkout's .git (other branches, private refs, the shared
-# object database) is copied or mounted. The tree is laid out as in a checkout
+# directory with only git-indexed files of backend/, scripts/, ml/ and docs/, minus
+# anything ignored, private by name (.env, keys, var/, virtualenvs) or a label file, and
+# with every path checked to resolve inside the checkout. It contains no git repository:
+# the tests need only the git binary. The tree is laid out as in a checkout
 # (/repo/backend, /repo/scripts, ...) so checkout-dependent tests resolve their files as
 # CI does.
 FROM python:3.13.7-slim-bookworm
@@ -12,10 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PYTHONPATH=/repo/backend \
-    GIT_CONFIG_COUNT=1 \
-    GIT_CONFIG_KEY_0=safe.directory \
-    GIT_CONFIG_VALUE_0=/repo
+    PYTHONPATH=/repo/backend
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*

@@ -13,10 +13,11 @@ COPY packages/ui packages/ui
 COPY apps/web apps/web
 ARG VITE_API_BASE_URL=http://localhost:8000
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
-RUN npm run build -w @eaios/web
 # The CSP's connect-src comes from the same build argument as the bundle's API address
-# (bug B1). An invalid or over-broad value fails the build here.
+# (bug B1). It is validated before the bundle is built; an invalid or over-broad value
+# fails here, and the error names the reason without echoing the value.
 RUN node apps/web/render-nginx.mjs "$VITE_API_BASE_URL" apps/web/nginx.conf.template > /repo/nginx.conf
+RUN npm run build -w @eaios/web
 
 FROM nginx:1.28.0-alpine
 COPY --from=build /repo/nginx.conf /etc/nginx/conf.d/default.conf
