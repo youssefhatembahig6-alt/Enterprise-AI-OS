@@ -48,6 +48,7 @@ const ICONS = {
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   up: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+  theme: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/>',
 } as const;
 
 function Svg({ k, size }: { k: keyof typeof ICONS; size?: number }) {
@@ -140,6 +141,9 @@ function Composer({
   disabled,
   onSubmit,
   onUpload,
+  mode,
+  modes,
+  onMode,
 }: {
   id: string;
   placeholder: string;
@@ -148,6 +152,9 @@ function Composer({
   disabled: boolean;
   onSubmit: () => void;
   onUpload: () => void;
+  mode: AskMode;
+  modes: AskMode[];
+  onMode: (m: AskMode) => void;
 }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -155,11 +162,9 @@ function Composer({
   };
   return (
     <form className="composer" onSubmit={submit}>
-      <button type="button" className="iconbtn" aria-label="Upload a document" title="Upload a document" onClick={onUpload}>
-        <Svg k="plus" />
-      </button>
       <input
         id={id}
+        className="ask"
         value={value}
         maxLength={1000}
         placeholder={placeholder}
@@ -167,36 +172,25 @@ function Composer({
         aria-label="Your question"
         onChange={(e) => onChange(e.target.value)}
       />
-      <button type="submit" className="send" aria-label="Ask" disabled={disabled || !value.trim()}>
-        <Svg k="up" />
-      </button>
+      <div className="bar">
+        <button type="button" className="iconbtn" aria-label="Upload a document" title="Upload a document" onClick={onUpload}>
+          <Svg k="plus" />
+        </button>
+        <span className="sp" />
+        <label className="srcsel" title="Where the answer comes from">
+          <select id={`${id}-source`} aria-label="Source" value={mode} onChange={(e) => onMode(e.target.value as AskMode)}>
+            {modes.map((m) => (
+              <option key={m} value={m}>
+                {MODE_LABELS[m]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" className="send" aria-label="Ask" disabled={disabled || !value.trim()}>
+          <Svg k="up" />
+        </button>
+      </div>
     </form>
-  );
-}
-
-function SourcePicker({
-  id,
-  mode,
-  modes,
-  onMode,
-}: {
-  id: string;
-  mode: AskMode;
-  modes: AskMode[];
-  onMode: (m: AskMode) => void;
-}) {
-  return (
-    <div className="askmeta">
-      <label htmlFor={id}>Source</label>
-      <select id={id} value={mode} onChange={(e) => onMode(e.target.value as AskMode)}>
-        {modes.map((m) => (
-          <option key={m} value={m}>
-            {MODE_LABELS[m]}
-          </option>
-        ))}
-      </select>
-      <span>{INDEPENDENT_NOTE}</span>
-    </div>
   );
 }
 
@@ -215,7 +209,7 @@ function Answer({
   onCite: (citationId: string) => void;
   onCancel: () => void;
   canEmail: boolean;
-  onEmail: () => void;
+  onEmail: (runId: string, title: string) => void;
 }) {
   const { view, failure } = turn;
   const kind = runKind(view, failure);
@@ -333,8 +327,12 @@ function Answer({
             ))}
           </div>
         ) : null}
-        {kind === "report" && canEmail ? (
-          <button type="button" className="btn small" onClick={onEmail}>
+        {kind === "report" && canEmail && view.runId ? (
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => view.runId && onEmail(view.runId, view.title ?? "Verified report")}
+          >
             Email this report for approval
           </button>
         ) : null}
@@ -349,7 +347,7 @@ function SourceCard({
   citation,
   n,
   on,
-  open,
+  openCount,
   onOpen,
 }: {
   token: string;
@@ -357,7 +355,7 @@ function SourceCard({
   citation: Citation;
   n: number;
   on: boolean;
-  open: boolean;
+  openCount: number;
   onOpen: () => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -374,8 +372,8 @@ function SourceCard({
       <div className="meta">
         <span>{citationMeta(citation)}</span>
       </div>
-      {open ? (
-        <div className="flex flex-col gap-2 text-[12.5px]">
+      {openCount > 0 ? (
+        <div key={openCount} className="flex flex-col gap-2 text-[12.5px]">
           {doc && runId ? (
             <PassageDetail token={token} runId={runId} citation={citation} />
           ) : !doc ? (
@@ -409,6 +407,7 @@ export function ChatPage({
   onNavigate,
   pages,
   onReportPublished,
+  onEmailReport,
   onSignOut,
 }: {
   token: string;
@@ -422,6 +421,8 @@ export function ChatPage({
   onNavigate: (view: ShellView) => void;
   pages: Record<Exclude<ShellView, "chat">, ReactNode>;
   onReportPublished: (runId: string, title: string) => void;
+  /** The clicked report becomes the email source (not just the latest one). */
+  onEmailReport: (runId: string, title: string) => void;
   onSignOut: () => void;
 }) {
   const [state, dispatch] = useReducer(chatReducer, INITIAL_CHAT);
@@ -433,7 +434,9 @@ export function ChatPage({
   const [panelOpen, setPanelOpen] = useState(false);
   const [ptab, setPtab] = useState<"sources" | "media">("sources");
   const [focus, setFocus] = useState<{ turnId: string; citationId: string } | null>(null);
-  const [opened, setOpened] = useState<Set<string>>(new Set());
+  // Each explicit open bumps the counter, remounting the detail view so it fetches again
+  // (and the server re-checks access). 0 / missing = collapsed.
+  const [opens, setOpens] = useState<Record<string, number>>({});
   const controllers = useRef(new Map<string, AbortController>());
   const threadEnd = useRef<HTMLDivElement | null>(null);
 
@@ -505,9 +508,15 @@ export function ChatPage({
   const openCitation = (turnId: string, citationId: string) => {
     const key = `${turnId}/${citationId}`;
     setFocus({ turnId, citationId });
-    setOpened((s) => new Set(s).add(key));
+    setOpens((o) => ({ ...o, [key]: (o[key] ?? 0) + 1 }));
     setPtab("sources");
     setPanelOpen(true);
+  };
+
+  const closePanel = () => {
+    setPanelOpen(false);
+    setOpens({});
+    setFocus(null);
   };
 
   const newChat = () => {
@@ -654,11 +663,14 @@ export function ChatPage({
                 aria-label="Sources and media panel"
                 title="Sources and media"
                 aria-pressed={panelOpen}
-                onClick={() => setPanelOpen((p) => !p)}
+                onClick={() => (panelOpen ? closePanel() : setPanelOpen(true))}
               >
                 <Svg k="panel" />
               </button>
             ) : null}
+            <button type="button" className="iconbtn" aria-label="Appearance" title="Appearance" onClick={() => go("settings")}>
+              <Svg k="theme" />
+            </button>
           </div>
         </div>
 
@@ -673,8 +685,11 @@ export function ChatPage({
               disabled={false}
               onSubmit={() => ask(draft, mode)}
               onUpload={() => go("files")}
+              mode={mode}
+              modes={modes}
+              onMode={setMode}
             />
-            <SourcePicker id="homeMode" mode={mode} modes={modes} onMode={setMode} />
+            <p className="asknote">{INDEPENDENT_NOTE}</p>
           </section>
         ) : null}
 
@@ -694,7 +709,10 @@ export function ChatPage({
                     onCite={(id) => openCitation(turn.id, id)}
                     onCancel={() => void cancel(turn)}
                     canEmail={canEmail}
-                    onEmail={() => go("approvals")}
+                    onEmail={(runId, title) => {
+                      onEmailReport(runId, title);
+                      go("approvals");
+                    }}
                   />
                 </div>
               ))}
@@ -709,8 +727,11 @@ export function ChatPage({
                 disabled={anyRunning}
                 onSubmit={() => ask(draft, mode)}
                 onUpload={() => go("files")}
+                mode={mode}
+                modes={modes}
+                onMode={setMode}
               />
-              <SourcePicker id="dockMode" mode={mode} modes={modes} onMode={setMode} />
+              <p className="asknote">{INDEPENDENT_NOTE}</p>
             </div>
           </section>
         ) : null}
@@ -733,7 +754,7 @@ export function ChatPage({
             </button>
           </div>
           <span className="sp" />
-          <button type="button" className="iconbtn" aria-label="Close panel" onClick={() => setPanelOpen(false)}>
+          <button type="button" className="iconbtn" aria-label="Close panel" onClick={closePanel}>
             <Svg k="close" />
           </button>
         </div>
@@ -762,7 +783,7 @@ export function ChatPage({
                           citation={c}
                           n={citationNumber(t.view, c.citation_id)}
                           on={focus?.turnId === t.id && focus.citationId === c.citation_id}
-                          open={opened.has(key)}
+                          openCount={opens[key] ?? 0}
                           onOpen={() => openCitation(t.id, c.citation_id)}
                         />
                       );

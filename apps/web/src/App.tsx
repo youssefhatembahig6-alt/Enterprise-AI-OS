@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { admin, type TenantSettings } from "./admin";
 import { ActionsPanel, type ReportSource } from "./ActionsPanel";
 import { AdminPanel } from "./AdminPanel";
+import { AppearanceSettings } from "./AppearanceSettings";
+import { useAppearance } from "./useAppearance";
 import { ChatPage, type ShellView } from "./ChatPage";
 import { api, ApiError, type Identity } from "./api";
 import { desktop } from "./desktop";
@@ -173,6 +175,7 @@ function IdentityView({ session, onSignOut }: { session: Session; onSignOut: () 
 
 export function App() {
   const status = useApiStatus();
+  const [appearance, setAppearance] = useAppearance();
   const bridge = desktop();
   const [session, setSession] = useState<Session | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -181,6 +184,12 @@ export function App() {
   const [reportSource, setReportSource] = useState<ReportSource | null>(null);
   const [view, setView] = useState<ShellView>("chat");
   const onReportPublished = useCallback((runId: string, title: string) => setReportSource({ runId, title }), []);
+  // "Email this report" binds the email form to the report that was clicked, even when a
+  // newer report was published since. The run reference tells same-titled reports apart.
+  const onEmailReport = useCallback(
+    (runId: string, title: string) => setReportSource({ runId, title: `${title} · report ${runId.slice(0, 8)}` }),
+    [],
+  );
 
   useEffect(() => {
     let current = true;
@@ -260,6 +269,7 @@ export function App() {
       view={view}
       onNavigate={setView}
       onReportPublished={onReportPublished}
+      onEmailReport={onEmailReport}
       onSignOut={() => void signOut()}
       pages={{
         files: (
@@ -319,6 +329,8 @@ export function App() {
         settings: (
           <>
             <h1>Settings</h1>
+            <AppearanceSettings appearance={appearance} onChange={setAppearance} />
+            <h2>Account</h2>
             <ApiStatusBar status={status} />
             <IdentityView session={session} onSignOut={() => void signOut()} />
           </>

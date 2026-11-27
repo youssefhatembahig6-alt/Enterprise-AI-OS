@@ -13,6 +13,7 @@
     "src/verification.ts",
     "src/runView.ts",
     "src/chatState.ts",
+    "src/appearance.ts",
     "test"
   ]
 }
