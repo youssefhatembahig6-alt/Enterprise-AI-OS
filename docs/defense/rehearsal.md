@@ -11,7 +11,7 @@ Use this list for every rehearsal and on the defense day. Steps refer to [demo-s
 - [ ] One complete run of sections 0–3 (and 4, if kept) against a timer. Target 11–13 minutes of talking.
 - [ ] Recording made and played back once ([Recording outline](#recording-outline)). Copy it to a USB stick or the presentation laptop.
 - [ ] Slides include the architecture diagram and the "What was tested where" table.
-- [ ] Optional: a teammate follows [setup-clean-checkout.md](setup-clean-checkout.md) on their own machine. The M8 roadmap asks for this, and it has not been done yet.
+- [ ] **Required to finish M8:** a teammate follows [setup-clean-checkout.md](setup-clean-checkout.md) from a fresh clone on their own machine and records the commit, OS, commands, and any deviations. The M8 roadmap exit criterion requires it ("another team member reproduces setup and results"). Not done yet.
 
 **Defense day, 15 minutes before**
 
@@ -39,7 +39,7 @@ One full rehearsal on the disposable `eaios-m8def` stack, built from a fresh clo
 | Step | Result | Notes |
 | --- | --- | --- |
 | Setup from the clean clone | **PASS** after finding 1 | `var/` was created by root on `up`; `seed` failed to write credentials. Recovered as the setup guide describes |
-| Runners: `smoke_stack`, `m2_demo_capture`, `m3_demo capture`, `m6_demo` | **PASS** (all exit 0) | Before the reset; their Mailpit message was removed by the reset |
+| Runners: `smoke_stack`, `m2_demo_capture`, `m3_demo capture`, `m6_demo` | **Completed** (all exit 0); `smoke_stack`, `m2_demo_capture` and `m6_demo` **PASS** on their own checks | Before the reset; their Mailpit message was removed by the reset. `m3_demo capture` completed and recorded the authorized answer and citation, but its exit code does **not** prove the refusal: with the default question its "no access" leg returned an answer (`outcome=published`) and it still exited 0. The refusal was verified separately (rows 1.3 below) |
 | Full reset (remove volumes, `up`, all seeds) | **PASS**, 76 s | Mailpit total 0 afterwards |
 | 1.1–1.2 sales.reader identity and document list | **PASS** | No finance commentary, no board minutes |
 | 1.3 refusal — **original M7 question** "How many invoices were overdue at the reference date?" | **Did not refuse** | With the legal contracts seeded, it returned a verified but off-topic answer citing the Red Sea agreement: *"NileTech shall pay each invoice within 30 days of the invoice date. [1]"*. Nothing leaked (sales.reader may read that contract), but it contradicts the M7 demo's expected text. The M7 runs refused because the runners ran **before** `seed-legal` (M7 capture: `no_sources`) |

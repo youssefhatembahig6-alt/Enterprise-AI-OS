@@ -4,10 +4,11 @@
 
 ```mermaid
 flowchart LR
-  subgraph Laptop["Laptop: Docker Compose (127.0.0.1 only)"]
+  subgraph Laptop["Live demo — laptop, Docker Compose (127.0.0.1 only), MODEL_MODE=fake"]
     Web["React web app<br/>(nginx, CSP pinned to API)"]
     Desk["Electron desktop<br/>(local-folder connector)"]
     API["FastAPI API<br/>auth, policy, router, SSE"]
+    Fake["Labelled fake model<br/>(in-process double, FAKE everywhere)"]
     Worker["Celery worker<br/>reports, ingestion, outbox"]
     Beat["Scheduler (beat)<br/>syncs, briefings, reconciliation"]
     PG[("PostgreSQL 17<br/>RLS per tenant;<br/>app / owner / read-only report roles")]
@@ -16,20 +17,24 @@ flowchart LR
     S3[("SeaweedFS<br/>S3 document versions")]
     Mail["Mailpit<br/>(local SMTP sink)"]
   end
-  subgraph Colab["Colab T4 (real-model runs only)"]
-    GW["Model gateway<br/>Qwen3-8B-AWQ (vLLM), BGE-M3,<br/>DeBERTa checker, Docling"]
+  subgraph Colab["Recorded real-model runs — one Colab T4 runtime, everything on loopback, no tunnel"]
+    CAPI["Same application code<br/>(API, inline dispatch; PostgreSQL, Qdrant, Mailpit)"]
+    GW["Model gateway 127.0.0.1<br/>Qwen3-8B-AWQ (vLLM), BGE-M3,<br/>DeBERTa checker, Docling"]
+    CAPI -- "MODEL_MODE=gateway, loopback" --> GW
   end
   Drive["Google Drive (optional)"]
   GH["GitHub (optional)"]
   Web --> API
   Desk --> API
   API --> PG & Redis & Qdrant & S3
+  API --> Fake
+  Worker --> Fake
   Worker --> PG & Qdrant & S3 & Mail
   Beat --> Redis
-  API -. "MODEL_MODE=gateway" .-> GW
-  Worker -. "MODEL_MODE=gateway" .-> GW
   Worker -.-> Drive & GH
 ```
+
+The two boxes are not connected. The live demo never calls a remote gateway: the laptop stack runs with `MODEL_MODE=fake`. Every recorded real-model run ([M2](../evidence/m2/README.md), [M3](../evidence/m3/README.md), [M5 code](../evidence/m5/README.md), [M7 smoke](../evidence/m7-functional/README.md#colab-real-model-smoke-test)) ran the application, its data services, Mailpit and the gateway together inside one Colab runtime, talking over 127.0.0.1. The backend *can* point `LLM_BASE_URL` at a tunnelled gateway (runbook M2 section), but no recorded evidence or demo step uses that.
 
 | Concern | How it works | Decision |
 | --- | --- | --- |
@@ -41,7 +46,7 @@ flowchart LR
 | Connectors | Drive and GitHub sync with permission freshness; local folders through the desktop app | [0401](../adr/0401-drive-sync-and-freshness.md), [0502](../adr/0502-github-repositories-and-code.md), [0503](../adr/0503-desktop-local-folder.md) |
 | Administration | Scoped admin console; per-tenant packs and connectors enforced in the backend | [0402](../adr/0402-scoped-administration.md), [0403](../adr/0403-tenant-configuration.md) |
 | Actions | Versioned email draft → human approval of that exact version → durable outbox → Mailpit, with an explicit `uncertain` state and reconciliation by Message-ID; briefings only ever create drafts | [0601](../adr/0601-email-approval-and-outbox.md), [0602](../adr/0602-scheduled-briefings.md) |
-| Models | All models are external, on a Colab GPU behind the gateway, with pinned revisions the backend checks. `MODEL_MODE=fake` is a deterministic double labelled FAKE in the UI, on every event, and in email bodies; production refuses it | [0105](../adr/0105-runtime-and-compose.md), [model gateway contract](../contracts/model-gateway.md) |
+| Models | All real models run on a Colab GPU behind the gateway, with pinned revisions the backend checks; the recorded runs reached it over loopback inside the same Colab runtime. `MODEL_MODE=fake` is a deterministic double labelled FAKE in the UI, on every event, and in email bodies; production refuses it | [0105](../adr/0105-runtime-and-compose.md), [model gateway contract](../contracts/model-gateway.md) |
 
 All decisions: [docs/adr/README.md](../adr/README.md). API: [openapi.json](../openapi.json). Traceability: [requirements-traceability.md](../requirements-traceability.md).
 

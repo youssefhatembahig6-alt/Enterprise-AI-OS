@@ -12,7 +12,7 @@ This guide takes a fresh clone to a seeded, demo-ready stack. Everything runs lo
 | Host | Debian 13 (kernel 6.12.118), 16 GB RAM, no GPU; Docker Engine 29.10.1, Docker Compose v5.7.0, Python 3.13.5, git. Node 20.19.2 was installed but not used |
 | Stack | A third disposable Compose project, `eaios-m8def` (web :23000, API :28000, Mailpit :28025, image tags `:m8def`, its own volumes). It ran **next to** the owner's `eaios` stack (3000/8000/8025) and the `eaios-m7acc` stack (13000/18000/18025). Neither was stopped, rebuilt, or reseeded |
 | How the project was isolated | `DOCKER_COMPOSE="docker compose -p eaios-m8def -f compose.yaml -f <override>"`. The override, kept outside the repository, changed only the project name, the published ports, and the image tags (same pattern as `infra/acceptance/compose.m7.yaml`). `docker compose config` was checked first: project `eaios-m8def`, only `eaios-m8def_*` volumes |
-| Result | **PASS after one prerequisite fix** (see [Missing prerequisites found](#missing-prerequisites-found)). `smoke_stack.py` passed all 12 checks. `m2_demo_capture.py` gave 291 orders and net USD 80,934,385.00, verified. `m3_demo.py capture` and `m6_demo.py` passed, with exactly one Mailpit message by Message-ID. The browser rehearsal passed ([rehearsal.md](rehearsal.md)) |
+| Result | **PASS after one prerequisite fix** (see [Missing prerequisites found](#missing-prerequisites-found)). `smoke_stack.py` passed all 12 checks. `m2_demo_capture.py` gave 291 orders and net USD 80,934,385.00, verified. `m6_demo.py` passed, with exactly one Mailpit message by Message-ID. `m3_demo.py capture` completed (exit 0) with the authorized answer and citation; its exit code does not prove the refusal, which was verified separately ([rehearsal.md](rehearsal.md#rehearsal-results-27-november-2026), row 1.3). The browser rehearsal passed ([rehearsal.md](rehearsal.md)) |
 
 ### Measured times
 
@@ -45,8 +45,8 @@ This is a disposable stack on fixed ports 13000/18000/18025, under Compose proje
 ```bash
 git clone https://github.com/youssefhatembahig6-alt/Enterprise-AI-OS.git
 cd Enterprise-AI-OS
-python3 scripts/m7_acceptance.py check-project   # read-only: must say project eaios-m7acc
 python3 scripts/m7_acceptance.py init-env        # var/m7-acceptance/.env, MODEL_MODE=fake, mode 0600
+python3 scripts/m7_acceptance.py check-project   # read-only preflight before `up` (refuses without the .env): must say project eaios-m7acc
 python3 scripts/m7_acceptance.py up              # build + start, waits for healthchecks
 python3 scripts/m7_acceptance.py seed            # users, NileTech sales data, document corpus
 python3 scripts/m7_acceptance.py seed-legal      # 3 contracts; exits 0 only if all are ready and searchable
