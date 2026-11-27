@@ -146,6 +146,10 @@ After pulling M6: `python3 scripts/dev.py up` (starts Mailpit and runs migration
 
 `scripts/m7_acceptance.py` runs a second, disposable copy of the stack (project `eaios-m7acc`, web :13000, API :18000, Mailpit :18025, its own volumes and secrets in `var/m7-acceptance/`) next to your own. It never touches the `eaios` project. It uses the standard images: the web image's CSP is rendered from `VITE_API_BASE_URL` at build time, so a non-default API origin works without overrides. Commands, the checklist and the reset steps are in [evidence/m7-functional/README.md](evidence/m7-functional/README.md); the UI walkthrough is [evidence/m7-functional/DEMO.md](evidence/m7-functional/DEMO.md).
 
+## Defense package (M8)
+
+Clean-checkout setup, the defense demo script, the architecture and evidence index, and the rehearsal checklist: [defense/README.md](defense/README.md).
+
 ## Restart
 
 ```bash
