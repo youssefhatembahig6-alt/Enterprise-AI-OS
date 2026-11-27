@@ -1,0 +1,180 @@
+/* NileTech Assistant shell, taken from the prototype (ui-demo/eaios-ui-demo.html):
+   icon rail | chat sidebar | main canvas | Sources panel. Tokens and rules are the
+   prototype's; selectors are scoped to .eaios-shell (no element resets, no .grid) so the
+   Tailwind-styled panels rendered inside the shell keep their own layout. */
+
+:root {
+  --bg: #f7f8f8; --fg: #15212b; --accent: #0f8a94; --accent-fg: #ffffff;
+  --ok: #1f7a4a; --warn: #a35a00; --crit: #b3261e;
+  --font: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --r: 12px; --pad: 1;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0e1418; --fg: #e6eef2; --accent: #2fb3bd; --accent-fg: #04191c; --ok: #5cc98d; --warn: #e7a54d; --crit: #f08a82; }
+}
+:root {
+  --page: color-mix(in srgb, var(--fg) 7%, var(--bg));
+  --side: color-mix(in srgb, var(--fg) 3%, var(--bg));
+  --surface: color-mix(in srgb, var(--fg) 5%, var(--bg));
+  --surface-2: color-mix(in srgb, var(--fg) 9%, var(--bg));
+  --line: color-mix(in srgb, var(--fg) 13%, var(--bg));
+  --muted: color-mix(in srgb, var(--fg) 58%, var(--bg));
+  --soft-accent: color-mix(in srgb, var(--accent) 16%, var(--bg));
+  --soft-ok: color-mix(in srgb, var(--ok) 15%, var(--bg));
+  --soft-warn: color-mix(in srgb, var(--warn) 16%, var(--bg));
+  --soft-crit: color-mix(in srgb, var(--crit) 15%, var(--bg));
+}
+body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: var(--bg); color: var(--fg); }
+
+.eaios-shell svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.eaios-shell :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* App grid (full window instead of the prototype's framed window) */
+.eaios-shell.app { height: 100dvh; display: grid; grid-template-columns: 56px 264px minmax(0, 1fr); min-height: 0; position: relative; background: var(--bg); color: var(--fg); overflow: hidden; }
+.eaios-shell .rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; border-right: 1px solid var(--line); background: var(--bg); position: relative; }
+.eaios-shell .rail > button { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; color: var(--muted); position: relative; background: none; border: 0; cursor: pointer; }
+.eaios-shell .rail > button:hover { background: var(--surface-2); color: var(--fg); }
+.eaios-shell .rail > button[aria-current="page"] { background: var(--surface-2); color: var(--fg); }
+.eaios-shell .rail .sep { width: 24px; height: 1px; background: var(--line); margin: 4px 0; }
+.eaios-shell .rail .grow { flex: 1; }
+.eaios-shell .avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+.eaios-shell .rail > button.me { width: auto; height: auto; padding: 0; border-radius: 50%; }
+.eaios-shell .menu { position: absolute; left: 52px; bottom: 12px; z-index: 40; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 16px 40px -16px color-mix(in srgb, var(--fg) 45%, transparent); padding: 6px; width: 230px; }
+.eaios-shell .menu .who { padding: 8px 10px 10px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.eaios-shell .menu .who small { display: block; color: var(--muted); font-size: 12px; }
+
+.eaios-shell .side { background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.eaios-shell .side-head { display: flex; align-items: center; gap: 6px; padding: 12px 12px 6px; }
+.eaios-shell .brand { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 15.5px; padding: 4px 6px; border-radius: 8px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.eaios-shell .side-head .sp { flex: 1; }
+.eaios-shell .iconbtn { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--muted); flex: none; background: none; border: 0; cursor: pointer; }
+.eaios-shell .iconbtn:hover { background: var(--surface-2); color: var(--fg); }
+.eaios-shell .side-scroll { overflow: auto; padding: 0 8px 12px; flex: 1; }
+.eaios-shell .row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 7px 10px; border-radius: 8px; font-size: 13.5px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: none; border: 0; cursor: pointer; }
+.eaios-shell .row > span.t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.eaios-shell .row:hover { background: var(--surface-2); }
+.eaios-shell .row[aria-current="page"] { background: var(--surface-2); font-weight: 500; }
+.eaios-shell .label { font-size: 12.5px; color: var(--muted); padding: 14px 10px 5px; }
+.eaios-shell .side-search { margin: 4px 8px 6px; display: flex; align-items: center; gap: 8px; background: var(--surface-2); border-radius: 10px; padding: 7px 10px; color: var(--muted); }
+.eaios-shell .side-search input { border: 0; background: none; outline: none; flex: 1; min-width: 0; color: var(--fg); font: inherit; }
+.eaios-shell .side-empty { font-size: 12.5px; color: var(--muted); padding: 4px 10px; white-space: normal; }
+
+.eaios-shell main.canvas { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.eaios-shell .topbar { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 52px 6px; position: relative; min-height: 52px; }
+.eaios-shell .topbar .left { position: absolute; left: 10px; display: flex; gap: 4px; }
+.eaios-shell .topbar .right { position: absolute; right: 10px; display: flex; gap: 4px; }
+.eaios-shell .topbar .iconbtn[aria-pressed="true"] { background: var(--surface-2); color: var(--fg); }
+.eaios-shell .scope { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 6px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.eaios-shell .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.eaios-shell .chip.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--bg)); color: var(--warn); background: var(--soft-warn); }
+.eaios-shell .menu-btn { display: none !important; }
+
+.eaios-shell .view { flex: 1; overflow: auto; min-height: 0; padding-inline: 16px; }
+.eaios-shell .home { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding-bottom: 10vh; }
+.eaios-shell .home h1 { font-weight: 500; font-size: clamp(21px, 2.6vw, 28px); margin: 0; text-align: center; text-wrap: balance; letter-spacing: -.01em; }
+.eaios-shell .composer { width: min(680px, 100%); display: flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: calc(var(--r) * 2.4); padding: 6px 6px 6px 10px; box-shadow: 0 6px 24px -14px color-mix(in srgb, var(--fg) 35%, transparent); }
+.eaios-shell .composer input { flex: 1; min-width: 0; border: 0; outline: none; background: none; padding: 8px 4px; font-size: 15px; color: var(--fg); font: inherit; font-size: 15px; }
+.eaios-shell .composer input::placeholder { color: var(--muted); }
+.eaios-shell .send { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; flex: none; border: 0; cursor: pointer; }
+.eaios-shell .send:disabled { opacity: .45; cursor: default; }
+.eaios-shell .askmeta { width: min(680px, 100%); display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; font-size: 12px; color: var(--muted); margin-top: -10px; }
+.eaios-shell .askmeta select { border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--muted); padding: 2px 8px; font: inherit; font-size: 12px; }
+.eaios-shell .convo .askmeta { margin-top: 6px; }
+
+.eaios-shell .convo { display: flex; flex-direction: column; }
+.eaios-shell .thread { width: min(760px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 22px; padding: 14px 0 24px; flex: 1; }
+.eaios-shell .u { align-self: flex-end; background: var(--surface-2); padding: 10px 16px; border-radius: calc(var(--r) * 1.6); max-width: 80%; overflow-wrap: anywhere; }
+.eaios-shell .u small { display: block; color: var(--muted); font-size: 11px; }
+.eaios-shell .a { display: flex; gap: 12px; align-items: flex-start; }
+.eaios-shell .a .badge { width: 26px; height: 26px; border-radius: 8px; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 12px; font-weight: 700; flex: none; }
+.eaios-shell .a .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.eaios-shell .a p { margin: 0; }
+.eaios-shell .steps { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); }
+.eaios-shell .step::before { content: "✓ "; color: var(--ok); }
+.eaios-shell .step.warn { color: var(--warn); }
+.eaios-shell .step.warn::before { content: "↻ "; color: var(--warn); }
+.eaios-shell .step.run::before { content: ""; display: inline-block; width: 8px; height: 8px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: eaios-spin .8s linear infinite; margin-right: 5px; }
+.eaios-shell .steps .linkish { background: none; border: 0; padding: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; }
+@keyframes eaios-spin { to { transform: rotate(360deg); } }
+.eaios-shell .cite { display: inline-grid; place-items: center; min-width: 20px; height: 18px; padding: 0 5px; border-radius: 6px; background: var(--soft-accent); color: var(--accent); font-size: 11px; font-weight: 600; vertical-align: 1px; border: 0; cursor: pointer; margin: 0 1px; }
+.eaios-shell .cite[aria-expanded="true"] { background: var(--accent); color: var(--accent-fg); }
+.eaios-shell .srcrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.eaios-shell .verify { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11.5px; }
+.eaios-shell .vpill { border-radius: 999px; padding: 1px 9px; background: var(--soft-ok); color: var(--ok); font-weight: 500; }
+.eaios-shell .vpill.w { background: var(--soft-warn); color: var(--warn); }
+.eaios-shell .note { color: var(--muted); font-size: 12.5px; margin: 0; }
+.eaios-shell .refuse { margin: 0; }
+.eaios-shell .errbox { border: 1px solid var(--crit); color: var(--crit); background: var(--soft-crit); border-radius: var(--r); padding: 10px 14px; font-size: 13px; }
+.eaios-shell table.res { border-collapse: collapse; font-size: 13px; width: 100%; font-variant-numeric: tabular-nums; }
+.eaios-shell table.res th, .eaios-shell table.res td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.eaios-shell table.res th { color: var(--muted); font-weight: 500; font-size: 12px; }
+.eaios-shell table.res td.n, .eaios-shell table.res th.n { text-align: right; }
+.eaios-shell .tw { overflow-x: auto; }
+.eaios-shell .btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.eaios-shell .btn { border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 6px 14px; font-size: 13px; color: var(--fg); cursor: pointer; font: inherit; font-size: 13px; }
+.eaios-shell .btn:hover { background: var(--surface); }
+.eaios-shell .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.eaios-shell .btn.small { padding: 3px 10px; font-size: 12px; align-self: flex-start; }
+.eaios-shell .dock { padding: 6px 0 14px; display: flex; flex-direction: column; align-items: center; position: sticky; bottom: 0; background: linear-gradient(to top, var(--bg) 70%, transparent); }
+
+.eaios-shell .page { width: min(860px, 100%); margin: 0 auto; padding: 12px 0 36px; display: flex; flex-direction: column; gap: 16px; }
+.eaios-shell .page h1 { font-size: 24px; font-weight: 600; margin: 4px 0 0; letter-spacing: -.01em; }
+
+/* Right panel: sources and media */
+.eaios-shell.app.with-panel { grid-template-columns: 56px 264px minmax(0, 1fr) 360px; }
+.eaios-shell .panel { display: none; flex-direction: column; min-height: 0; min-width: 0; border-left: 1px solid var(--line); background: var(--side); }
+.eaios-shell.app.with-panel .panel { display: flex; }
+.eaios-shell .panel-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 8px 12px; border-bottom: 1px solid var(--line); }
+.eaios-shell .seg { display: inline-flex; flex-wrap: wrap; background: var(--surface-2); border-radius: 999px; padding: 3px; }
+.eaios-shell .seg button { padding: 4px 12px; border-radius: 999px; font-size: 12.5px; color: var(--muted); background: none; border: 0; cursor: pointer; font: inherit; font-size: 12.5px; }
+.eaios-shell .seg button[aria-selected="true"] { background: var(--bg); color: var(--fg); box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 18%, transparent); }
+.eaios-shell .seg b { font-weight: 500; color: var(--muted); margin-left: 4px; font-size: 11.5px; }
+.eaios-shell .panel-head .sp { flex: 1; }
+.eaios-shell .panel-body { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.eaios-shell .pgroup { font-size: 12px; color: var(--muted); padding: 4px 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eaios-shell .pcard { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; transition: border-color .2s, box-shadow .2s; font-size: 13px; }
+.eaios-shell .pcard.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--soft-accent); }
+.eaios-shell .pcard .top { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.eaios-shell .pcard .num { font-size: 11px; font-weight: 700; color: var(--accent); background: var(--soft-accent); border-radius: 5px; padding: 0 6px; flex: none; }
+.eaios-shell .pcard .name { font-weight: 600; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eaios-shell .pcard .meta { font-size: 11.5px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.eaios-shell .pcard blockquote { margin: 0; font-size: 12.5px; line-height: 1.55; background: var(--surface); border-radius: 8px; padding: 8px 10px; }
+.eaios-shell .pcard pre { margin: 0; font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap; background: var(--surface); border-radius: 8px; padding: 8px 10px; overflow-x: auto; }
+.eaios-shell .pcard .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.eaios-shell .pempty { color: var(--muted); font-size: 13px; text-align: center; padding: 40px 12px; }
+.eaios-shell .scrim { display: none; }
+
+@media (max-width: 1180px) {
+  .eaios-shell.app.with-panel { grid-template-columns: 56px 264px minmax(0, 1fr); }
+  .eaios-shell .panel { position: absolute; right: 0; top: 0; bottom: 0; width: min(360px, 92%); z-index: 35; box-shadow: -10px 0 40px -12px color-mix(in srgb, var(--fg) 40%, transparent); }
+}
+@media (max-width: 900px) {
+  .eaios-shell.app, .eaios-shell.app.with-panel { grid-template-columns: 56px minmax(0, 1fr); }
+  .eaios-shell .side { position: absolute; left: 56px; top: 0; bottom: 0; width: min(270px, 78%); z-index: 30; transform: translateX(-130%); transition: transform .2s; box-shadow: 0 10px 40px -10px color-mix(in srgb, var(--fg) 40%, transparent); }
+  .eaios-shell.app.open .side { transform: none; }
+  .eaios-shell.app.open .scrim { display: block; position: absolute; inset: 0; z-index: 20; background: color-mix(in srgb, var(--fg) 25%, transparent); }
+  .eaios-shell .menu-btn { display: grid !important; }
+}
+@media (max-width: 600px) {
+  .eaios-shell.app, .eaios-shell.app.with-panel { grid-template-columns: minmax(0, 1fr); }
+  .eaios-shell .rail { position: absolute; left: 0; top: 0; bottom: 0; z-index: 31; background: var(--bg); transform: translateX(-130%); transition: transform .2s; }
+  .eaios-shell.app.open .rail { transform: none; }
+  .eaios-shell .topbar { padding-inline: 46px; }
+  .eaios-shell .scope .chip { white-space: normal; }
+}
+@media (prefers-reduced-motion: reduce) { .eaios-shell * { transition: none !important; animation: none !important; } }
+
+/* Sign-in (prototype .signin card) */
+.eaios-signin { min-height: 100dvh; background: var(--bg); color: var(--fg); display: grid; place-items: center; padding: 20px; }
+.eaios-signin .card { padding: 24px; max-width: 400px; width: 100%; display: flex; flex-direction: column; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.eaios-signin h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.eaios-signin .avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 11px; font-weight: 600; flex: none; }
+.eaios-signin .note { color: var(--muted); font-size: 12.5px; margin: 0; }
+.eaios-signin .fld { display: flex; flex-direction: column; gap: 5px; }
+.eaios-signin .fld label { font-size: 12px; font-weight: 500; color: var(--muted); }
+.eaios-signin .fld input { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 14px; color: var(--fg); }
+.eaios-signin .fld input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.eaios-signin .btn { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); border-radius: 10px; padding: 8px 14px; font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer; }
+.eaios-signin .btn:disabled { opacity: .5; cursor: default; }
+.eaios-signin .err { color: var(--crit); font-size: 12.5px; font-weight: 500; margin: 0; }
+.eaios-signin .status { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }

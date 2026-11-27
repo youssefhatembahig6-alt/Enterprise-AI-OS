@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@eaios/ui/styles.css";
+@import "./shell.css";
 @source "../../../packages/ui/src";
 
 @theme inline {
@@ -18,4 +19,24 @@
   --color-warn-fg: var(--eaios-warn-fg);
   --color-error-bg: var(--eaios-error-bg);
   --color-error-fg: var(--eaios-error-fg);
+}
+
+/* NileTech Assistant look (ui-demo prototype): its tokens drive the shared theme too, so
+   panels inside the shell use the same palette. Must follow the @eaios/ui import. */
+:root {
+  --eaios-bg: var(--bg);
+  --eaios-fg: var(--fg);
+  --eaios-card: var(--surface);
+  --eaios-border: var(--line);
+  --eaios-muted: var(--surface-2);
+  --eaios-muted-fg: var(--muted);
+  --eaios-primary: var(--accent);
+  --eaios-primary-fg: var(--accent-fg);
+  --eaios-ring: var(--accent);
+  --eaios-ok-bg: var(--soft-ok);
+  --eaios-ok-fg: var(--ok);
+  --eaios-warn-bg: var(--soft-warn);
+  --eaios-warn-fg: var(--warn);
+  --eaios-error-bg: var(--soft-crit);
+  --eaios-error-fg: var(--crit);
 }

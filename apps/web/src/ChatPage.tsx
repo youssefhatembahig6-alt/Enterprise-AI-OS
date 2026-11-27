@@ -1,34 +1,26 @@
 /**
- * Chat page (layout after the NileTech Assistant prototype, ui-demo/eaios-ui-demo.html):
- * conversation sidebar, centred composer on an empty chat, message thread with a
- * bottom composer, and a Sources panel. Every question is one POST /api/v1/chat run
- * with the signed-in user's token; the server checks access, verifies the answer and
- * re-checks access whenever a citation is opened. History lives in memory only.
+ * The signed-in app in the NileTech Assistant shell (ui-demo/eaios-ui-demo.html):
+ * icon rail | chat sidebar | main canvas | Sources panel. The Ask view is the chat;
+ * the Files, Approvals, Activity and Settings views host the existing panels, passed in
+ * by App and kept mounted so their state survives navigation.
+ *
+ * Every question is one POST /api/v1/chat run with the signed-in user's token; the server
+ * checks access, verifies the answer and re-checks access whenever a citation is opened.
+ * Chat history lives in memory only and goes away with this component on sign-out.
  */
 
-import { StatusPill } from "@eaios/ui";
-import {
-  useCallback,
-  useEffect,
-  useReducer,
-  useRef,
-  useState,
-  type FormEvent,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Identity } from "./api";
-import {
-  activeConversation,
-  chatReducer,
-  INITIAL_CHAT,
-  type Turn,
-} from "./chatState";
+import { activeConversation, chatReducer, INITIAL_CHAT, type Turn } from "./chatState";
 import { cancelReport, type AskMode, type Citation } from "./reports";
 import { executeRun } from "./runStream";
 import { citationKind, citationNumber, EMPTY_RUN, newRequestId, runKind, type RunView } from "./runView";
 import { EvidenceDetail, PassageDetail } from "./sourceViews";
-import { verificationText } from "./verification";
+import { LEGAL_LABEL, verificationText } from "./verification";
+
+export type ShellView = "chat" | "files" | "approvals" | "activity" | "settings";
+
+const EMPTY_TURNS: Turn[] = [];
 
 const MODE_LABELS: Record<AskMode, string> = {
   auto: "Automatic",
@@ -38,72 +30,106 @@ const MODE_LABELS: Record<AskMode, string> = {
   code: "Code repositories",
 };
 
-interface Suggestion {
-  question: string;
-  mode: AskMode;
-  pack: string;
-}
-
-const SUGGESTIONS: Suggestion[] = [
-  { question: "What were net (tax-exclusive) fulfilled sales for Q1 2026, in USD?", mode: "report", pack: "sales_reports" },
-  { question: "Why did collections lag revenue in Q1 2026?", mode: "documents", pack: "documents" },
-  { question: "When do our contracts expire?", mode: "legal", pack: "legal" },
-];
-
 const INDEPENDENT_NOTE =
   "Each question is answered on its own: earlier messages in this chat are not sent to the assistant.";
 
-function Icon({ d, label }: { d: string; label?: string }) {
+// The prototype's icon set (stroke paths, 24×24).
+const ICONS = {
+  chat: '<path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/>',
+  files: '<path d="M4 6h6l2 2h8v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/>',
+  appr: '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>',
+  act: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.8 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3.1 14H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 20.9 10H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"/>',
+  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  panel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  up: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+} as const;
+
+function Svg({ k, size }: { k: keyof typeof ICONS; size?: number }) {
   return (
     <svg
+      className="i"
       viewBox="0 0 24 24"
-      className="h-[18px] w-[18px] flex-none fill-none stroke-current"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden={label ? undefined : true}
-      aria-label={label}
-    >
-      <path d={d} />
-    </svg>
+      aria-hidden
+      style={size ? { width: size, height: size } : undefined}
+      dangerouslySetInnerHTML={{ __html: ICONS[k] }}
+    />
   );
 }
 
-const ICONS = {
-  pen: "M4 20h4L19 9l-4-4L4 16zM14 6l4 4",
-  menu: "M4 7h16M4 12h16M4 17h16",
-  panel: "M3 4h18v16H3zM15 4v16",
-  close: "M6 6l12 12M18 6L6 18",
-  send: "M5 12h14M13 6l6 6-6 6",
-  grid: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
-  out: "M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10",
-};
+function initials(name: string): string {
+  const parts = name.replace(/\(.*?\)/g, "").trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
 
-function IconButton({
-  label,
-  icon,
-  onClick,
-  pressed,
-  className = "",
-}: {
-  label: string;
-  icon: keyof typeof ICONS;
-  onClick: () => void;
-  pressed?: boolean;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      aria-pressed={pressed}
-      onClick={onClick}
-      className={`grid h-8 w-8 place-items-center rounded-lg text-muted-fg hover:bg-muted hover:text-fg ${className}`}
-    >
-      <Icon d={ICONS[icon]} />
-    </button>
-  );
+function shortName(name: string): string {
+  // Display name without its parenthetical note, e.g. "Sales Reader (unauthorized …)".
+  return name.replace(/\(.*?\)/g, "").trim() || name;
+}
+
+function scopeText(identity: Identity): string {
+  const dept = identity.attributes.department;
+  const clearance = identity.attributes.clearance;
+  const admin = identity.capabilities.some((c) => c.capability.endsWith(".admin"));
+  return [
+    dept ? dept.charAt(0).toUpperCase() + dept.slice(1) : "No department",
+    clearance ? `up to ${clearance.charAt(0).toUpperCase() + clearance.slice(1)}` : null,
+    admin ? "admin" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function verifyPills(view: RunView): { text: string; warn: boolean }[] {
+  const pills: { text: string; warn: boolean }[] = [];
+  const v = view.done?.verification;
+  if (v) {
+    if (v.label === LEGAL_LABEL) {
+      pills.push({ text: "Exact contract passages", warn: false });
+      pills.push({ text: "Dates re-derived by fixed rules · no model", warn: false });
+    } else if (v.label.startsWith("figures_verified_")) {
+      pills.push({ text: "Numbers match query rows", warn: false });
+      pills.push(
+        v.narrative === "verified"
+          ? { text: "Summary checked (development checker)", warn: false }
+          : { text: "Summary withheld", warn: true },
+      );
+    } else if (v.label === "answer_quotes_verified_dev_checked") {
+      pills.push({ text: "Every sentence quotes a source you can open", warn: false });
+      pills.push({ text: "Claims checked (development checker)", warn: false });
+    } else {
+      pills.push({ text: "Verification details unavailable", warn: true });
+    }
+  }
+  const sources = new Set(view.citations.map((c) => c.document_id ?? c.evidence_id)).size;
+  if (view.done?.outcome === "published" && sources) {
+    pills.push({ text: `${sources} source${sources === 1 ? "" : "s"} allowed`, warn: false });
+  }
+  if (view.done?.abstention) pills.push({ text: "No sources used", warn: true });
+  if (view.fakeLabel) pills.push({ text: "FAKE inference — not a model", warn: true });
+  return pills;
+}
+
+function citationName(c: Citation): string {
+  if (citationKind(c) === "document") return `${c.repository ? `${c.repository}/` : ""}${c.title ?? "Document"}`;
+  return c.label ?? c.column ?? "Query result";
+}
+
+function citationMeta(c: Citation): string {
+  if (citationKind(c) === "evidence") return `SQL evidence · row ${(c.row ?? 0) + 1} · ${c.column}`;
+  return [
+    `version ${c.version}`,
+    c.page ? `page ${c.page}` : null,
+    c.line_start ? `lines ${c.line_start}–${c.line_end}` : null,
+    c.heading_path?.length && !c.repository ? c.heading_path.join(" › ") : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function Composer({
@@ -111,113 +137,72 @@ function Composer({
   placeholder,
   value,
   onChange,
-  mode,
-  onMode,
-  modes,
   disabled,
   onSubmit,
+  onUpload,
 }: {
   id: string;
   placeholder: string;
   value: string;
   onChange: (v: string) => void;
-  mode: AskMode;
-  onMode: (m: AskMode) => void;
-  modes: AskMode[];
   disabled: boolean;
   onSubmit: () => void;
+  onUpload: () => void;
 }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!disabled && value.trim()) onSubmit();
   };
-  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      if (!disabled && value.trim()) onSubmit();
-    }
-  };
   return (
-    <form
-      onSubmit={submit}
-      className="flex w-full max-w-[680px] flex-col gap-1 rounded-[28px] border border-border bg-card px-3 py-2 shadow-[0_6px_24px_-14px_rgba(15,23,42,0.35)]"
-    >
-      <label htmlFor={id} className="sr-only">
-        Your question
-      </label>
-      <textarea
+    <form className="composer" onSubmit={submit}>
+      <button type="button" className="iconbtn" aria-label="Upload a document" title="Upload a document" onClick={onUpload}>
+        <Svg k="plus" />
+      </button>
+      <input
         id={id}
-        rows={1}
-        maxLength={1000}
         value={value}
+        maxLength={1000}
         placeholder={placeholder}
+        autoComplete="off"
+        aria-label="Your question"
         onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onKey}
-        className="max-h-40 min-h-[40px] w-full resize-none bg-transparent px-1 py-2 text-[15px] outline-none placeholder:text-muted-fg"
       />
-      <div className="flex items-center gap-2">
-        <label htmlFor={`${id}-mode`} className="sr-only">
-          Source
-        </label>
-        <select
-          id={`${id}-mode`}
-          value={mode}
-          onChange={(e) => onMode(e.target.value as AskMode)}
-          className="h-8 max-w-[60%] rounded-full border border-border bg-bg px-2 text-xs text-muted-fg"
-        >
-          {modes.map((m) => (
-            <option key={m} value={m}>
-              {MODE_LABELS[m]}
-            </option>
-          ))}
-        </select>
-        <span className="flex-1" />
-        <button
-          type="submit"
-          aria-label="Send"
-          disabled={disabled || !value.trim()}
-          className="grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-fg disabled:opacity-40"
-        >
-          <Icon d={ICONS.send} />
-        </button>
-      </div>
+      <button type="submit" className="send" aria-label="Ask" disabled={disabled || !value.trim()}>
+        <Svg k="up" />
+      </button>
     </form>
   );
 }
 
-function CiteChip({
-  n,
-  active,
-  label,
-  onClick,
+function SourcePicker({
+  id,
+  mode,
+  modes,
+  onMode,
 }: {
-  n: number;
-  active: boolean;
-  label: string;
-  onClick: () => void;
+  id: string;
+  mode: AskMode;
+  modes: AskMode[];
+  onMode: (m: AskMode) => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      aria-expanded={active}
-      className={`mx-0.5 inline-grid h-[18px] min-w-5 place-items-center rounded-md px-1.5 align-[1px] text-[11px] font-semibold ${
-        active ? "bg-primary text-primary-fg" : "bg-primary/15 text-primary hover:bg-primary/25"
-      }`}
-    >
-      {n}
-    </button>
+    <div className="askmeta">
+      <label htmlFor={id}>Source</label>
+      <select id={id} value={mode} onChange={(e) => onMode(e.target.value as AskMode)}>
+        {modes.map((m) => (
+          <option key={m} value={m}>
+            {MODE_LABELS[m]}
+          </option>
+        ))}
+      </select>
+      <span>{INDEPENDENT_NOTE}</span>
+    </div>
   );
 }
 
-function citationLabel(c: Citation): string {
-  if (c.document_id) return `Open source: ${c.title ?? "document"}`;
-  return `Show SQL evidence for ${c.label ?? c.column ?? "figure"}`;
-}
-
-function AssistantBody({
+function Answer({
   turn,
+  badge,
   focused,
   onCite,
   onCancel,
@@ -225,6 +210,7 @@ function AssistantBody({
   onEmail,
 }: {
   turn: Turn;
+  badge: string;
   focused: string | null;
   onCite: (citationId: string) => void;
   onCancel: () => void;
@@ -234,137 +220,125 @@ function AssistantBody({
   const { view, failure } = turn;
   const kind = runKind(view, failure);
   const verification = view.done ? verificationText(view.done) : null;
-  const cite = (id: string) => view.citations.find((c) => c.citation_id === id) ?? null;
-  const chip = (id: string) => {
-    const c = cite(id);
-    return c ? (
-      <CiteChip
+  const cite = (id: string) => {
+    const c = view.citations.find((x) => x.citation_id === id);
+    if (!c) return null;
+    return (
+      <button
         key={id}
-        n={citationNumber(view, id)}
-        active={focused === id}
-        label={citationLabel(c)}
+        type="button"
+        className="cite"
+        aria-expanded={focused === id}
+        aria-label={citationKind(c) === "document" ? `Open source: ${citationName(c)}` : `Show SQL evidence for ${citationName(c)}`}
         onClick={() => onCite(id)}
-      />
-    ) : null;
+      >
+        {citationNumber(view, id)}
+      </button>
+    );
   };
   const sentences = view.sentences.map((s, i) => (
-    <p key={i} className="m-0">
-      {s.text} {s.citations.map(chip)}
+    <p key={i}>
+      {s.text} {s.citations.map(cite)}
     </p>
   ));
+  const names = [...new Map(view.citations.map((c) => [citationName(c), c])).keys()];
+  const finished = kind !== "running";
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-      {view.fakeLabel ? (
-        <div>
-          <StatusPill tone="warn">{view.fakeLabel}</StatusPill>
-        </div>
-      ) : null}
-      {view.steps.length > 0 || turn.running ? (
-        <ol className="m-0 flex list-none flex-wrap gap-x-3.5 gap-y-1 p-0 text-[12.5px] text-muted-fg" aria-live="polite">
+    <div className="a">
+      <span className="badge">{badge}</span>
+      <div className="body">
+        <div className="steps" aria-live="polite">
           {view.steps.map((s) => (
-            <li key={s.step} className={s.state === "retrying" ? "text-warn-fg" : ""}>
-              <span aria-hidden className={s.state === "retrying" ? "" : "text-ok-fg"}>
-                {s.state === "retrying" ? "↻ " : "✓ "}
-              </span>
+            <span key={s.step} className={`step${s.state === "retrying" ? " warn" : ""}`}>
               {s.label}
-              {s.state === "retrying" && s.attempt
-                ? ` (repair ${s.attempt - 1} of ${(s.maxAttempts ?? 3) - 1})`
-                : ""}
-            </li>
+              {s.state === "retrying" && s.attempt ? ` (repair ${s.attempt - 1} of ${(s.maxAttempts ?? 3) - 1})` : ""}
+            </span>
           ))}
           {turn.running && !view.done ? (
-            <li className="flex items-center gap-1.5">
-              <span
-                aria-hidden
-                className="inline-block h-2 w-2 animate-spin rounded-full border-2 border-primary border-r-transparent"
-              />
-              {view.reconnecting ? "Reconnecting…" : "Working…"}
+            <span className="step run">
+              {view.reconnecting ? "Reconnecting…" : "Working…"}{" "}
               {view.runId ? (
-                <button type="button" onClick={onCancel} className="ml-2 underline hover:text-fg">
+                <button type="button" className="linkish" onClick={onCancel}>
                   Cancel
                 </button>
               ) : null}
-            </li>
+            </span>
           ) : null}
-        </ol>
-      ) : null}
-
-      {kind === "error" ? (
-        <div role="alert" className="rounded-md bg-error-bg px-3 py-2 text-sm text-error-fg">
-          {failure ?? view.error?.message ?? "The request did not complete."}
-          {view.error?.code ? <span className="ml-1 opacity-75">({view.error.code})</span> : null}
         </div>
-      ) : null}
 
-      {kind === "refusal" && view.done?.abstention ? (
-        <p className="m-0 rounded-md bg-muted px-3 py-2 text-sm">{view.done.abstention.message}</p>
-      ) : null}
-
-      {kind === "empty" ? (
-        <p className="m-0 text-sm text-muted-fg">The run ended without an answer ({view.done?.outcome}).</p>
-      ) : null}
-
-      {kind === "report" && view.table ? (
-        <div className="flex flex-col gap-2.5 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold">{view.title ?? "Verified result"}</span>
-            {verification ? (
-              <StatusPill tone={verification.tone}>
-                {verification.tone === "ok" ? "Verified" : "Figures verified, summary withheld"}
-              </StatusPill>
-            ) : null}
+        {kind === "error" ? (
+          <div className="errbox" role="alert">
+            {failure ?? view.error?.message ?? "The request did not complete."}
+            {view.error?.code ? ` (${view.error.code})` : ""}
           </div>
-          {verification ? <p className="m-0 text-xs text-muted-fg">{verification.text}</p> : null}
-          <dl className="m-0 grid grid-cols-1 overflow-hidden rounded-xl border border-border sm:grid-cols-2">
-            {view.table.rows[0]?.map((cell) => {
-              const column = view.table?.columns.find((c) => c.key === cell.column);
-              return (
-                <div key={cell.column} className="border-b border-border px-3 py-2 last:border-b-0 sm:odd:border-r">
-                  <dt className="text-xs text-muted-fg">{column?.label ?? cell.column}</dt>
-                  <dd className="m-0 font-medium tabular-nums">
-                    {cell.display} {chip(cell.citation_id)}
-                  </dd>
-                </div>
-              );
-            })}
-          </dl>
-          {sentences}
-          {view.definition ? (
-            <p className="m-0 text-xs text-muted-fg">
-              Definition: order date basis; included statuses{" "}
-              {(view.definition.included_statuses as string[]).join(", ")} (excluded{" "}
-              {(view.definition.excluded_statuses as string[]).join(", ") || "none"});{" "}
-              {String(view.definition.tax_treatment)}; currency {String(view.definition.currency)}.
-            </p>
-          ) : null}
-          {canEmail ? (
-            <div>
-              <button
-                type="button"
-                onClick={onEmail}
-                className="rounded-full border border-border px-3 py-1 text-xs hover:bg-muted"
-              >
-                Email this report for approval (opens the dashboard)
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+        ) : null}
+        {kind === "refusal" && view.done?.abstention ? <p className="refuse">{view.done.abstention.message}</p> : null}
+        {kind === "empty" ? <p className="note">The run ended without an answer ({view.done?.outcome}).</p> : null}
 
-      {kind === "answer" ? (
-        <div className="flex flex-col gap-2 text-sm">
-          {verification ? (
-            <div className="flex flex-col gap-1">
-              <div>
-                <StatusPill tone={verification.tone}>Verified against sources</StatusPill>
-              </div>
-              <p className="m-0 text-xs text-muted-fg">{verification.text}</p>
+        {kind === "report" && view.table ? (
+          <>
+            <p>
+              <b>{view.title ?? "Verified result"}</b>
+            </p>
+            <div className="tw">
+              <table className="res">
+                <thead>
+                  <tr>
+                    <th>Figure</th>
+                    <th className="n">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {view.table.rows[0]?.map((cell) => (
+                    <tr key={cell.column}>
+                      <td>{view.table?.columns.find((c) => c.key === cell.column)?.label ?? cell.column}</td>
+                      <td className="n">
+                        {cell.display} {cite(cell.citation_id)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ) : null}
-          {sentences}
-        </div>
-      ) : null}
+            {sentences}
+            {view.definition ? (
+              <p className="note">
+                Definition: order date basis; included statuses {(view.definition.included_statuses as string[]).join(", ")}{" "}
+                (excluded {(view.definition.excluded_statuses as string[]).join(", ") || "none"});{" "}
+                {String(view.definition.tax_treatment)}; currency {String(view.definition.currency)}.
+              </p>
+            ) : null}
+          </>
+        ) : null}
+
+        {kind === "answer" ? sentences : null}
+
+        {finished ? (
+          <div className="verify">
+            {verifyPills(view).map((p) => (
+              <span key={p.text} className={`vpill${p.warn ? " w" : ""}`}>
+                {p.text}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {verification && (kind === "report" || kind === "answer") ? <p className="note">{verification.text}</p> : null}
+        {names.length && finished ? (
+          <div className="srcrow">
+            {names.map((n) => (
+              <span key={n} className="chip">
+                {n}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {kind === "report" && canEmail ? (
+          <button type="button" className="btn small" onClick={onEmail}>
+            Email this report for approval
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -374,54 +348,52 @@ function SourceCard({
   runId,
   citation,
   n,
+  on,
   open,
-  onToggle,
+  onOpen,
 }: {
   token: string;
   runId: string | null;
   citation: Citation;
   n: number;
+  on: boolean;
   open: boolean;
-  onToggle: () => void;
+  onOpen: () => void;
 }) {
-  const kind = citationKind(citation);
-  const name =
-    kind === "document"
-      ? `${citation.repository ? `${citation.repository}/` : ""}${citation.title ?? "Document"}`
-      : (citation.label ?? citation.column ?? "Query result");
-  const meta =
-    kind === "document"
-      ? [
-          `version ${citation.version}`,
-          citation.page ? `page ${citation.page}` : null,
-          citation.line_start ? `lines ${citation.line_start}–${citation.line_end}` : null,
-          citation.heading_path?.length && !citation.repository ? citation.heading_path.join(" › ") : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      : `SQL evidence · row ${(citation.row ?? 0) + 1} · column ${citation.column}`;
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (on) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [on]);
+  const doc = citationKind(citation) === "document";
   return (
-    <div
-      className={`flex flex-col gap-1.5 rounded-xl border bg-bg px-3 py-2.5 text-sm ${
-        open ? "border-primary ring-3 ring-primary/15" : "border-border"
-      }`}
-    >
-      <button type="button" onClick={onToggle} aria-expanded={open} className="flex min-w-0 items-center gap-2 text-left">
-        <span className="flex-none rounded bg-primary/15 px-1.5 text-[11px] font-bold text-primary">{n}</span>
-        <span className="min-w-0 truncate font-semibold">{name}</span>
-      </button>
-      <div className="text-[11.5px] text-muted-fg">{meta}</div>
+    <div ref={ref} className={`pcard${on ? " on" : ""}`}>
+      <div className="top">
+        <span className="num">{n}</span>
+        <span className="name">{citationName(citation)}</span>
+      </div>
+      <div className="meta">
+        <span>{citationMeta(citation)}</span>
+      </div>
       {open ? (
-        <div className="flex flex-col gap-2 text-[13px]">
-          {kind === "document" && runId ? (
+        <div className="flex flex-col gap-2 text-[12.5px]">
+          {doc && runId ? (
             <PassageDetail token={token} runId={runId} citation={citation} />
-          ) : kind === "evidence" ? (
+          ) : !doc ? (
             <EvidenceDetail token={token} citation={citation} compact />
           ) : (
-            <p className="text-muted-fg">This source cannot be opened yet.</p>
+            <p className="note">This source cannot be opened yet.</p>
           )}
         </div>
-      ) : null}
+      ) : (
+        <>
+          {doc && citation.quote ? <blockquote>{citation.quote}</blockquote> : null}
+          <div className="acts">
+            <button type="button" className="btn small" onClick={onOpen}>
+              {doc ? "Open passage" : "Show SQL evidence"}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -430,31 +402,41 @@ export function ChatPage({
   token,
   identity,
   packs,
-  header,
+  modelLabel,
   canEmail,
+  showActivity,
+  view,
+  onNavigate,
+  pages,
   onReportPublished,
-  onOpenDashboard,
   onSignOut,
 }: {
   token: string;
   identity: Identity;
   packs: string[] | null;
-  header: ReactNode;
+  /** e.g. "FAKE model" when the server runs the labelled development double. */
+  modelLabel: string | null;
   canEmail: boolean;
+  showActivity: boolean;
+  view: ShellView;
+  onNavigate: (view: ShellView) => void;
+  pages: Record<Exclude<ShellView, "chat">, ReactNode>;
   onReportPublished: (runId: string, title: string) => void;
-  onOpenDashboard: () => void;
   onSignOut: () => void;
 }) {
   const [state, dispatch] = useReducer(chatReducer, INITIAL_CHAT);
   const [draft, setDraft] = useState("");
   const [mode, setMode] = useState<AskMode>("auto");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [open, setOpen] = useState(false); // narrow screens: rail + sidebar drawer
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [search, setSearch] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [focus, setFocus] = useState<{ turnId: string; citationId: string | null } | null>(null);
+  const [ptab, setPtab] = useState<"sources" | "media">("sources");
+  const [focus, setFocus] = useState<{ turnId: string; citationId: string } | null>(null);
+  const [opened, setOpened] = useState<Set<string>>(new Set());
   const controllers = useRef(new Map<string, AbortController>());
   const threadEnd = useRef<HTMLDivElement | null>(null);
 
-  // Signing out unmounts the page: abort open streams; the history goes with the state.
   useEffect(() => {
     const live = controllers.current;
     return () => live.forEach((c) => c.abort());
@@ -466,16 +448,21 @@ export function ChatPage({
   if (has("sales_reports")) modes.push("report");
   if (packs?.includes("legal")) modes.push("legal");
   if (packs?.includes("code")) modes.push("code");
-  const suggestions = SUGGESTIONS.filter((s) => (s.pack === "legal" ? packs?.includes("legal") : has(s.pack)));
 
   const conversation = activeConversation(state);
-  const turns = conversation?.turns ?? [];
+  const turns = conversation?.turns ?? EMPTY_TURNS;
   const lastTurn = turns[turns.length - 1] ?? null;
-  const panelTurn = turns.find((t) => t.id === focus?.turnId) ?? lastTurn;
+  const sourceCount = turns.reduce((n, t) => n + t.view.citations.length, 0);
 
   useEffect(() => {
     threadEnd.current?.scrollIntoView({ block: "end" });
   }, [turns.length, lastTurn?.view.done, lastTurn?.view.steps.length]);
+
+  const go = (v: ShellView) => {
+    setMenuOpen(false);
+    setOpen(false);
+    onNavigate(v);
+  };
 
   const ask = useCallback(
     (question: string, askMode: AskMode) => {
@@ -485,13 +472,12 @@ export function ChatPage({
       const turnId = `t-${newRequestId()}`;
       dispatch({ type: "ask", conversationId, turnId, question: text, mode: askMode, view: EMPTY_RUN });
       setDraft("");
-      setFocus({ turnId, citationId: null });
       const controller = new AbortController();
       controllers.current.set(turnId, controller);
       let last: RunView | null = null;
-      void executeRun(token, text, askMode, controller.signal, (view) => {
-        last = view;
-        dispatch({ type: "view", conversationId, turnId, view });
+      void executeRun(token, text, askMode, controller.signal, (next) => {
+        last = next;
+        dispatch({ type: "view", conversationId, turnId, view: next });
       }).then((failure) => {
         controllers.current.delete(turnId);
         if (controller.signal.aborted) return;
@@ -514,258 +500,279 @@ export function ChatPage({
     }
   };
 
+  // A citation click focuses its card and opens it: the passage or evidence is fetched
+  // from the server at that moment, so the reader's current access is checked.
   const openCitation = (turnId: string, citationId: string) => {
+    const key = `${turnId}/${citationId}`;
     setFocus({ turnId, citationId });
+    setOpened((s) => new Set(s).add(key));
+    setPtab("sources");
     setPanelOpen(true);
   };
 
-  const firstName = identity.display_name.split(/\s+/)[0] || identity.display_name;
+  const newChat = () => {
+    dispatch({ type: "new" });
+    setFocus(null);
+    go("chat");
+  };
+
+  const short = shortName(identity.display_name);
   const badge = (identity.tenant.name || "A").slice(0, 1).toUpperCase();
   const anyRunning = turns.some((t) => t.running);
+  const recents = state.conversations.filter(
+    (c) => !search || c.title.toLowerCase().includes(search.toLowerCase()),
+  );
+  const railButton = (v: ShellView, icon: keyof typeof ICONS, label: string) => (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-current={view === v ? "page" : undefined}
+      onClick={() => go(v)}
+    >
+      <Svg k={icon} />
+    </button>
+  );
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-bg text-fg">
-      {/* Sidebar: new chat and history */}
-      <aside
-        aria-label="Conversations"
-        className={`fixed inset-y-0 left-0 z-30 flex w-[min(280px,82vw)] flex-col border-r border-border bg-card transition-transform md:static md:w-[264px] md:translate-x-0 ${
-          sidebarOpen ? "translate-x-0 shadow-xl" : "-translate-x-[110%]"
-        }`}
-      >
-        <div className="flex items-center gap-2 px-3 pt-3 pb-1.5">
-          <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary text-xs font-bold text-primary-fg">
-            {badge}
-          </span>
-          <span className="min-w-0 flex-1 truncate font-semibold">{identity.tenant.name} Assistant</span>
-          <IconButton label="Close menu" icon="close" onClick={() => setSidebarOpen(false)} className="md:hidden" />
-        </div>
-        <div className="px-2">
-          <button
-            type="button"
-            onClick={() => {
-              dispatch({ type: "new" });
-              setFocus(null);
-              setPanelOpen(false);
-              setSidebarOpen(false);
-            }}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13.5px] hover:bg-muted"
-          >
-            <Icon d={ICONS.pen} />
-            New chat
-          </button>
-        </div>
-        <div className="px-4 pt-3 pb-1 text-[12.5px] text-muted-fg">This session</div>
-        <nav className="flex-1 overflow-y-auto px-2 pb-3" aria-label="Chat history">
-          {state.conversations.length === 0 ? (
-            <p className="px-2.5 py-1 text-xs text-muted-fg">No chats yet. History is kept until you sign out.</p>
-          ) : (
-            <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
-              {state.conversations.map((c) => (
-                <li key={c.id}>
-                  <button
-                    type="button"
-                    aria-current={c.id === state.activeId ? "page" : undefined}
-                    onClick={() => {
-                      dispatch({ type: "select", id: c.id });
-                      setFocus(null);
-                      setSidebarOpen(false);
-                    }}
-                    className={`block w-full truncate rounded-lg px-2.5 py-1.5 text-left text-[13.5px] hover:bg-muted ${
-                      c.id === state.activeId ? "bg-muted font-medium" : ""
-                    }`}
-                  >
-                    {c.title}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </nav>
-        <div className="flex flex-col gap-1 border-t border-border p-2 text-[13.5px]">
-          <button
-            type="button"
-            onClick={onOpenDashboard}
-            className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-muted"
-          >
-            <Icon d={ICONS.grid} />
-            Dashboard, documents and email
-          </button>
-          <div className="flex items-center gap-2 px-2.5 py-1">
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium">{identity.display_name}</span>
-              <span className="block truncate text-xs text-muted-fg">{identity.email}</span>
-            </span>
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-fg hover:bg-muted hover:text-fg"
-            >
-              <Icon d={ICONS.out} />
+    <div className={`eaios-shell app${panelOpen && view === "chat" ? " with-panel" : ""}${open ? " open" : ""}`}>
+      <nav className="rail" aria-label="Main">
+        {railButton("chat", "chat", "Ask")}
+        {railButton("files", "files", "Files and sources")}
+        {railButton("approvals", "appr", "Approvals")}
+        {showActivity ? railButton("activity", "act", "Activity log") : null}
+        <span className="sep" />
+        {railButton("settings", "gear", "Settings")}
+        <span className="grow" />
+        <button
+          type="button"
+          className="me"
+          aria-label="Account menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((m) => !m)}
+        >
+          <span className="avatar">{initials(identity.display_name)}</span>
+        </button>
+        {menuOpen ? (
+          <div className="menu" role="menu">
+            <div className="who">
+              <b>{identity.display_name}</b>
+              <small>
+                {identity.roles.join(", ") || "member"} · {identity.tenant.name}
+              </small>
+            </div>
+            <button type="button" role="menuitem" className="row" onClick={() => go("settings")}>
+              <Svg k="gear" />
+              Settings
+            </button>
+            <button type="button" role="menuitem" className="row" onClick={onSignOut}>
+              <Svg k="lock" />
               Sign out
             </button>
           </div>
+        ) : null}
+      </nav>
+
+      <aside className="side" aria-label="Conversations">
+        <div className="side-head">
+          <span className="brand">{identity.tenant.name.replace(/\s+Solutions$/, "")} Assistant</span>
+          <span className="sp" />
+          <button
+            type="button"
+            className="iconbtn"
+            aria-label="Search chats"
+            aria-pressed={search !== null}
+            onClick={() => setSearch((s) => (s === null ? "" : null))}
+          >
+            <Svg k="search" />
+          </button>
+        </div>
+        {search !== null ? (
+          <div className="side-search">
+            <Svg k="search" size={16} />
+            <input
+              autoFocus
+              value={search}
+              placeholder="Search chats"
+              aria-label="Search chats"
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        ) : null}
+        <div className="side-scroll">
+          <button type="button" className="row" onClick={newChat}>
+            <Svg k="pen" />
+            New chat
+          </button>
+          <div className="label">Recents</div>
+          {recents.length === 0 ? (
+            <p className="side-empty">
+              {state.conversations.length === 0
+                ? "Your chats appear here until you sign out."
+                : "No chats match."}
+            </p>
+          ) : (
+            recents.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className="row"
+                aria-current={view === "chat" && c.id === state.activeId ? "page" : undefined}
+                onClick={() => {
+                  dispatch({ type: "select", id: c.id });
+                  setFocus(null);
+                  go("chat");
+                }}
+              >
+                <span className="t">{c.title}</span>
+              </button>
+            ))
+          )}
         </div>
       </aside>
-      {sidebarOpen ? (
-        <div className="fixed inset-0 z-20 bg-fg/25 md:hidden" aria-hidden onClick={() => setSidebarOpen(false)} />
-      ) : null}
+      <div className="scrim" aria-hidden onClick={() => setOpen(false)} />
 
-      {/* Main column */}
-      <main className="flex min-w-0 flex-1 flex-col">
-        <div className="relative flex min-h-[52px] items-center justify-center gap-2 px-12 pt-2.5 pb-1.5">
-          <div className="absolute left-2.5 flex gap-1 md:hidden">
-            <IconButton label="Open menu" icon="menu" onClick={() => setSidebarOpen(true)} />
+      <main className="canvas">
+        <div className="topbar">
+          <div className="left">
+            <button type="button" className="iconbtn menu-btn" aria-label="Open menu" onClick={() => setOpen(true)}>
+              <Svg k="menu" />
+            </button>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[12.5px] text-muted-fg">
-            <span>
-              Limited to what <b className="text-fg">{identity.display_name}</b> can open
-            </span>
-            {header}
+          <div className="scope">
+            <span>Limited to what</span>
+            <b style={{ color: "var(--fg)" }}>{short}</b>
+            <span>can open:</span>
+            <span className="chip">{scopeText(identity)}</span>
+            {modelLabel ? <span className="chip warn">{modelLabel}</span> : null}
           </div>
-          <div className="absolute right-2.5 flex gap-1">
-            <IconButton
-              label="Sources panel"
-              icon="panel"
-              pressed={panelOpen}
-              onClick={() => setPanelOpen((o) => !o)}
-            />
+          <div className="right">
+            {view === "chat" ? (
+              <button
+                type="button"
+                className="iconbtn"
+                aria-label="Sources and media panel"
+                title="Sources and media"
+                aria-pressed={panelOpen}
+                onClick={() => setPanelOpen((p) => !p)}
+              >
+                <Svg k="panel" />
+              </button>
+            ) : null}
           </div>
         </div>
 
-        {!conversation ? (
-          <section className="flex flex-1 flex-col items-center justify-center gap-5 overflow-y-auto px-4 pb-[10vh]">
-            <h1 className="m-0 text-center text-[clamp(21px,2.6vw,28px)] font-medium tracking-tight text-balance">
-              What would you like to know, {firstName}?
-            </h1>
+        {view === "chat" && !conversation ? (
+          <section className="view home">
+            <h1>What can I find for you today, {short}?</h1>
             <Composer
-              id="chat-home"
-              placeholder="Ask about policies, contracts, documents or sales…"
+              id="homeAsk"
+              placeholder="Ask about policies, contracts, budgets, sales…"
               value={draft}
               onChange={setDraft}
-              mode={mode}
-              onMode={setMode}
-              modes={modes}
               disabled={false}
               onSubmit={() => ask(draft, mode)}
+              onUpload={() => go("files")}
             />
-            <div className="flex w-full max-w-[680px] flex-col gap-0.5">
-              {suggestions.map((s) => (
-                <button
-                  key={s.question}
-                  type="button"
-                  onClick={() => {
-                    setMode(s.mode);
-                    ask(s.question, s.mode);
-                  }}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-muted-fg hover:bg-muted hover:text-fg"
-                >
-                  <span className="grid h-[22px] w-[22px] flex-none place-items-center rounded-md bg-primary/15 text-[11px] font-bold text-primary">
-                    ?
-                  </span>
-                  <span className="min-w-0">
-                    {s.question} <span className="text-xs opacity-75">· {MODE_LABELS[s.mode]}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-            <p className="m-0 max-w-[680px] text-center text-xs text-muted-fg">{INDEPENDENT_NOTE}</p>
+            <SourcePicker id="homeMode" mode={mode} modes={modes} onMode={setMode} />
           </section>
-        ) : (
-          <section className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4" aria-label="Conversation">
-            <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-5 pt-3.5 pb-6">
-              <p className="m-0 self-center rounded-full border border-border px-3 py-0.5 text-center text-[11.5px] text-muted-fg">
-                {INDEPENDENT_NOTE}
-              </p>
+        ) : null}
+
+        {view === "chat" && conversation ? (
+          <section className="view convo" aria-label="Conversation">
+            <div className="thread">
               {turns.map((turn) => (
-                <div key={turn.id} className="flex flex-col gap-3">
-                  <div className="max-w-[80%] self-end rounded-[19px] bg-muted px-4 py-2.5 text-sm break-words">
+                <div key={turn.id} style={{ display: "contents" }}>
+                  <div className="u">
                     {turn.question}
-                    {turn.mode !== "auto" ? (
-                      <span className="mt-0.5 block text-[11px] text-muted-fg">{MODE_LABELS[turn.mode]}</span>
-                    ) : null}
+                    {turn.mode !== "auto" ? <small>{MODE_LABELS[turn.mode]}</small> : null}
                   </div>
-                  <div className="flex items-start gap-3">
-                    <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-lg bg-primary text-xs font-bold text-primary-fg">
-                      {badge}
-                    </span>
-                    <AssistantBody
-                      turn={turn}
-                      focused={focus?.turnId === turn.id ? focus.citationId : null}
-                      onCite={(id) => openCitation(turn.id, id)}
-                      onCancel={() => void cancel(turn)}
-                      canEmail={canEmail}
-                      onEmail={onOpenDashboard}
-                    />
-                  </div>
+                  <Answer
+                    turn={turn}
+                    badge={badge}
+                    focused={focus?.turnId === turn.id ? focus.citationId : null}
+                    onCite={(id) => openCitation(turn.id, id)}
+                    onCancel={() => void cancel(turn)}
+                    canEmail={canEmail}
+                    onEmail={() => go("approvals")}
+                  />
                 </div>
               ))}
               <div ref={threadEnd} />
             </div>
-            <div className="sticky bottom-0 flex justify-center bg-gradient-to-t from-bg from-70% to-transparent pt-1.5 pb-3.5">
+            <div className="dock">
               <Composer
-                id="chat-dock"
-                placeholder="Ask another question…"
+                id="dockAsk"
+                placeholder="Ask a follow-up…"
                 value={draft}
                 onChange={setDraft}
-                mode={mode}
-                onMode={setMode}
-                modes={modes}
                 disabled={anyRunning}
                 onSubmit={() => ask(draft, mode)}
+                onUpload={() => go("files")}
               />
+              <SourcePicker id="dockMode" mode={mode} modes={modes} onMode={setMode} />
             </div>
           </section>
-        )}
+        ) : null}
+
+        {(Object.keys(pages) as Exclude<ShellView, "chat">[]).map((key) => (
+          <section key={key} className="view" hidden={view !== key}>
+            <div className="page">{pages[key]}</div>
+          </section>
+        ))}
       </main>
 
-      {/* Sources panel */}
-      {panelOpen ? (
-        <>
-          <div className="fixed inset-0 z-30 bg-fg/25 lg:hidden" aria-hidden onClick={() => setPanelOpen(false)} />
-          <aside
-            aria-label="Sources"
-            className="fixed inset-y-0 right-0 z-40 flex w-[min(380px,94vw)] flex-col border-l border-border bg-card shadow-xl lg:static lg:z-auto lg:w-[360px] lg:shadow-none"
-          >
-            <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
-              <span className="font-semibold">Sources</span>
-              <span className="text-xs text-muted-fg">{panelTurn?.view.citations.length ?? 0}</span>
-              <span className="flex-1" />
-              <IconButton label="Close sources panel" icon="close" onClick={() => setPanelOpen(false)} />
-            </div>
-            <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto p-3">
-              {panelTurn ? (
-                <p className="m-0 text-xs text-muted-fg">
-                  For: <span className="text-fg">{panelTurn.question}</span>. Opening a source asks the server
-                  again, so your current access is checked.
-                </p>
-              ) : null}
-              {!panelTurn || panelTurn.view.citations.length === 0 ? (
-                <p className="m-0 text-sm text-muted-fg">
-                  {panelTurn?.running ? "Waiting for the answer…" : "No sources for this answer."}
-                </p>
-              ) : (
-                panelTurn.view.citations.map((c) => (
-                  <SourceCard
-                    key={c.citation_id}
-                    token={token}
-                    runId={panelTurn.view.runId}
-                    citation={c}
-                    n={citationNumber(panelTurn.view, c.citation_id)}
-                    open={focus?.turnId === panelTurn.id && focus.citationId === c.citation_id}
-                    onToggle={() =>
-                      setFocus((f) =>
-                        f?.turnId === panelTurn.id && f.citationId === c.citation_id
-                          ? { turnId: panelTurn.id, citationId: null }
-                          : { turnId: panelTurn.id, citationId: c.citation_id },
-                      )
-                    }
-                  />
-                ))
-              )}
-            </div>
-          </aside>
-        </>
-      ) : null}
+      <aside className="panel" aria-label="Sources and media">
+        <div className="panel-head">
+          <div className="seg" role="tablist" aria-label="Panel tabs">
+            <button type="button" role="tab" aria-selected={ptab === "sources"} onClick={() => setPtab("sources")}>
+              Sources<b>{sourceCount}</b>
+            </button>
+            <button type="button" role="tab" aria-selected={ptab === "media"} onClick={() => setPtab("media")}>
+              Media<b>0</b>
+            </button>
+          </div>
+          <span className="sp" />
+          <button type="button" className="iconbtn" aria-label="Close panel" onClick={() => setPanelOpen(false)}>
+            <Svg k="close" />
+          </button>
+        </div>
+        <div className="panel-body" role="tabpanel">
+          {ptab === "media" ? (
+            <p className="pempty">Charts, drafted reports and documents you open from a source appear here.</p>
+          ) : sourceCount === 0 ? (
+            <p className="pempty">
+              Sources used in this chat appear here. Click a numbered citation in an answer to jump to its passage.
+            </p>
+          ) : (
+            <>
+              <p className="note">Opening a source asks the server again, so your current access is checked.</p>
+              {turns
+                .filter((t) => t.view.citations.length > 0)
+                .map((t) => (
+                  <div key={t.id} style={{ display: "contents" }}>
+                    <div className="pgroup">{t.question}</div>
+                    {t.view.citations.map((c) => {
+                      const key = `${t.id}/${c.citation_id}`;
+                      return (
+                        <SourceCard
+                          key={key}
+                          token={token}
+                          runId={t.view.runId}
+                          citation={c}
+                          n={citationNumber(t.view, c.citation_id)}
+                          on={focus?.turnId === t.id && focus.citationId === c.citation_id}
+                          open={opened.has(key)}
+                          onOpen={() => openCitation(t.id, c.citation_id)}
+                        />
+                      );
+                    })}
+                  </div>
+                ))}
+            </>
+          )}
+        </div>
+      </aside>
     </div>
   );
 }

@@ -150,7 +150,14 @@ After pulling M6: `python3 scripts/dev.py up` (starts Mailpit and runs migration
 
 Clean-checkout setup, the defense demo script, the architecture and evidence index, and the rehearsal checklist: [defense/README.md](defense/README.md).
 
-**Chat page.** After signing in, click **Chat** next to **Dashboard**. The page has a conversation sidebar (**New chat**, history for this session), a composer with a **Source** selector, message bubbles, and a **Sources** panel. Every question is a separate `POST /api/v1/chat` run with your token: earlier messages are not sent to the backend. Clicking a numbered citation opens the passage or SQL evidence through the same endpoints the dashboard uses, so access is checked again. The history lives in memory only and is cleared on sign-out or reload. **Automatic** routes sales and period questions (for example anything naming "Q1 2026") to the SQL sales report; choose **Documents you can access** to ask the documents. A verified sales report has **Email this report for approval**, which opens the dashboard's email card with that report selected.
+**App shell and chat (NileTech Assistant layout, from `ui-demo/eaios-ui-demo.html`).** After sign-in the app opens on **Ask** (the chat). The icon rail on the left switches views:
+- **Ask:** chat, with the sidebar's **New chat** and **Recents**.
+- **Files and sources:** documents, upload, and local folders.
+- **Approvals:** email drafts, approval and sending, scheduled briefings, and the report form that used to be on the dashboard.
+- **Activity log:** administration and audit, shown to administrators only.
+- **Settings:** API status and your identity. **Sign out** is here and in the avatar menu.
+
+Every question is a separate `POST /api/v1/chat` run with your token: earlier messages are not sent to the backend. Clicking a numbered citation opens the passage or SQL evidence in the **Sources** panel through the same endpoints as before, so access is checked again. Chat history lives in memory only and is cleared on sign-out or reload. **Automatic** routes sales and period questions (for example anything naming "Q1 2026") to the SQL sales report; choose **Documents you can access** under the composer to ask the documents. A verified sales report has **Email this report for approval**, which opens **Approvals** with that report selected. The defense demo script (`defense/demo-script.md`) still describes the earlier single-page dashboard; its steps map to **Ask** and **Approvals**.
 
 ## Restart
 
