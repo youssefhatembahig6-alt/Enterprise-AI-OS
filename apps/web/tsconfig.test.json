@@ -14,6 +14,11 @@
     "src/runView.ts",
     "src/chatState.ts",
     "src/appearance.ts",
+    "src/emailSource.ts",
+    "src/runStream.ts",
+    "src/reports.ts",
+    "src/actions.ts",
+    "src/api.ts",
     "test"
   ]
 }

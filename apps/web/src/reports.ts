@@ -6,7 +6,7 @@
  * caller replays from GET /api/v1/runs/{id}/events?after=<last id>.
  */
 
-import { API_BASE_URL, ApiError, type ApiErrorBody } from "./api";
+import { API_BASE_URL, ApiError, type ApiErrorBody } from "./api.js";
 
 export type ReportEventType =
   | "status"

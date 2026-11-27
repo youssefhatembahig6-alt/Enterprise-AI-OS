@@ -3,11 +3,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  ACCENTS,
   cleanAppearance,
   contrastRatio,
   currentColors,
   DEFAULT_APPEARANCE,
+  INK,
+  softAccent,
+  THEMES,
   themeVariables,
+  type Appearance,
 } from "../src/appearance.js";
 
 test("unknown or malformed values fall back to the defaults", () => {
@@ -54,4 +59,44 @@ test("accent, font, corners and accent contrast reach the CSS variables", () => 
 test("contrast ratio matches the WCAG formula", () => {
   assert.equal(contrastRatio("#FFFFFF", "#000000").toFixed(1), "21.0");
   assert.equal(contrastRatio("#777777", "#777777"), 1);
+});
+
+function pairs(vars: Record<string, string>) {
+  const accent = vars["--accent"] ?? "";
+  const bg = vars["--bg"] ?? "";
+  const text = vars["--accent-text"] ?? "";
+  return {
+    onAccent: contrastRatio(vars["--accent-fg"] ?? "", accent),
+    textOnSoft: contrastRatio(text, softAccent(accent, bg)),
+    textOnBg: contrastRatio(text, bg),
+  };
+}
+
+test("default dark preset: text on the accent and accent-coloured text both reach 4.5:1", () => {
+  const vars = themeVariables({ ...DEFAULT_APPEARANCE, mode: "dark" }, false);
+  assert.equal(vars["--accent"], "#2FB3BD");
+  // Was white (#FFFFFF) on #2FB3BD = 2.5:1; the dark ink reads at about 7.6:1.
+  assert.equal(vars["--accent-fg"], INK);
+  const c = pairs(vars);
+  assert.ok(c.onAccent >= 4.5, `accent-fg on accent ${c.onAccent.toFixed(2)}`);
+  assert.ok(c.textOnSoft >= 4.5, `accent text on soft accent ${c.textOnSoft.toFixed(2)}`);
+  assert.ok(c.textOnBg >= 4.5, `accent text on background ${c.textOnBg.toFixed(2)}`);
+  // System mode on a dark device resolves to the same values.
+  assert.deepEqual(themeVariables(DEFAULT_APPEARANCE, true), vars);
+});
+
+test("every preset, mode and accent keeps accent text at 4.5:1 or better", () => {
+  const failures: string[] = [];
+  for (const theme of Object.keys(THEMES)) {
+    for (const mode of ["light", "dark"] as const) {
+      for (const accent of Object.keys(ACCENTS)) {
+        const a: Appearance = { ...DEFAULT_APPEARANCE, theme, mode, accent };
+        const c = pairs(themeVariables(a, false));
+        for (const [name, ratio] of Object.entries(c)) {
+          if (ratio < 4.5) failures.push(`${theme}/${mode}/${accent} ${name} ${ratio.toFixed(2)}`);
+        }
+      }
+    }
+  }
+  assert.deepEqual(failures, []);
 });

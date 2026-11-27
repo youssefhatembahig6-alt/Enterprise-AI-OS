@@ -4,13 +4,14 @@
    Tailwind-styled panels rendered inside the shell keep their own layout. */
 
 :root {
-  --bg: #f7f8f8; --fg: #15212b; --accent: #0f8a94; --accent-fg: #ffffff;
+  --bg: #f7f8f8; --fg: #15212b; --accent: #0f8a94; --accent-fg: #0B0F12;
   --ok: #1f7a4a; --warn: #a35a00; --crit: #b3261e;
   --font: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
   --r: 12px; --pad: 1;
+  --accent-text: #116B75;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #0e1418; --fg: #e6eef2; --accent: #2fb3bd; --accent-fg: #04191c; --ok: #5cc98d; --warn: #e7a54d; --crit: #f08a82; }
+  :root { --bg: #0e1418; --fg: #e6eef2; --accent: #2fb3bd; --accent-fg: #0B0F12; --accent-text: #2FB3BD; --ok: #5cc98d; --warn: #e7a54d; --crit: #f08a82; }
 }
 :root {
   --page: color-mix(in srgb, var(--fg) 7%, var(--bg));
@@ -104,7 +105,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .eaios-shell .step.run::before { content: ""; display: inline-block; width: 8px; height: 8px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: eaios-spin .8s linear infinite; margin-right: 5px; }
 .eaios-shell .steps .linkish { background: none; border: 0; padding: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; }
 @keyframes eaios-spin { to { transform: rotate(360deg); } }
-.eaios-shell .cite { display: inline-grid; place-items: center; min-width: 20px; height: 18px; padding: 0 5px; border-radius: 6px; background: var(--soft-accent); color: var(--accent); font-size: 11px; font-weight: 600; vertical-align: 1px; border: 0; cursor: pointer; margin: 0 1px; }
+.eaios-shell .cite { display: inline-grid; place-items: center; min-width: 20px; height: 18px; padding: 0 5px; border-radius: 6px; background: var(--soft-accent); color: var(--accent-text); font-size: 11px; font-weight: 600; vertical-align: 1px; border: 0; cursor: pointer; margin: 0 1px; }
 .eaios-shell .cite[aria-expanded="true"] { background: var(--accent); color: var(--accent-fg); }
 .eaios-shell .srcrow { display: flex; flex-wrap: wrap; gap: 6px; }
 .eaios-shell .verify { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11.5px; }
@@ -143,7 +144,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .eaios-shell .pcard { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; transition: border-color .2s, box-shadow .2s; font-size: 13px; }
 .eaios-shell .pcard.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--soft-accent); }
 .eaios-shell .pcard .top { display: flex; gap: 8px; align-items: center; min-width: 0; }
-.eaios-shell .pcard .num { font-size: 11px; font-weight: 700; color: var(--accent); background: var(--soft-accent); border-radius: 5px; padding: 0 6px; flex: none; }
+.eaios-shell .pcard .num { font-size: 11px; font-weight: 700; color: var(--accent-text); background: var(--soft-accent); border-radius: 5px; padding: 0 6px; flex: none; }
 .eaios-shell .pcard .name { font-weight: 600; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .eaios-shell .pcard .meta { font-size: 11.5px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .eaios-shell .pcard blockquote { margin: 0; font-size: 12.5px; line-height: 1.55; background: var(--surface); border-radius: 8px; padding: 8px 10px; }
@@ -198,7 +199,7 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .eaios-shell .pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 5px 10px; font-size: 13px; }
 .eaios-shell .pill select { border: 0; background: none; outline: none; color: var(--fg); font: inherit; }
 .eaios-shell .pill input[type="text"] { border: 0; background: none; outline: none; width: 80px; font-family: var(--mono); font-size: 12.5px; color: var(--fg); }
-.eaios-shell .pill .aa { font-weight: 600; color: var(--accent); }
+.eaios-shell .pill .aa { font-weight: 600; color: var(--accent-text); }
 .eaios-shell .swatch { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--line); flex: none; position: relative; overflow: hidden; }
 .eaios-shell .swatch input { position: absolute; inset: -6px; width: 30px; height: 30px; opacity: 0; cursor: pointer; }
 .eaios-shell .modes { display: flex; gap: 10px; flex-wrap: wrap; }

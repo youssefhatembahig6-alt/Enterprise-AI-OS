@@ -13,7 +13,7 @@ import { useCallback, useEffect, useReducer, useRef, useState, type FormEvent, t
 import type { Identity } from "./api";
 import { activeConversation, chatReducer, INITIAL_CHAT, type Turn } from "./chatState";
 import { cancelReport, type AskMode, type Citation } from "./reports";
-import { executeRun } from "./runStream";
+import { executeChatTurn } from "./runStream";
 import { citationKind, citationNumber, EMPTY_RUN, newRequestId, runKind, type RunView } from "./runView";
 import { EvidenceDetail, PassageDetail } from "./sourceViews";
 import { LEGAL_LABEL, verificationText } from "./verification";
@@ -477,18 +477,17 @@ export function ChatPage({
       setDraft("");
       const controller = new AbortController();
       controllers.current.set(turnId, controller);
-      let last: RunView | null = null;
-      void executeRun(token, text, askMode, controller.signal, (next) => {
-        last = next;
-        dispatch({ type: "view", conversationId, turnId, view: next });
-      }).then((failure) => {
+      void executeChatTurn(
+        token,
+        text,
+        askMode,
+        controller.signal,
+        (next) => dispatch({ type: "view", conversationId, turnId, view: next }),
+        onReportPublished,
+      ).then((failure) => {
         controllers.current.delete(turnId);
         if (controller.signal.aborted) return;
         dispatch({ type: "finish", conversationId, turnId, failure });
-        const final = last as RunView | null;
-        if (final?.table && final.done?.outcome === "published" && final.runId) {
-          onReportPublished(final.runId, final.title ?? "Verified report");
-        }
       });
     },
     [state.activeId, token, onReportPublished],

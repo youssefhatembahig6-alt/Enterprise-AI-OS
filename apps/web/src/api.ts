@@ -4,7 +4,8 @@
  * cookies; a reload requires signing in again (ADR 0101).
  */
 
-export const API_BASE_URL: string = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000")
+// `?.`: node:test loads this module without Vite, where import.meta.env is undefined.
+export const API_BASE_URL: string = (import.meta.env?.VITE_API_BASE_URL ?? "http://localhost:8000")
   .replace(/\/+$/, "");
 
 export interface ApiErrorBody {

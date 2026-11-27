@@ -4,9 +4,9 @@
  * Returns a user-facing failure message, or null when the stream ended normally.
  */
 
-import { ApiError } from "./api";
-import { resumeReport, startReport, type AskMode, type ReportEvent } from "./reports";
-import { applyEvent, EMPTY_RUN, newRequestId, type RunView } from "./runView";
+import { ApiError } from "./api.js";
+import { resumeReport, startReport, type AskMode, type ReportEvent } from "./reports.js";
+import { applyEvent, EMPTY_RUN, newRequestId, type RunView } from "./runView.js";
 
 const MAX_RECONNECTS = 5;
 
@@ -57,4 +57,29 @@ export async function executeRun(
     }
     return "Could not reach the API.";
   }
+}
+
+/**
+ * One chat turn: run the question, then report a published SQL report exactly once, when
+ * its stream has ended (not when it was aborted). The Chat page and the regression tests
+ * use this same function.
+ */
+export async function executeChatTurn(
+  token: string,
+  question: string,
+  mode: AskMode,
+  signal: AbortSignal,
+  onView: (view: RunView) => void,
+  onReportPublished: (runId: string, title: string) => void,
+): Promise<string | null> {
+  let last: RunView | null = null;
+  const failure = await executeRun(token, question, mode, signal, (view) => {
+    last = view;
+    onView(view);
+  });
+  const final = last as RunView | null;
+  if (!signal.aborted && final?.table && final.done?.outcome === "published" && final.runId) {
+    onReportPublished(final.runId, final.title ?? "Verified report");
+  }
+  return failure;
 }

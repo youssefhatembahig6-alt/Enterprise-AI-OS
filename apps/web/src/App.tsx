@@ -1,7 +1,8 @@
 import { Alert, Button, Card, StatusPill, type StatusTone } from "@eaios/ui";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useReducer, useState, type FormEvent } from "react";
 import { admin, type TenantSettings } from "./admin";
-import { ActionsPanel, type ReportSource } from "./ActionsPanel";
+import { ActionsPanel } from "./ActionsPanel";
+import { emailSourceReducer, INITIAL_EMAIL_SOURCE, newerThanPinned } from "./emailSource";
 import { AdminPanel } from "./AdminPanel";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { useAppearance } from "./useAppearance";
@@ -181,13 +182,16 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [settings, setSettings] = useState<TenantSettings | null>(null);
   const [desktopSession, setDesktopSession] = useState<{ session: Session; ready: boolean } | null>(null);
-  const [reportSource, setReportSource] = useState<ReportSource | null>(null);
+  const [emailSource, dispatchEmailSource] = useReducer(emailSourceReducer, INITIAL_EMAIL_SOURCE);
   const [view, setView] = useState<ShellView>("chat");
-  const onReportPublished = useCallback((runId: string, title: string) => setReportSource({ runId, title }), []);
-  // "Email this report" binds the email form to the report that was clicked, even when a
-  // newer report was published since. The run reference tells same-titled reports apart.
+  // A finished run becomes the email source only until the user explicitly picks one;
+  // after that, later runs (slower chat turns, Approvals-page reports) never replace it.
+  const onReportPublished = useCallback(
+    (runId: string, title: string) => dispatchEmailSource({ type: "published", runId, title }),
+    [],
+  );
   const onEmailReport = useCallback(
-    (runId: string, title: string) => setReportSource({ runId, title: `${title} · report ${runId.slice(0, 8)}` }),
+    (runId: string, title: string) => dispatchEmailSource({ type: "select", runId, title }),
     [],
   );
 
@@ -200,7 +204,7 @@ export function App() {
     );
     setDesktopSession(null);
     setSettings(null);
-    setReportSource(null);
+    dispatchEmailSource({ type: "clear" });
     if (session) {
       void admin.tenantSettings(session.token).then(
         (value) => { if (current) setSettings(value); },
@@ -304,7 +308,24 @@ export function App() {
               here — and are sent only after you approve the exact version.
             </p>
             {settings?.enabled_packs.includes("actions") ? (
-              <ActionsPanel token={session.token} source={reportSource} />
+              <>
+                {newerThanPinned(emailSource) ? (
+                  <p className="note">
+                    A newer report finished; this form keeps the report you chose.{" "}
+                    <button
+                      type="button"
+                      className="btn small"
+                      onClick={() => {
+                        const n = newerThanPinned(emailSource);
+                        if (n) dispatchEmailSource({ type: "select", runId: n.runId, title: n.title });
+                      }}
+                    >
+                      Use the newer report instead
+                    </button>
+                  </p>
+                ) : null}
+                <ActionsPanel token={session.token} source={emailSource.source} />
+              </>
             ) : (
               <p className="note">The actions pack is not enabled for your organization.</p>
             )}

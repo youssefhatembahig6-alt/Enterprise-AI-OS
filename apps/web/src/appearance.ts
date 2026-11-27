@@ -37,7 +37,7 @@ export const ACCENTS: Record<string, { name: string; hex: string | null }> = {
   orange: { name: "Orange", hex: "#E07A1F" },
   purple: { name: "Purple", hex: "#8B5CF6" },
   pink: { name: "Pink", hex: "#E0458B" },
-  red: { name: "Red", hex: "#D9433A" },
+  red: { name: "Red", hex: "#D44139" }, // prototype #D9433A, darkened 2% so white text on it reaches 4.5:1
 };
 
 export const FONTS: Record<string, { name: string; stack: string }> = {
@@ -107,6 +107,42 @@ export function contrastRatio(a: string, b: string): number {
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 }
 
+export const INK = "#0B0F12";
+export const PAPER = "#FFFFFF";
+
+/** Text on an accent fill (send button, active chips): whichever ink reads better. The
+ * prototype's luminance > 0.45 rule put white on every dark preset's accent (2.3–3.7:1). */
+export function accentForeground(accent: string): string {
+  return contrastRatio(PAPER, accent) >= contrastRatio(INK, accent) ? PAPER : INK;
+}
+
+/** color-mix(in srgb, a p, b) for #RRGGBB, as the shell's --soft-accent uses it. */
+export function mixHex(a: string, b: string, p: number): string {
+  const na = Number.parseInt(a.slice(1), 16);
+  const nb = Number.parseInt(b.slice(1), 16);
+  const channel = (shift: number) =>
+    Math.round(((na >> shift) & 255) * p + ((nb >> shift) & 255) * (1 - p))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${channel(16)}${channel(8)}${channel(0)}`.toUpperCase();
+}
+
+export function softAccent(accent: string, bg: string): string {
+  return mixHex(accent, bg, 0.16);
+}
+
+/** Accent-coloured text (citation numbers, source numbers, "Aa"): the accent, moved
+ * toward the foreground only as far as needed for 4.5:1 on the soft accent fill and on
+ * the page background. */
+export function accentText(accent: string, bg: string, fg: string): string {
+  const soft = softAccent(accent, bg);
+  for (let t = 0; t <= 1.0001; t += 0.05) {
+    const c = mixHex(fg, accent, t);
+    if (contrastRatio(c, soft) >= 4.5 && contrastRatio(c, bg) >= 4.5) return c;
+  }
+  return fg;
+}
+
 export function resolvedMode(a: Appearance, systemDark: boolean): "light" | "dark" {
   return a.mode === "system" ? (systemDark ? "dark" : "light") : a.mode;
 }
@@ -131,7 +167,8 @@ export function themeVariables(a: Appearance, systemDark: boolean): Record<strin
     "--bg": c.bg,
     "--fg": c.fg,
     "--accent": c.accent,
-    "--accent-fg": luminance(c.accent) > 0.45 ? "#0B0F12" : "#FFFFFF",
+    "--accent-fg": accentForeground(c.accent),
+    "--accent-text": accentText(c.accent, c.bg, c.fg),
     "--ok": dark ? "#5CC98D" : "#1F7A4A",
     "--warn": dark ? "#E7A54D" : "#A35A00",
     "--crit": dark ? "#F08A82" : "#B3261E",
