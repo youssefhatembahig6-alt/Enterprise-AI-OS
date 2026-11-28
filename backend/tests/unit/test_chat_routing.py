@@ -52,6 +52,8 @@ def test_ordinary_questions_go_to_general(question: str) -> None:
         "What is the method for expense claims?",
         "What is the notice period for leave?",
         "What does the IT security handbook say about passwords?",
+        # Company finance records (the finance commentary), not general knowledge.
+        "How many invoices were overdue at the reference date?",
         # Explanations of figures come from commentary and memos, not the SQL report.
         "Why did collections lag revenue in Q1 2026?",
     ],

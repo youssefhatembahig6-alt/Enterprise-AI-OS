@@ -86,6 +86,7 @@ _DOCUMENTS = re.compile(
     r"human\s+resources|employees?|staff|colleagues?|manager|department|team\s+lead|"
     r"memos?|minutes|board|strategy|commentary|catalogue|catalog|customers?|clients?|"
     r"suppliers?|deliver(?:y|ies)|security\s+handbook|it\s+security|passwords?|"
+    r"invoices?|overdue|collections?|receivables?|payables?|reference\s+date|"
     r"company|organi[sz]ation|internal|niletech|our)\b",
     re.I,
 )
