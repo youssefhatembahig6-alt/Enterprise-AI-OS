@@ -2,7 +2,7 @@
 // memory per session, and each turn is an independent run.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { activeConversation, chatReducer, INITIAL_CHAT, titleFor, type ChatState } from "../src/chatState.js";
+import { activeConversation, canRevalidate, chatReducer, INITIAL_CHAT, titleFor, type ChatState } from "../src/chatState.js";
 import type { ReportEvent } from "../src/reports.js";
 import { applyEvent, citationKind, clarifyView, EMPTY_RUN, runKind, type RunView } from "../src/runView.js";
 
@@ -209,4 +209,62 @@ test("saved chats: a deleted chat leaves Recents and closes when open", () => {
   s = chatReducer(s, { type: "select", id: "srv-b" });
   s = chatReducer(s, { type: "removed", conversationId: "srv-a" });
   assert.equal(s.activeId, "srv-b");
+});
+
+test("reopening a chat hides every saved answer until it is replayed, every time", () => {
+  const cited = fold([
+    { id: 1, event: "status", data: { step: "accepted", state: "completed", label: "Accepted", run_id: "run-1", handler: "documents", handler_label: "Documents" } },
+    { id: 2, event: "token", data: { part: "text", text: "Collections lagged revenue.", citations: ["c1"] } },
+    { id: 3, event: "citation", data: { citation_id: "c1", document_id: "d1", title: "Q1 2026 finance commentary", quote: "370 open invoices" } },
+    { id: 4, event: "done", data: { outcome: "published", message_id: "m", verification: null, abstention: null, inference: "fake" } },
+  ]);
+  let s: ChatState = chatReducer(INITIAL_CHAT, { type: "saved", items: [{ serverId: "srv-a", title: "Why?" }] });
+  const turns = [
+    { id: "s-1", question: "Why did collections lag?", view: cited, failure: null, running: false },
+    { id: "s-2", question: "the numbers?", view: clarifyView("Which one?"), failure: null, running: false },
+  ];
+  s = chatReducer(s, { type: "opened", conversationId: "srv-a", turns });
+  s = chatReducer(s, { type: "select", id: "srv-a" });
+  for (let reopen = 0; reopen < 2; reopen++) {
+    assert.equal(canRevalidate(must(activeConversation(s))), true);
+    s = chatReducer(s, { type: "revalidating", conversationId: "srv-a" });
+    const [answer, clarify] = must(activeConversation(s)).turns;
+    // The cited answer: no text, no citation, no result; only the question and label remain.
+    assert.deepEqual(must(answer).view.sentences, []);
+    assert.deepEqual(must(answer).view.citations, []);
+    assert.equal(must(answer).view.done, null);
+    assert.equal(must(answer).view.runId, "run-1");
+    assert.equal(must(answer).view.handlerLabel, "Documents");
+    assert.equal(must(answer).question, "Why did collections lag?");
+    assert.equal(must(answer).reopening, true);
+    assert.equal(runKind(must(answer).view, null), "running");
+    // While it is being re-checked, the chat cannot be revalidated again concurrently by a
+    // live ask, but a second reopen is allowed (it restarts the replay).
+    assert.equal(canRevalidate(must(activeConversation(s))), true);
+    // The clarifying question (no run, no company content) is unchanged.
+    assert.equal(must(clarify).view.done?.abstention?.message, "Which one?");
+    // The replay ends with the server's refusal: the old answer does not come back.
+    s = chatReducer(s, {
+      type: "view",
+      conversationId: "srv-a",
+      turnId: "s-1",
+      view: applyEvent(must(answer).view, { id: null, event: "error", data: { code: "access_revoked", message: "You no longer have access to this report." } }),
+    });
+    s = chatReducer(s, { type: "finish", conversationId: "srv-a", turnId: "s-1", failure: null });
+    const after = must(must(activeConversation(s)).turns[0]);
+    assert.equal(runKind(after.view, null), "error");
+    assert.deepEqual(after.view.sentences, []);
+    assert.deepEqual(after.view.citations, []);
+    assert.equal(after.reopening, false);
+  }
+});
+
+test("a chat with an answer still streaming is not revalidated", () => {
+  let s: ChatState = chatReducer(INITIAL_CHAT, { type: "ask", conversationId: "local-1", turnId: "t1", question: "hello", view: EMPTY_RUN });
+  s = chatReducer(s, { type: "bind", conversationId: "local-1", serverId: "srv-1" });
+  assert.equal(canRevalidate(must(activeConversation(s))), false);
+  s = chatReducer(s, { type: "finish", conversationId: "local-1", turnId: "t1", failure: null });
+  assert.equal(canRevalidate(must(activeConversation(s))), true);
+  const unsaved = chatReducer(INITIAL_CHAT, { type: "ask", conversationId: "local-2", turnId: "t2", question: "x", view: EMPTY_RUN });
+  assert.equal(canRevalidate(must(activeConversation(unsaved))), false);
 });

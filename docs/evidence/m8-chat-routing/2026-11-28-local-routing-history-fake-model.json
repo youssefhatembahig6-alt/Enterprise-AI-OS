@@ -1,6 +1,6 @@
 {
-  "run_id": "local-routing-20261128T131644Z",
-  "started_at": "2026-11-28T13:16:45.050703+00:00",
+  "run_id": "local-reval-20261128T133206Z",
+  "started_at": "2026-11-28T13:32:06.899383+00:00",
   "web": "http://127.0.0.1:13000",
   "api": "http://127.0.0.1:18000",
   "expect_inference": "fake",
@@ -14,7 +14,7 @@
     "engine": null,
     "error": null,
     "label": "FAKE INFERENCE (deterministic development double, not model output)",
-    "checked_at": 1795871805.0493107
+    "checked_at": 1795872726.89805
   },
   "checks": {
     "status_badge": {
@@ -32,9 +32,9 @@
     "hello": {
       "question": "hello",
       "ui": {
-        "run_id": "0f1c6260-392d-4a77-937f-3e07087b41d2",
+        "run_id": "3258ff23-6dc1-4811-b09d-199cfa66ca6b",
         "handler_header": "general",
-        "conversation_id": "a337c4e7-95be-4ff0-9606-16cd38554fba",
+        "conversation_id": "b0bf5869-97e7-4656-813d-85e2ac7fd4e7",
         "label": [
           "General"
         ],
@@ -52,7 +52,7 @@
         "screenshot": "1-hello.png"
       },
       "run": {
-        "run_id": "0f1c6260-392d-4a77-937f-3e07087b41d2",
+        "run_id": "3258ff23-6dc1-4811-b09d-199cfa66ca6b",
         "status": "published",
         "inference_mode": "fake",
         "outcome_code": "general_model_reply_unverified",
@@ -71,17 +71,17 @@
       "pass": true
     },
     "general": {
-      "question": "Suggest a simple agenda for a 30-minute weekly team retrospective.",
+      "question": "Explain in plain words what a confusion matrix is.",
       "ui": {
-        "run_id": "61a1ddb1-a204-4703-b29b-5f292543f37c",
+        "run_id": "698d8bb1-31d2-44d3-9f94-705449276357",
         "handler_header": "general",
-        "conversation_id": "a337c4e7-95be-4ff0-9606-16cd38554fba",
+        "conversation_id": "b0bf5869-97e7-4656-813d-85e2ac7fd4e7",
         "label": [
           "General"
         ],
-        "text": "N\nGeneral\nRequest accepted\nChecked your access\nAsked the model (general knowledge, no company data)\nPublished the general reply\n\nFAKE general reply (deterministic development double, not model output). You asked: Suggest a simple agenda for a 30-minute weekly team retrospective.\n\nGeneral reply · no company data\nNot checked against sources\nFAKE inference — not a model\n\nGeneral reply from the model. It did not use your organization's documents, data or email, and it was not checked against any source.",
+        "text": "N\nGeneral\nRequest accepted\nChecked your access\nAsked the model (general knowledge, no company data)\nPublished the general reply\n\nFAKE general reply (deterministic development double, not model output). You asked: Explain in plain words what a confusion matrix is.\n\nGeneral reply · no company data\nNot checked against sources\nFAKE inference — not a model\n\nGeneral reply from the model. It did not use your organization's documents, data or email, and it was not checked against any source.",
         "reply": [
-          "FAKE general reply (deterministic development double, not model output). You asked: Suggest a simple agenda for a 30-minute weekly team retrospective."
+          "FAKE general reply (deterministic development double, not model output). You asked: Explain in plain words what a confusion matrix is."
         ],
         "pills": [
           "General reply · no company data",
@@ -93,7 +93,7 @@
         "screenshot": "2-general.png"
       },
       "run": {
-        "run_id": "61a1ddb1-a204-4703-b29b-5f292543f37c",
+        "run_id": "698d8bb1-31d2-44d3-9f94-705449276357",
         "status": "published",
         "inference_mode": "fake",
         "outcome_code": "general_model_reply_unverified",
@@ -114,9 +114,9 @@
     "documents_leave": {
       "question": "How many unused leave days can I carry into next year, and when do they expire?",
       "ui": {
-        "run_id": "51e639cc-8dc1-4714-b08f-688de4503884",
+        "run_id": "1ba68ebd-0154-4e93-88fa-3384a7a58ea3",
         "handler_header": "documents",
-        "conversation_id": "efb2f3fe-41d7-4a0f-9a59-b638a95a8a2f",
+        "conversation_id": "cb31bcf6-6365-4fee-a1bb-4aba763fbb83",
         "label": [
           "Documents"
         ],
@@ -140,12 +140,12 @@
       },
       "citation_requests": [
         [
-          "/runs/51e639cc-8dc1-4714-b08f-688de4503884/citations/c1",
+          "/runs/1ba68ebd-0154-4e93-88fa-3384a7a58ea3/citations/c1",
           200
         ]
       ],
       "run": {
-        "run_id": "51e639cc-8dc1-4714-b08f-688de4503884",
+        "run_id": "1ba68ebd-0154-4e93-88fa-3384a7a58ea3",
         "status": "published",
         "inference_mode": "fake",
         "outcome_code": "answer_quotes_verified_dev_checked",
@@ -165,9 +165,9 @@
     "sales_report": {
       "question": "What were fulfilled sales in Q1 2026?",
       "ui": {
-        "run_id": "44c06399-01a0-42ca-a449-92bde88bfd84",
+        "run_id": "0d46d431-9858-4745-8cf3-400070f60f9e",
         "handler_header": "report",
-        "conversation_id": "8dce1ba2-d731-4258-85fc-759c86d7dc73",
+        "conversation_id": "63f4d78b-4ac7-47ee-8222-187779ec0744",
         "label": [
           "Sales report (SQL)"
         ],
@@ -189,10 +189,10 @@
         "email_action": 1,
         "screenshot": "4-sales-report.png",
         "approval_screenshot": "5-email-approval-form.png",
-        "approval_form": "Email “Fulfilled sales, Q1 2026 · report 44c06399”"
+        "approval_form": "Email “Fulfilled sales, Q1 2026 · report 0d46d431”"
       },
       "run": {
-        "run_id": "44c06399-01a0-42ca-a449-92bde88bfd84",
+        "run_id": "0d46d431-9858-4745-8cf3-400070f60f9e",
         "status": "published",
         "inference_mode": "fake",
         "outcome_code": "figures_verified_narrative_dev_checked",
@@ -220,7 +220,7 @@
       "ui": {
         "run_id": null,
         "handler_header": "clarify",
-        "conversation_id": "993a911b-8011-4e9c-8a08-2bafed54d8ad",
+        "conversation_id": "f0688f9b-e38b-45b5-aae5-2a8b00cec94d",
         "label": [
           "Clarifying question"
         ],
@@ -239,13 +239,101 @@
       "problems": [],
       "pass": true
     },
+    "revalidation": {
+      "question": "Why did collections lag revenue in Q1 2026?",
+      "chat": "47579646-5958-4ce6-83b6-4e6d896a23f6",
+      "run_id": "780e4f9d-7467-4795-b0cf-da1e01f54b6d",
+      "cited": {
+        "run_id": "780e4f9d-7467-4795-b0cf-da1e01f54b6d",
+        "handler_header": "documents",
+        "conversation_id": "47579646-5958-4ce6-83b6-4e6d896a23f6",
+        "label": [
+          "Documents"
+        ],
+        "text": "N\nDocuments\nRequest accepted\nChecked your access\nSearched documents you can access\nDrafted the answer\nChecked the answer against its sources\nPublished the verified result\n\nCollections lagged revenue because 370 open invoices were already past their due date at the reference date. 1\n\nEvery sentence quotes a source you can open\nClaims checked (development checker)\n1 source allowed\nFAKE inference — not a model\n\nEvery sentence quotes an exact passage of a document you can access (re-checked at publication); claims checked by the development baseline checker (not the final trained checker).\n\nQ1 2026 finance commentary",
+        "reply": [
+          "Collections lagged revenue because 370 open invoices were already past their due date at the reference date. 1"
+        ],
+        "pills": [
+          "Every sentence quotes a source you can open",
+          "Claims checked (development checker)",
+          "1 source allowed",
+          "FAKE inference — not a model"
+        ],
+        "error": [],
+        "citations": 1,
+        "screenshot": "7a-revalidation-cited.png"
+      },
+      "revoked": "finance.reader removed from finance-team by access.admin",
+      "during": {
+        "label": [
+          "Documents"
+        ],
+        "status": [
+          "Re-checking your access…"
+        ],
+        "reply": [],
+        "citations": 0,
+        "error": [],
+        "passages": 0,
+        "replay_held": true,
+        "page_has_old_text": false,
+        "screenshot": "7b-revalidation-during.png"
+      },
+      "after": {
+        "label": [
+          "Documents"
+        ],
+        "status": [],
+        "reply": [],
+        "citations": 0,
+        "error": [
+          "You no longer have access to this answer, so it is hidden. (access_revoked)"
+        ],
+        "passages": 0,
+        "page_has_old_text": false,
+        "leaked_markers": [],
+        "screenshot": "7c-revalidation-after.png",
+        "citation_status": [
+          404
+        ]
+      },
+      "restored": {
+        "label": [
+          "Documents"
+        ],
+        "status": [],
+        "reply": [
+          "Collections lagged revenue because 370 open invoices were already past their due date at the reference date. 1"
+        ],
+        "citations": 1,
+        "error": [],
+        "passages": 1,
+        "screenshot": "7d-revalidation-restored.png"
+      },
+      "problems": [],
+      "pass": true
+    },
     "history": {
-      "chat": "a337c4e7-95be-4ff0-9606-16cd38554fba",
+      "chat": "b0bf5869-97e7-4656-813d-85e2ac7fd4e7",
       "recents_after_reload": [
+        "47579646-5958-4ce6-83b6-4e6d896a23f6",
+        "f0688f9b-e38b-45b5-aae5-2a8b00cec94d",
+        "63f4d78b-4ac7-47ee-8222-187779ec0744",
+        "cb31bcf6-6365-4fee-a1bb-4aba763fbb83",
+        "b0bf5869-97e7-4656-813d-85e2ac7fd4e7",
+        "bfa01ad8-3236-4dec-8cb7-47a06c47ea5a",
+        "cd426b7e-88dc-4226-9592-2ecc92e68bdd",
+        "5aca662a-5ce0-4279-938c-4a50066023c1",
+        "e5aeaf8a-89d9-41f1-bae4-51e9d1cc0225",
+        "6631d465-039b-43b1-bf54-4d63d7f18a69",
+        "5f5f1f1a-8c2b-47e1-8510-85e85788ff7e",
+        "07b6f89e-12e4-470d-b612-d02b1f85b1d5",
+        "01ebbc40-86d2-440c-8563-0b0008a88c03",
+        "888e33d9-ad43-4a8f-ae8f-6612c6ced0f8",
         "993a911b-8011-4e9c-8a08-2bafed54d8ad",
         "8dce1ba2-d731-4258-85fc-759c86d7dc73",
         "efb2f3fe-41d7-4a0f-9a59-b638a95a8a2f",
-        "a337c4e7-95be-4ff0-9606-16cd38554fba",
         "443ca6d2-d5d9-4332-971a-e18ed4fafeb0",
         "169b158a-bcc1-42ff-91a1-18f9a2a8c4a0",
         "d72dfe61-8249-4adc-bc47-1470fb6d8477",
@@ -255,7 +343,7 @@
       "reopened": {
         "questions": [
           "hello",
-          "Suggest a simple agenda for a 30-minute weekly team retrospective."
+          "Explain in plain words what a confusion matrix is."
         ],
         "labels": [
           "General",
@@ -266,10 +354,10 @@
             "FAKE general reply (deterministic development double, not model output). You asked: hello"
           ],
           [
-            "FAKE general reply (deterministic development double, not model output). You asked: Suggest a simple agenda for a 30-minute weekly team retrospective."
+            "FAKE general reply (deterministic development double, not model output). You asked: Explain in plain words what a confusion matrix is."
           ]
         ],
-        "screenshot": "7-history-reopened.png"
+        "screenshot": "8-history-reopened.png"
       },
       "second_employee": {
         "listed": false,
@@ -281,6 +369,8 @@
         "after_reload": true
       },
       "second_employee_recents": [
+        "8695acf9-a450-4103-b3da-fef014fcd7f0",
+        "2683d3fe-7704-4500-817b-305c7940dadc",
         "a74a1ae6-ab74-409c-80a3-01da4c1adcad",
         "39078542-cf8b-41fb-b6de-e2e34a36ac20"
       ],
@@ -290,9 +380,9 @@
     "sales_refusal": {
       "question": "Why did collections lag revenue in Q1 2026?",
       "ui": {
-        "run_id": "dbc10d05-ceda-44b4-98bd-7b6177bbd12a",
+        "run_id": "bc169a1b-8141-4175-acf1-906f9f5635c6",
         "handler_header": "documents",
-        "conversation_id": "2683d3fe-7704-4500-817b-305c7940dadc",
+        "conversation_id": "7b6102f6-570b-4a65-9543-9b161627c6f5",
         "label": [
           "Documents"
         ],
@@ -304,10 +394,10 @@
         ],
         "error": [],
         "citations": 0,
-        "screenshot": "9-sales-refusal.png"
+        "screenshot": "10-sales-refusal.png"
       },
       "run": {
-        "run_id": "dbc10d05-ceda-44b4-98bd-7b6177bbd12a",
+        "run_id": "bc169a1b-8141-4175-acf1-906f9f5635c6",
         "status": "abstained",
         "inference_mode": "fake",
         "outcome_code": "no_sources",
@@ -329,7 +419,7 @@
     "Finance · up to Confidential",
     "FAKE model"
   ],
-  "finished_at": "2026-11-28T13:16:58.633756+00:00",
+  "finished_at": "2026-11-28T13:32:24.122791+00:00",
   "pass": true,
   "exit_status": 0
 }

@@ -10,14 +10,23 @@
  * access, verifies the answer and re-checks access whenever a citation is opened.
  *
  * Chats are saved by the server for this employee only (M8) and listed under Recents after
- * a reload or a new sign-in. Reopening a chat replays each answer from its run, so access
- * is checked again; Delete removes a chat after confirmation.
+ * a reload or a new sign-in. Every time a chat is reopened (from Recents, or by coming back
+ * to Ask from another page) its saved answers are hidden at once and replayed from their
+ * runs, so access is checked again and revoked content never reappears; Delete removes a
+ * chat after confirmation.
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api, ApiError, modelFailureText, type Identity, type ModelStatus } from "./api";
 import { statusButton, type CheckOutcome } from "./modelStatusView";
-import { activeConversation, chatReducer, INITIAL_CHAT, type Conversation, type Turn } from "./chatState";
+import {
+  activeConversation,
+  canRevalidate,
+  chatReducer,
+  INITIAL_CHAT,
+  type Conversation,
+  type Turn,
+} from "./chatState";
 import { history } from "./history";
 import { cancelReport, type Citation } from "./reports";
 import { executeChatTurn, replayRun } from "./runStream";
@@ -223,6 +232,7 @@ function Answer({
 }) {
   const { view, failure } = turn;
   const kind = runKind(view, failure);
+  const saved = turn.id.startsWith("s-"); // replayed from a saved chat
   const verification = view.done ? verificationText(view.done) : null;
   const cite = (id: string) => {
     const c = view.citations.find((x) => x.citation_id === id);
@@ -268,8 +278,8 @@ function Answer({
           ))}
           {turn.running && !view.done ? (
             <span className="step run">
-              {view.reconnecting ? "Reconnecting…" : "Working…"}{" "}
-              {view.runId ? (
+              {view.reconnecting ? "Reconnecting…" : turn.reopening ? "Re-checking your access…" : "Working…"}{" "}
+              {view.runId && !turn.reopening ? (
                 <button type="button" className="linkish" onClick={onCancel}>
                   Cancel
                 </button>
@@ -280,7 +290,9 @@ function Answer({
 
         {kind === "error" ? (
           <div className="errbox" role="alert">
-            {failure ?? view.error?.message ?? "The request did not complete."}
+            {saved && view.error?.code === "access_revoked"
+              ? "You no longer have access to this answer, so it is hidden."
+              : (failure ?? view.error?.message ?? "The request did not complete.")}
             {modelFailureText(view.error?.detail) ? ` Reason: ${modelFailureText(view.error?.detail)}.` : ""}
             {view.error?.code ? ` (${view.error.code}${view.error.detail ? ` · ${view.error.detail}` : ""})` : ""}
           </div>
@@ -559,7 +571,7 @@ export function ChatPage({
           if (start.conversationId) dispatch({ type: "bind", conversationId, serverId: start.conversationId });
         },
       ).then((failure) => {
-        controllers.current.delete(turnId);
+        if (controllers.current.get(turnId) === controller) controllers.current.delete(turnId);
         if (controller.signal.aborted) return;
         dispatch({ type: "finish", conversationId, turnId, failure });
       });
@@ -567,12 +579,18 @@ export function ChatPage({
     [state, token, onReportPublished],
   );
 
-  // Reopen a saved chat: fetch its turns, then replay each answer from its run (the server
-  // re-checks current access while replaying). A clarifying question has no run.
-  const openSaved = useCallback(
+  // Reopen a chat (every time, not only the first): hide its saved answers at once, fetch
+  // its turns again, then replay each answer from its run. The server re-checks current
+  // access while replaying, so an answer the employee may no longer see stays hidden.
+  // A clarifying question has no run.
+  const reopen = useCallback(
     (conversation: Conversation) => {
-      if (conversation.loaded || !conversation.serverId) return;
+      if (!canRevalidate(conversation) || !conversation.serverId) return;
       const conversationId = conversation.id;
+      conversation.turns.forEach((t) => controllers.current.get(t.id)?.abort());
+      dispatch({ type: "revalidating", conversationId });
+      setOpens({});
+      setFocus(null);
       history.get(token, conversation.serverId).then(
         (detail) => {
           const turns: Turn[] = detail.turns.map((t) => ({
@@ -583,12 +601,14 @@ export function ChatPage({
               : clarifyView(t.reply ?? ""),
             failure: null,
             running: Boolean(t.run_id),
+            reopening: Boolean(t.run_id),
           }));
           dispatch({ type: "opened", conversationId, turns });
           for (const t of turns) {
             const runId = t.view.runId;
             if (!runId) continue;
             const controller = new AbortController();
+            controllers.current.get(t.id)?.abort();
             controllers.current.set(t.id, controller);
             void replayRun(token, runId, controller.signal, (next) =>
               dispatch({
@@ -598,7 +618,7 @@ export function ChatPage({
                 view: { ...next, handler: next.handler ?? t.view.handler, handlerLabel: next.handlerLabel ?? t.view.handlerLabel },
               }),
             ).then((failure) => {
-              controllers.current.delete(t.id);
+              if (controllers.current.get(t.id) === controller) controllers.current.delete(t.id);
               if (controller.signal.aborted) return;
               dispatch({ type: "finish", conversationId, turnId: t.id, failure });
             });
@@ -677,7 +697,11 @@ export function ChatPage({
       title={label}
       aria-label={label}
       aria-current={view === v ? "page" : undefined}
-      onClick={() => go(v)}
+      onClick={() => {
+        // Coming back to Ask from another page reopens the open chat (access re-checked).
+        if (v === "chat" && view !== "chat" && conversation) reopen(conversation);
+        go(v);
+      }}
     >
       <Svg k={icon} />
     </button>
@@ -781,7 +805,7 @@ export function ChatPage({
                     disabled={!c.serverId && c.turns.some((t) => t.running)}
                     onClick={() => {
                       dispatch({ type: "select", id: c.id });
-                      openSaved(c);
+                      reopen(c);
                       setFocus(null);
                       go("chat");
                     }}

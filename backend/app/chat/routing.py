@@ -43,12 +43,27 @@ HANDLER_LABELS: dict[str, str] = {
     "clarify": "Clarifying question",
 }
 
-_GREETING = re.compile(
-    r"^(hi|hello|hey|hiya|yo|salam|ahlan|good\s+(morning|afternoon|evening|day)|"
-    r"thanks|thank\s+you|thx|cheers|bye|goodbye|see\s+you|"
-    r"how\s+are\s+you|who\s+are\s+you|what\s+can\s+you\s+do|help)\b",
+# A greeting at the start ("Hi, ...", "Good morning! ..."). It is stripped before routing,
+# so "Hi, what is our leave policy?" keeps its company intent; a greeting alone is General.
+_GREETING_PREFIX = re.compile(
+    r"^(?:\s*(?:hi|hello|hey|hiya|yo|salam|ahlan|good\s+(?:morning|afternoon|evening|day)|"
+    r"thanks|thank\s+you|thx|cheers)(?:\s+(?:there|team|all|everyone|assistant|again))?"
+    r"(?:\s*[,.!:;-]+|\s+|$))+",
     re.I,
 )
+_SMALL_TALK = re.compile(
+    r"^(bye|goodbye|see\s+you|how\s+are\s+you|who\s+are\s+you|what\s+can\s+you\s+do|help)\b",
+    re.I,
+)
+# Ordinary definitions ("What is a contract?", "Define a termination clause") ask about a
+# concept, not about the company's records, unless they name the company's own ("our").
+_DEFINITION = re.compile(
+    r"^\s*(?:what\s+(?:is|are)\s+(?:a|an)\b|what'?s\s+(?:a|an)\b|define\b|"
+    r"what\s+does\s+(?:the\s+(?:word|term)\s+)?[\w'-]+\s+mean\b|meaning\s+of\b|"
+    r"(?:explain|describe)\s+(?:what|how)\s+(?:a|an)\b)",
+    re.I,
+)
+_OWNED = re.compile(r"\b(our|my|we|us|niletech|the\s+company|company's|internal)\b", re.I)
 _LEGAL = re.compile(
     r"\b(contracts?|agreements?|clauses?|licen[cs]es?|termination\s+terms?)\b", re.I
 )
@@ -77,9 +92,13 @@ _DOCUMENTS = re.compile(
 # Explanations ("why did collections lag revenue?") are answered from documents such as
 # commentary and memos; the SQL report returns figures, not reasons.
 _WHY = re.compile(r"^\s*(why|what\s+caused|what\s+explains|explain\s+why)\b", re.I)
-# Figures the sales report can return.
-_FIGURES = re.compile(
-    r"\b(how\s+much|how\s+many|total|what\s+were|what\s+was|figures?|numbers|amount)\b", re.I
+# Business figures: with a named period ("the numbers for Q1 2026") they ask for the report.
+# A period alone is not enough: "How many days are in February 2026?" is a calendar
+# question for General.
+_BUSINESS = re.compile(
+    r"\b(totals?|numbers|figures?|results|performance|metrics|kpis?|amounts?|"
+    r"how\s+did\s+we\s+do)\b",
+    re.I,
 )
 # Vague requests that name no subject the rules can route.
 _VAGUE = re.compile(
@@ -118,12 +137,10 @@ def _company_handler(text: str) -> tuple[Handler, str] | None:
         return "report", "sales_terms"
     if documents:
         return "documents", "company_terms"
-    # A named quarter or month ("the numbers for Q1 2026") asks for business figures; a
-    # bare year only with figure words ("what was the total in 2026?").
-    if extract_periods(text):
-        return "report", "reporting_period"
-    if _YEAR_ONLY.search(text) and _FIGURES.search(text):
-        return "report", "figures_for_year"
+    # A named quarter, month or year with business-figure words ("the numbers for Q1
+    # 2026", "the total in 2026").
+    if (extract_periods(text) or _YEAR_ONLY.search(text)) and _BUSINESS.search(text):
+        return "report", "figures_for_period"
     return None
 
 
@@ -134,16 +151,25 @@ def route_chat(question: str, enabled_packs: frozenset[str] | None) -> ChatRoute
         return enabled_packs is None or RUN_KIND_PACK[handler] in enabled_packs
 
     text = " ".join(question.split())
-    words = _words(text)
-    if not words:
+    if not _words(text):
         return ChatRoute("clarify", "empty")
+    rest = _GREETING_PREFIX.sub("", text, count=1).strip()
+    greeted = rest != text
+    text, words = rest, _words(rest)
 
-    if _GREETING.match(text) and len(words) <= 6:
-        return (
-            ChatRoute("general", "greeting")
-            if on("general")
-            else ChatRoute("clarify", "greeting_without_general")
-        )
+    def general(reason: str) -> ChatRoute:
+        if on("general"):
+            return ChatRoute("general", reason)
+        # Without the general pack: an ordinary question goes to documents (whose own
+        # no-sources refusal applies); a greeting gets the clarifying question.
+        if reason not in ("greeting", "small_talk") and on("documents"):
+            return ChatRoute("documents", "general_disabled")
+        return ChatRoute("clarify", f"{reason}_without_general")
+
+    if not words or (_SMALL_TALK.match(text) and len(words) <= 6):
+        return general("greeting" if greeted or not words else "small_talk")
+    if _DEFINITION.match(text) and not _OWNED.search(text):
+        return general("definition")
 
     company = _company_handler(text)
     if company is not None:
@@ -157,16 +183,15 @@ def route_chat(question: str, enabled_packs: frozenset[str] | None) -> ChatRoute
                 return ChatRoute(other, f"{reason}_fallback")
         return ChatRoute("clarify", f"{reason}_disabled")
 
+    if greeted:
+        # "thanks, that helped": a greeting with no company request is small talk.
+        return general("greeting")
     if len(words) <= 4 and _VAGUE.search(text):
         return ChatRoute("clarify", "vague")
     if len(words) <= 2 and not text.rstrip().endswith("?"):
         # One or two words with no subject the rules know ("budget", "Q3"): ask.
         return ChatRoute("clarify", "too_short")
-    if on("general"):
-        return ChatRoute("general", "no_company_terms")
-    if on("documents"):
-        return ChatRoute("documents", "general_disabled")
-    return ChatRoute("clarify", "no_enabled_handler")
+    return general("no_company_terms")
 
 
 def clarifying_question(enabled_packs: frozenset[str] | None) -> str:

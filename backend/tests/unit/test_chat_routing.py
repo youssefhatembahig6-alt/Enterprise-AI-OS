@@ -120,3 +120,59 @@ def test_the_clarifying_question_names_only_enabled_handlers() -> None:
 def test_every_route_has_a_label() -> None:
     assert set(HANDLER_LABELS) == {"general", "documents", "report", "legal", "code", "clarify"}
     assert HANDLER_LABELS["report"] == "Sales report (SQL)"
+
+
+# --- Greetings in front of a request; ordinary questions that mention company words -----
+
+
+@pytest.mark.parametrize(
+    ("question", "route"),
+    [
+        ("Hi, what is our leave policy?", "documents"),
+        ("Hello! How many leave days can I carry over?", "documents"),
+        ("Good morning, what were fulfilled sales in Q1 2026?", "report"),
+        ("Hey there, sales Q1 2026?", "report"),
+        ("hello, when do our contracts expire?", "legal"),
+        ("Hi team. Where is the reserve function implemented?", "code"),
+        ("Thanks! Who do I contact in HR about family leave?", "documents"),
+    ],
+)
+def test_a_greeting_in_front_of_a_company_request_keeps_the_company_intent(
+    question: str, route: str
+) -> None:
+    decision = route_chat(question, EVERY)
+    assert decision.route == route, decision
+
+
+@pytest.mark.parametrize(
+    "question", ["hello", "Hello!", "hi there", "Good evening.", "thanks, that helped", "Hey!!"]
+)
+def test_a_standalone_greeting_goes_to_general(question: str) -> None:
+    decision = route_chat(question, EVERY)
+    assert decision.route == "general", decision
+    assert decision.reason == "greeting"
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What is a contract?",
+        "What's an NDA?",
+        "Define a termination clause.",
+        "What does indemnity mean?",
+        "How many days are in February 2026?",
+        "What day of the week is 1 March 2026?",
+        "Hi, what is a contract?",
+    ],
+)
+def test_ordinary_questions_that_mention_company_words_go_to_general(question: str) -> None:
+    decision = route_chat(question, EVERY)
+    assert decision.route == "general", decision
+
+
+def test_an_explicit_q1_sales_request_keeps_the_sql_route() -> None:
+    decision = route_chat("What were fulfilled sales in Q1 2026?", EVERY)
+    assert (decision.route, decision.reason) == ("report", "sales_terms")
+    # Owned or specific contract questions still go to Contracts.
+    assert route_chat("What is our contract with Red Sea Logistics?", EVERY).route == "legal"
+    assert route_chat("What is the notice period in the Aswan contract?", EVERY).route == "legal"

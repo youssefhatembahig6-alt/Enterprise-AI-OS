@@ -16,6 +16,14 @@ and each answer must carry the label of the handler that replied. Checks:
                    that report (nothing is drafted or sent here).
   clarify          a vague request ("the numbers?") gets one short clarifying question,
                    labelled as such, with no run.
+  revalidation     same session, no reload: finance.reader gets a cited answer from the
+                   finance commentary and opens the citation, switches to a new chat, an
+                   administrator removes finance.reader from finance-team, and the chat is
+                   reopened from Recents. While the replay is held open the old answer, its
+                   citation and its passage are hidden ("Re-checking your access…"); after
+                   it, the answer ends with access_revoked and the citation endpoint
+                   returns 404. Membership is restored (also on failure) and a further
+                   reopen shows the answer again: revalidation runs on every reopen.
   sales_refusal    sales.reader asks for restricted finance commentary: the documents
                    handler's no-sources refusal, no restricted figures on the page.
   history          the chats survive a reload and a new sign-in under Recents; a chat
@@ -57,6 +65,7 @@ from playwright.sync_api import Page, Response, sync_playwright
 TENANT = "niletech"
 FINANCE = "finance.reader@niletech.example"
 SALES = "sales.reader@niletech.example"
+ADMIN = "access.admin@niletech.example"
 PINNED_CHAT = ("Qwen/Qwen3-8B-AWQ", "4da05a8edb55c6046cce958586c33b61da07bb79")
 LEAVE_Q = "If I don't use all my vacation this year, how many days can I roll over, and until when?"
 RESTRICTED_Q = "Why did collections lag revenue in Q1 2026?"
@@ -77,6 +86,7 @@ CHECKS = (
     "documents_leave",
     "sales_report",
     "clarify",
+    "revalidation",
     "sales_refusal",
     "history",
 )
@@ -103,6 +113,32 @@ def api_status(api: str, path: str, token: str, method: str = "GET") -> int:
             return int(resp.status)
     except urllib.error.HTTPError as exc:
         return int(exc.code)
+
+
+def api_put(api: str, path: str, token: str, body: Any) -> Any:
+    req = urllib.request.Request(  # noqa: S310 - local stack
+        api + path,
+        data=json.dumps(body).encode(),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="PUT",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+        return json.loads(resp.read() or b"null")
+
+
+def set_groups(api: str, admin_token: str, email: str, change: Any) -> list[str]:
+    """Change a user's groups through the admin API; returns the groups before."""
+
+    users = api_json(api, "/api/v1/admin/users", admin_token)
+    user = next(u for u in users if u["email"] == email)
+    before = list(user["groups"])
+    api_put(
+        api,
+        f"/api/v1/admin/users/{user['user_id']}/groups",
+        admin_token,
+        {"groups": change(before)},
+    )
+    return before
 
 
 def conversation_ids(api: str, token: str) -> set[str]:
@@ -233,6 +269,119 @@ def real(record: dict[str, Any], expect: str, purpose: str) -> list[str]:
         if calls and not any((c.get("seconds") or 0) > 0 and c.get("tokens") for c in calls):
             problems.append(f"{purpose!r} call has no measured duration or token count")
     return problems
+
+
+def answer_state(page: Page) -> dict[str, Any]:
+    answer = page.locator(".convo .a").last
+    return {
+        "label": answer.locator(".chip.handler").all_inner_texts(),
+        "status": answer.locator(".step.run").all_inner_texts(),
+        "reply": answer.locator(".body > p:not(.note):not(.refuse)").all_inner_texts(),
+        "citations": answer.locator("button.cite").count(),
+        "error": answer.locator(".errbox").all_inner_texts(),
+        "passages": page.locator(".panel .pcard blockquote").count(),
+    }
+
+
+def revalidation(  # noqa: PLR0915 - one scripted scenario
+    page: Page, ui: Ui, args: argparse.Namespace, creds: dict[str, str], tokens: dict[str, str]
+) -> dict[str, Any]:
+    problems: list[str] = []
+    page.get_by_role("button", name="New chat").click()
+    cited = ui.ask(RESTRICTED_Q, args.timeout)
+    chat, run_id = cited["conversation_id"], cited["run_id"]
+    old_reply = [t for t in cited["reply"] if t.strip()]
+    if cited["label"] != ["Documents"] or not cited["citations"] or not old_reply:
+        problems.append(
+            f"no cited Documents answer to start from: {cited['label']} {cited['citations']}"
+        )
+        return {"ui": cited, "problems": problems, "pass": False}
+    page.locator(".convo .a").last.locator("button.cite").first.click()
+    page.get_by_text("text hash verified").first.wait_for(timeout=30_000)
+    citation_paths = [path for path, code in ui.citation_calls if run_id in path and code == 200]
+    before_shot = ui.shot("7a-revalidation-cited")
+    page.get_by_role("button", name="Close panel").click()
+
+    page.get_by_role("button", name="New chat").click()  # switch away
+    admin = api_json(
+        args.api,
+        "/api/v1/auth/login",
+        body={"tenant": TENANT, "email": ADMIN, "password": creds[ADMIN]},
+    )["access_token"]
+    original = set_groups(args.api, admin, FINANCE, lambda g: [x for x in g if x != "finance-team"])
+    held: list[Any] = []
+    pattern = f"**/api/v1/runs/{run_id}/events**"
+    during: dict[str, Any] = {}
+    after: dict[str, Any] = {}
+    restored: dict[str, Any] = {}
+    try:
+        page.route(pattern, lambda route: held.append(route))
+        row = page.locator(f".side .recent[data-conversation='{chat}'] button.row")
+        row.click()
+        deadline = time.monotonic() + 30
+        while not held and time.monotonic() < deadline:
+            page.wait_for_timeout(200)
+        during = answer_state(page)
+        during["replay_held"] = bool(held)
+        during["page_has_old_text"] = any(t in page.inner_text("body") for t in old_reply)
+        during["screenshot"] = ui.shot("7b-revalidation-during")
+        if not held:
+            problems.append("the reopen did not replay the answer from the server")
+        if during["page_has_old_text"] or during["citations"] or during["passages"]:
+            problems.append(f"old answer visible while re-checking: {during}")
+        if not any("Re-checking your access" in t for t in during["status"]):
+            problems.append(f"no re-checking state shown: {during['status']}")
+        for route in held:
+            route.continue_()
+        page.unroute(pattern)
+        deadline = time.monotonic() + 60
+        answer = page.locator(".convo .a").last
+        while time.monotonic() < deadline and not (
+            answer.locator(".errbox").count() or answer.locator(".verify").count()
+        ):
+            page.wait_for_timeout(250)
+        after = answer_state(page)
+        after["page_has_old_text"] = any(t in page.inner_text("body") for t in old_reply)
+        after["leaked_markers"] = [m for m in RESTRICTED_MARKERS if m in page.content()]
+        after["screenshot"] = ui.shot("7c-revalidation-after")
+        after["citation_status"] = [
+            api_status(args.api, f"/api/v1{path}", tokens[FINANCE]) for path in citation_paths
+        ]
+        if after["page_has_old_text"] or after["citations"] or after["passages"]:
+            problems.append(f"old answer came back after re-checking: {after}")
+        if after["leaked_markers"]:
+            problems.append(f"restricted content on the page: {after['leaked_markers']}")
+        if not any("access_revoked" in t or "no longer have access" in t for t in after["error"]):
+            problems.append(f"no access_revoked after re-checking: {after['error']}")
+        if not citation_paths or any(code != 404 for code in after["citation_status"]):
+            problems.append(f"citation endpoint after revocation: {after['citation_status']}")
+    finally:
+        set_groups(args.api, admin, FINANCE, lambda g: original)
+    # Reopen again with access restored: revalidation runs every time, so it comes back.
+    page.get_by_role("button", name="New chat").click()
+    page.locator(f".side .recent[data-conversation='{chat}'] button.row").click()
+    answer = page.locator(".convo .a").last
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline and not (
+        answer.locator(".errbox").count() or answer.locator(".verify").count()
+    ):
+        page.wait_for_timeout(250)
+    restored = answer_state(page)
+    restored["screenshot"] = ui.shot("7d-revalidation-restored")
+    if not restored["citations"] or not any(t.strip() for t in restored["reply"]):
+        problems.append(f"answer did not come back after access was restored: {restored}")
+    return {
+        "question": RESTRICTED_Q,
+        "chat": chat,
+        "run_id": run_id,
+        "cited": {**cited, "screenshot": before_shot},
+        "revoked": "finance.reader removed from finance-team by access.admin",
+        "during": during,
+        "after": after,
+        "restored": restored,
+        "problems": problems,
+        "pass": not problems,
+    }
 
 
 def main() -> int:  # noqa: PLR0915
@@ -456,6 +605,10 @@ def main() -> int:  # noqa: PLR0915
                 "pass": not problems,
             }
 
+            # revalidation: same session, no reload. Cited answer, switch away, revoke,
+            # reopen: the old answer stays hidden while it is re-checked and afterwards.
+            checks["revalidation"] = revalidation(page, ui, args, creds, tokens)
+
             # history: reload (the token is memory-only, so sign in again), reopen, delete.
             problems = []
             page.reload()
@@ -482,7 +635,7 @@ def main() -> int:  # noqa: PLR0915
                     thread.nth(i).locator(".body > p:not(.note):not(.refuse)").all_inner_texts()
                     for i in range(thread.count())
                 ],
-                "screenshot": ui.shot("7-history-reopened"),
+                "screenshot": ui.shot("8-history-reopened"),
             }
             if reopened["questions"] != [HELLO, args.general_question]:
                 problems.append(f"reopened questions {reopened['questions']!r}")
@@ -513,7 +666,7 @@ def main() -> int:  # noqa: PLR0915
             page.locator(f".side .recent[data-conversation='{history_chat}']").wait_for(
                 state="detached", timeout=15_000
             )
-            ui.shot("8-history-deleted")
+            ui.shot("9-history-deleted")
             gone_api = history_chat not in conversation_ids(args.api, tokens[FINANCE])
             page.reload()
             ui.sign_in(FINANCE, creds[FINANCE])
@@ -544,7 +697,7 @@ def main() -> int:  # noqa: PLR0915
             }
             refused = ui.ask(RESTRICTED_Q, args.timeout)
             ref_rec = run_record(args.api, tokens[SALES], refused["run_id"])
-            refused["screenshot"] = ui.shot("9-sales-refusal")
+            refused["screenshot"] = ui.shot("10-sales-refusal")
             problems = labelled(refused, "Documents")
             if REFUSAL not in refused["text"]:
                 problems.append("the reply is not the no-sources refusal")

@@ -6,7 +6,7 @@
  * backend's orchestrator picks the handler and receives no earlier turns.
  */
 
-import type { RunView } from "./runView";
+import { EMPTY_RUN, type RunView } from "./runView.js";
 
 export interface Turn {
   id: string;
@@ -14,6 +14,9 @@ export interface Turn {
   view: RunView;
   failure: string | null;
   running: boolean;
+  /** A saved answer being replayed after the chat was reopened: its earlier content is
+   * hidden until the server has re-checked access and sent it again. */
+  reopening?: boolean;
 }
 
 export interface Conversation {
@@ -47,8 +50,19 @@ export type ChatAction =
   | { type: "finish"; conversationId: string; turnId: string; failure: string | null }
   | { type: "bind"; conversationId: string; serverId: string }
   | { type: "saved"; items: SavedConversation[] }
+  | { type: "revalidating"; conversationId: string }
   | { type: "opened"; conversationId: string; turns: Turn[] }
   | { type: "removed"; conversationId: string };
+
+/** A saved answer with its content removed: only the run id and the handler label remain. */
+export function hiddenView(view: RunView): RunView {
+  return { ...EMPTY_RUN, runId: view.runId, handler: view.handler, handlerLabel: view.handlerLabel };
+}
+
+/** Whether reopening this chat can replay its answers now (no answer is still streaming). */
+export function canRevalidate(conversation: Conversation): boolean {
+  return Boolean(conversation.serverId) && !conversation.turns.some((t) => t.running && !t.reopening);
+}
 
 export function titleFor(question: string): string {
   const flat = question.replace(/\s+/g, " ").trim();
@@ -111,6 +125,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...t,
         failure: action.failure,
         running: false,
+        reopening: false,
       }));
     case "bind":
       return {
@@ -141,6 +156,31 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       );
       return { ...state, conversations: [...pending, ...listed] };
     }
+    case "revalidating":
+      // Reopening a saved chat: hide every saved answer at once (keep the question and the
+      // handler label) until its run has been replayed with the current access check.
+      // A clarifying question has no run and no company content; it stays as it is.
+      return {
+        ...state,
+        conversations: state.conversations.map((c) =>
+          c.id !== action.conversationId
+            ? c
+            : {
+                ...c,
+                turns: c.turns.map((t) =>
+                  t.view.runId
+                    ? {
+                        ...t,
+                        view: hiddenView(t.view),
+                        failure: null,
+                        running: true,
+                        reopening: true,
+                      }
+                    : t,
+                ),
+              },
+        ),
+      };
     case "opened":
       return {
         ...state,
