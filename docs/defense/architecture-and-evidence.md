@@ -79,4 +79,4 @@ Model-quality work is outside M8 defense preparation. Existing records: [M7 eval
 - Live Drive and GitHub need operator credentials and a second account; they are optional and were last run on 21 and 24 Nov.
 - The web session lasts 15 minutes and is not refreshed; reloading signs you out (by design).
 - Contract answers say "expires on" even for a date in the past (Red Sea, 30 June 2026).
-- In **Automatic**, questions that name a period go to the SQL report; choose the **Source** in the composer for documents or contracts.
+- Routing is automatic and rule-based on the server (`backend/app/chat/routing.py`): sales and named-period questions go to the SQL report, policy and "why" questions to documents, contract wording to contracts; a vague request gets one clarifying question. The label on each answer names the handler.

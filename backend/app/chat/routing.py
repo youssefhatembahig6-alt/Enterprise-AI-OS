@@ -175,23 +175,19 @@ def clarifying_question(enabled_packs: frozenset[str] | None) -> str:
     def on(handler: str) -> bool:
         return enabled_packs is None or RUN_KIND_PACK[handler] in enabled_packs
 
-    examples = []
+    options = []
     if on("documents"):
-        examples.append("a company policy or document (for example “annual leave carry-over”)")
+        options.append("a company policy or document")
     if on("report"):
-        examples.append("sales figures for a period (for example “sales in Q1 2026”)")
+        options.append("sales figures for a period")
     if on("legal"):
-        examples.append("a contract clause or expiry date")
+        options.append("a contract")
     if on("code"):
-        examples.append("code in a company repository")
+        options.append("company code")
     if on("general"):
-        examples.append("a general question")
-    if not examples:
+        options.append("a general question")
+    if not options:
         return "Could you say a little more about what you need?"
-    if len(examples) == 1:
-        return f"Could you add a little detail? I can help with {examples[0]}."
-    return (
-        "Could you add a little detail? Are you asking about "
-        + ", ".join(examples[:-1])
-        + f", or {examples[-1]}?"
-    )
+    if len(options) == 1:
+        return f"Could you say a little more? I can help with {options[0]}."
+    return f"Could you say a little more? Is this about {', '.join(options[:-1])} or {options[-1]}?"

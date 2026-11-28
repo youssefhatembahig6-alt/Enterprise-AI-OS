@@ -107,7 +107,10 @@ def test_only_enabled_handlers_are_routed_and_never_general_for_company_question
 
 def test_the_clarifying_question_names_only_enabled_handlers() -> None:
     every = clarifying_question(EVERY)
-    assert "sales figures" in every and "contract" in every and "general question" in every
+    assert every == (
+        "Could you say a little more? Is this about a company policy or document, sales figures "
+        "for a period, a contract, company code or a general question?"
+    )
     documents_only = clarifying_question(frozenset({"documents"}))
     assert "policy" in documents_only
     assert "sales" not in documents_only and "contract" not in documents_only

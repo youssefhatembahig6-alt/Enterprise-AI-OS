@@ -5,16 +5,20 @@ Everything runs inside the runtime and talks over 127.0.0.1; no tunnel is opened
   gateway   ml/model-gateway (Qwen3-8B-AWQ via vLLM, BGE-M3, dev checker), started by the
             notebook's launch cell, 127.0.0.1:8100
   services  PostgreSQL 17, Redis, Qdrant (ml/colab-m3/run_m3_colab.py helpers)
-  backend   hash-locked venv; migrate (to 0016_general_chat); seed-dev (NileTech, synthetic,
-            General pack on); API on 127.0.0.1:18000 with MODEL_MODE=gateway, inline dispatch
+  backend   hash-locked venv; migrate (to 0017_chat_history); seed-dev (NileTech, synthetic,
+            General pack on); the synthetic NileTech sales data (import-business-data) for
+            the verified SQL report; API on 127.0.0.1:18000 with MODEL_MODE=gateway, inline
+            dispatch
   corpus    scripts/m3_demo.py seed: the synthetic M3 documents with their permissions,
             embedded by the real BGE-M3 (Docling off: the PDFs use the documented fallback)
   web       Node 20.19.2 (checksum-verified), npm ci, Vite build of apps/web with
             VITE_API_BASE_URL=http://127.0.0.1:18000, served on 127.0.0.1:13000
   browser   Playwright 1.55.0 headless Chromium runs scripts/m8_chat_ui_check.py
-            --expect-inference gateway: a newly phrased annual-leave question (Documents,
-            cited, passage opened), a sales reader refused the restricted finance answer,
-            and a fresh open-ended prompt in General mode
+            --expect-inference gateway with automatic routing (no source picker): "hello"
+            and a fresh question answered by General, a fresh annual-leave question by
+            Documents (cited, passage opened), a sales question by the verified SQL report
+            with its email-for-approval action, a clarifying question, the sales reader's
+            restricted question refused, and saved chats reloaded, reopened and deleted
   bundle    /content/m8-chat-evidence-<stamp>.zip after a secret scan
 
 Private preview (``preview`` step, notebook cell 7): the same app, built with a relative
@@ -140,6 +144,17 @@ def start_api() -> subprocess.Popen[bytes]:
     )
     m3.wait_http(f"{m3.API}/health")
     return proc
+
+
+def import_business_data() -> None:
+    """The synthetic NileTech sales tables behind the verified SQL report."""
+
+    m3.sh(
+        f"{m3.VENV}/bin/python -m app.cli import-business-data",
+        "backend.log",
+        env=env(),
+        cwd=m3.BACKEND,
+    )
 
 
 def seed_corpus() -> None:
@@ -406,6 +421,7 @@ def preview() -> None:
     if not api_up():  # fresh runtime: same setup as ``all`` (minus the 13000 test build)
         m3.services()
         m3.backend()
+        import_business_data()
         start_api()
         seed_corpus()
     serve_preview(build_preview())
@@ -448,6 +464,7 @@ def main() -> None:
         return
     m3.services()
     m3.backend()
+    import_business_data()
     start_api()
     seed_corpus()
     build_web()

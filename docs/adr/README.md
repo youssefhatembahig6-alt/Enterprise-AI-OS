@@ -29,3 +29,4 @@ meeting. Repository ADRs start at 0101 so they never collide with the source lis
 | [0601](0601-email-approval-and-outbox.md) | Email drafts, human approval and the Mailpit outbox | Accepted for M6 (pending planning review) | FR-08, FR-10 (Mailpit), roadmap M6 delivery semantics |
 | [0602](0602-scheduled-briefings.md) | Scheduled briefings produce drafts for review | Accepted for M6 (pending planning review) | FR-08, roadmap scheduled monitoring |
 | [0701](0701-evaluation-splits-and-pilot.md) | Family-level frozen evaluation splits and a separate pilot | Proposed for M7, revised after PR #10 review; v3 corpus addendum (pending planning review) | FR-14, FR-09, roadmap M7 evaluation details |
+| [0801](0801-chat-routing-and-history.md) | Automatic chat routing and private, persistent chat history | Proposed for M8 (pending planning review) | M8 chat, ADR 0101, 0303/0304, 0601 |

@@ -773,7 +773,7 @@ export function ChatPage({
                   </button>
                 </div>
               ) : (
-                <div key={c.id} className="recent">
+                <div key={c.id} className="recent" data-conversation={c.serverId ?? undefined}>
                   <button
                     type="button"
                     className="row"
