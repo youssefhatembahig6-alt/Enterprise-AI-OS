@@ -20,10 +20,12 @@ the successful runs (1 and 3) must say ``gateway`` with the pinned revision; wit
 
     python scripts/m8_chat_ui_check.py --web http://127.0.0.1:13000 \\
         --api http://127.0.0.1:18000 --credentials <dev-credentials.json> \\
-        --out <dir> --expect-inference gateway
+        --out <new empty dir> --run-id <id> --expect-inference gateway
 
 Passwords come from the credentials file and are typed into the page; they are never
-printed or written to the evidence. Exit status 0 only if every check passes.
+printed or written to the evidence. Exit status 0 only if every check passes. ``--out``
+must be new or empty (exit 2 otherwise), and the report records ``--run-id``, so a caller
+accepts a run only on exit 0 plus a passing report carrying its own run id.
 """
 
 from __future__ import annotations
@@ -181,9 +183,19 @@ def main() -> int:  # noqa: PLR0915
         "--documents-question", default=LEAVE_Q, help="annual-leave question (fresh wording)"
     )
     ap.add_argument("--general-question", default=GENERAL_Q, help="open-ended General question")
+    ap.add_argument(
+        "--run-id",
+        default=None,
+        help="written into the report so the caller can tell it came from this run",
+    )
     args = ap.parse_args()
     out = Path(args.out)
+    if out.exists() and any(out.iterdir()):
+        # Fresh evidence only: an old report in this folder could be mistaken for this run's.
+        print(f"--out {out} is not empty; use a new folder for every check", file=sys.stderr)
+        return 2
     out.mkdir(parents=True, exist_ok=True)
+    run_id = args.run_id or f"{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}"
     creds = json.loads(Path(args.credentials).read_text())[TENANT]
     tokens = {
         u: api_json(
@@ -195,6 +207,7 @@ def main() -> int:  # noqa: PLR0915
     }
     status = api_json(args.api, "/api/v1/model/status", tokens[FINANCE])
     result: dict[str, Any] = {
+        "run_id": run_id,
         "started_at": datetime.now(UTC).isoformat(),
         "web": args.web,
         "api": args.api,

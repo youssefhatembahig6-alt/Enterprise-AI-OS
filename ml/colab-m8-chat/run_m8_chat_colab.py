@@ -36,6 +36,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -172,6 +173,7 @@ def build_web() -> None:
     bin_dir = node()
     path = f"{bin_dir}:{os.environ['PATH']}"
     web_env = {**os.environ, "PATH": path, "VITE_API_BASE_URL": m3.API}
+    web_env.pop("VITE_FETCH_CREDENTIALS", None)  # cookies only in the preview build
     m3.sh("npm ci --no-audit --no-fund", "web.log", env=web_env, cwd=m3.REPO)
     m3.sh("npm run build -w @eaios/web", "web.log", env=web_env, cwd=m3.REPO)
 
@@ -212,10 +214,43 @@ def playwright() -> Path:
     return py
 
 
+REPORT = "m8-chat-ui-check.json"
+
+
+def check_verdict(returncode: int, out: Path, run_id: str) -> tuple[bool, list[str]]:
+    """Pass only on exit status 0 AND a passing report written by this very run.
+
+    A report left by an earlier run, or one that says pass while the process failed,
+    never counts.
+    """
+
+    reasons: list[str] = []
+    if returncode != 0:
+        reasons.append(f"browser check exited {returncode}")
+    report = out / REPORT
+    if not report.is_file():
+        reasons.append(f"no {REPORT} from this run")
+        return False, reasons
+    try:
+        data = json.loads(report.read_text())
+    except (OSError, ValueError):
+        reasons.append(f"{REPORT} is unreadable")
+        return False, reasons
+    if not isinstance(data, dict) or data.get("run_id") != run_id:
+        reasons.append(f"{REPORT} is not from this run")
+    elif data.get("pass") is not True:
+        reasons.append(f"{REPORT} reports failure")
+    return not reasons, reasons
+
+
 def ui_check(
     py: Path, web: str = WEB, api: str = m3.API, name: str = "ui", extra: tuple[str, ...] = ()
 ) -> dict[str, object]:
-    out = m3.OUT / name
+    """Run scripts/m8_chat_ui_check.py into a NEW folder <name>/<run_id> and judge that run."""
+
+    run_id = f"{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}-{secrets.token_hex(4)}"
+    out = m3.OUT / name / run_id
+    out.mkdir(parents=True)  # raises if it exists: every check writes fresh evidence
     done = subprocess.run(  # noqa: S603
         [
             str(py),
@@ -228,6 +263,8 @@ def ui_check(
             str(m3.SECRETS / "dev-credentials.json"),
             "--out",
             str(out),
+            "--run-id",
+            run_id,
             "--expect-inference",
             "gateway",
             "--timeout",
@@ -239,11 +276,18 @@ def ui_check(
         capture_output=True,
         check=False,
     )
-    (m3.OUT / f"{name}-check-stdout.txt").write_text(done.stdout + "\n" + done.stderr)
+    (out / "check-stdout.txt").write_text(done.stdout + "\n" + done.stderr)
     print(done.stdout[-4000:], done.stderr[-2000:], sep="\n")
-    STEPS[f"{name}_check_exit"] = done.returncode
-    evidence = out / "m8-chat-ui-check.json"
-    return json.loads(evidence.read_text()) if evidence.exists() else {"pass": False}
+    passed, reasons = check_verdict(done.returncode, out, run_id)
+    evidence = str((out / REPORT).relative_to(m3.OUT))
+    STEPS[f"{name}_check"] = {
+        "run_id": run_id,
+        "exit": done.returncode,
+        "evidence": evidence,
+        "pass": passed,
+        "reasons": reasons,
+    }
+    return {"pass": passed, "run_id": run_id, "evidence": evidence, "reasons": reasons}
 
 
 def bundle(name: str = "m8-chat-evidence") -> Path:
@@ -307,10 +351,21 @@ def api_up() -> bool:
 
 
 def build_preview() -> Path:
-    """The UI with an empty VITE_API_BASE_URL: it calls /api/... on its own origin."""
+    """The UI with an empty VITE_API_BASE_URL: it calls /api/... on its own origin.
+
+    VITE_FETCH_CREDENTIALS=same-origin lets the browser attach the Colab session cookie that
+    Colab's port window requires on every request to that origin (apps/web/src/fetchPolicy.ts).
+    Authentication to the app is still the bearer token; preview_proxy.py drops cookies
+    before forwarding to the API.
+    """
 
     bin_dir = node()
-    web_env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "VITE_API_BASE_URL": ""}
+    web_env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "VITE_API_BASE_URL": "",
+        "VITE_FETCH_CREDENTIALS": "same-origin",
+    }
     if not (m3.REPO / "node_modules").exists():
         m3.sh("npm ci --no-audit --no-fund", "preview.log", env=web_env, cwd=m3.REPO)
     m3.sh(
@@ -372,8 +427,9 @@ def preview() -> None:
         "general_question": general,
     }
     bundle("m8-chat-preview-evidence")
-    if not result.get("pass"):
-        raise SystemExit("preview check FAILED; see preview/m8-chat-ui-check.json in the bundle")
+    if not result["pass"]:
+        reasons = "; ".join(result["reasons"])
+        raise SystemExit(f"preview check FAILED ({reasons}); see {result['evidence']}")
     print(f"preview check PASSED on the real gateway; serving {PREVIEW} (loopback only)")
 
 
@@ -400,8 +456,9 @@ def main() -> None:
     warm_gateway()
     result = ui_check(py)
     bundle()
-    if not result.get("pass"):
-        raise SystemExit("UI check FAILED; see ui/m8-chat-ui-check.json in the bundle")
+    if not result["pass"]:
+        reasons = "; ".join(result["reasons"])
+        raise SystemExit(f"UI check FAILED ({reasons}); see {result['evidence']}")
     print("UI check PASSED on the real gateway")
 
 

@@ -180,7 +180,7 @@ A run that fails on the model ends with `model_unavailable` plus a `detail` clas
 | 4 | `run_m8_chat_colab.py all`. Starts PostgreSQL/Redis/Qdrant, migrates and seeds the synthetic NileTech data, starts the API (`MODEL_MODE=gateway`) on 127.0.0.1:18000, seeds the document corpus with real BGE-M3 embeddings, builds the web UI with Node 20.19.2 (checksum-verified) and serves it on 127.0.0.1:13000, then runs `scripts/m8_chat_ui_check.py --expect-inference gateway` in headless Chromium (Playwright 1.55.0) | 20–30 min |
 | 5 | Download **`m8-chat-evidence-<UTC stamp>.zip`** | — |
 
-The bundle holds `ui/m8-chat-ui-check.json`, three screenshots, `gateway-health.json`, `versions.json` (commit, clean worktree, GPU, settings) and the service logs. It is secret-scanned (database, Redis and JWT secrets, the gateway token and fixture passwords) before it is written. It passes only if all three browser checks pass:
+Every browser check writes into a new folder `ui/<run id>/` (the check script refuses a folder that is not empty). The runner accepts a check only when the script **exits 0 and** the report in that folder carries the same run id and says pass; a report left by an earlier run never counts. `versions.json` names the accepted run under `steps.ui_check`. The bundle holds that folder's `m8-chat-ui-check.json`, three screenshots, `gateway-health.json`, `versions.json` (commit, clean worktree, GPU, settings) and the service logs. It is secret-scanned (database, Redis and JWT secrets, the gateway token and fixture passwords) before it is written. It passes only if all three browser checks pass:
 
 1. **Documents:** finance.reader asks *"If I don't use all my vacation this year, how many days can I roll over, and until when?"*. The reply is published with a citation; clicking it opens the passage with **text hash verified** (`GET …/citations/{id}` returns 200).
 2. **Refusal:** sales.reader asks *"Why did collections lag revenue in Q1 2026?"* with **Documents**. The reply is the no-sources refusal, and the page shows none of the restricted figures.
@@ -233,10 +233,12 @@ PLAYWRIGHT_BROWSERS_PATH=<browsers> <venv>/bin/python scripts/m8_chat_ui_check.p
 1. Open [`ml/colab-m8-chat/m8_real_model_chat.ipynb` in Colab](https://colab.research.google.com/github/youssefhatembahig6-alt/Enterprise-AI-OS/blob/feature/m8-real-model-chat/ml/colab-m8-chat/m8_real_model_chat.ipynb) and choose **Runtime → Change runtime type → T4 GPU**.
 2. Run cells 1–3 (clone, vLLM environment, gateway). Cell 4, the full browser test, is optional.
 3. Run **cell 7**. It:
-   - builds the UI with a relative API base;
+   - builds the UI with a relative API base and `VITE_FETCH_CREDENTIALS=same-origin`. Colab's port window admits a request only with your Colab session cookie, so this build lets the browser send cookies to its own origin; every other build sends none. Sign-in is still the bearer token, and the proxy drops cookies before the API;
    - starts `ml/colab-m8-chat/preview_proxy.py`, which serves the UI and the API together on 127.0.0.1:13100 (loopback only);
    - starts the services and API itself if cell 4 did not run, and warms the gateway;
    - checks in headless Chromium on that origin: the badge **Connected · Qwen3-8B-AWQ**, a fresh General question (reply, no citations), a fresh annual-leave question in Documents (cited answer whose citation opens the verified passage), and the sales-reader refusal. For both answers, the run records must show `gateway`, the pinned revision and an actual model call.
+
+   The check passes only on exit status 0 and a passing report from that run (`preview/<run id>/m8-chat-ui-check.json`); the cell stops otherwise.
 
    It then prints the sign-in (organization `niletech`, `finance.reader@niletech.example` and that runtime's synthetic password) and opens the port with `serve_kernel_port_as_window`, visible only in your Colab session.
 4. Sign in in that window, choose **Documents you can access** or **General (no company data)** in the composer, and ask your own questions.

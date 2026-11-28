@@ -19,6 +19,7 @@
     "src/runStream.ts",
     "src/reports.ts",
     "src/actions.ts",
+    "src/fetchPolicy.ts",
     "src/api.ts",
     "test"
   ]

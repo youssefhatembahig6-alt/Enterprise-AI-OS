@@ -30,6 +30,11 @@ HOP_BY_HOP = {
     "content-length",
     "host",
 }
+# Colab's port window authenticates the browser with its own session cookie (the preview
+# build sends cookies same-origin for that reason). They are Colab's, not the app's: the
+# app authenticates with the bearer token, so cookies never reach the API and none come back.
+REQUEST_DROP = HOP_BY_HOP | {"cookie"}
+RESPONSE_DROP = HOP_BY_HOP | {"set-cookie"}
 # Same rules as the production nginx image: everything from this origin only.
 CSP = (
     "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; "
@@ -50,7 +55,7 @@ def make_handler(dist: Path, api_host: str, api_port: int) -> type[BaseHTTPReque
         def _proxy(self) -> None:
             length = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(length) if length else None
-            headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP}
+            headers = {k: v for k, v in self.headers.items() if k.lower() not in REQUEST_DROP}
             upstream = http.client.HTTPConnection(api_host, api_port, timeout=900)
             try:
                 upstream.request(self.command, self.path, body=body, headers=headers)
@@ -60,7 +65,7 @@ def make_handler(dist: Path, api_host: str, api_port: int) -> type[BaseHTTPReque
                 return
             self.send_response(response.status)
             for key, value in response.getheaders():
-                if key.lower() not in HOP_BY_HOP:
+                if key.lower() not in RESPONSE_DROP:
                     self.send_header(key, value)
             self.end_headers()
             while chunk := response.read1(65536):

@@ -4,9 +4,17 @@
  * cookies; a reload requires signing in again (ADR 0101).
  */
 
+import { fetchCredentials } from "./fetchPolicy.js";
+
 // `?.`: node:test loads this module without Vite, where import.meta.env is undefined.
 export const API_BASE_URL: string = (import.meta.env?.VITE_API_BASE_URL ?? "http://localhost:8000")
   .replace(/\/+$/, "");
+
+/** "omit" everywhere except the private Colab preview build (see fetchPolicy.ts). */
+export const FETCH_CREDENTIALS: RequestCredentials = fetchCredentials(
+  import.meta.env?.VITE_FETCH_CREDENTIALS,
+  API_BASE_URL,
+);
 
 export interface ApiErrorBody {
   code: string;
@@ -59,7 +67,7 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers,
-    credentials: "omit",
+    credentials: FETCH_CREDENTIALS,
     cache: "no-store",
   });
   if (response.status === 204) return undefined as T;
@@ -121,7 +129,7 @@ export const api = {
   logout: (token: string) => request<undefined>("/api/v1/auth/logout", { method: "POST" }, token),
   live: () => request<{ status: string }>("/health"),
   ready: async (): Promise<Readiness> => {
-    const response = await fetch(`${API_BASE_URL}/ready`, { cache: "no-store", credentials: "omit" });
+    const response = await fetch(`${API_BASE_URL}/ready`, { cache: "no-store", credentials: FETCH_CREDENTIALS });
     return (await response.json()) as Readiness;
   },
 };

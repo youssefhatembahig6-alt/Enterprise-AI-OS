@@ -1,0 +1,173 @@
+{
+  "run_id": "local-20261128T120546Z",
+  "started_at": "2026-11-28T12:05:47.237130+00:00",
+  "web": "http://127.0.0.1:13100",
+  "api": "http://127.0.0.1:13100",
+  "expect_inference": "fake",
+  "model_status": {
+    "mode": "fake",
+    "verified": false,
+    "authenticated": false,
+    "chat": null,
+    "embed": null,
+    "checker": null,
+    "engine": null,
+    "error": null,
+    "label": "FAKE INFERENCE (deterministic development double, not model output)",
+    "checked_at": 1795873618.7008822
+  },
+  "checks": {
+    "status_badge": {
+      "label": "FAKE model",
+      "title": "The server uses the labelled development double, not a model. Click to check again.",
+      "screenshot": "0-status-badge.png",
+      "problems": [],
+      "pass": true
+    },
+    "documents_leave": {
+      "question": "Who do I contact in HR about family leave?",
+      "ui": {
+        "run_id": "714d1617-cc25-44c5-8c24-f27b7223ff35",
+        "text": "N\nRequest accepted\nChecked your access\nSearched documents you can access\nDrafted the answer\nChecked the answer against its sources\nPublished the verified result\n\nParents may take ten days of family leave per year for school events and caregiving. 1\n\nEvery sentence quotes a source you can open\nClaims checked (development checker)\n1 source allowed\nFAKE inference — not a model\n\nEvery sentence quotes an exact passage of a document you can access (re-checked at publication); claims checked by the development baseline checker (not the final trained checker).\n\nAnnual leave policy 2026",
+        "pills": [
+          "Every sentence quotes a source you can open",
+          "Claims checked (development checker)",
+          "1 source allowed",
+          "FAKE inference — not a model"
+        ],
+        "error": [],
+        "citations": 1,
+        "screenshot": "1-documents-leave.png"
+      },
+      "opened": {
+        "passage": "…d by the line manager.\n\nPublic holidays 🏖️\n\nPublic holidays follow the official calendar of each country, including Sham el-Nessim and Eid al-Fitr (عيد الفطر). Holidays that fall during approved leave are not deducted.\n\nFamily leave 👨‍👩‍👧\n\nParents may take ten days of family leave per year for school events and caregiving. Contact Hélène Dubois or Yasmin El-Sayed in HR for questions.…",
+        "badge": "text hash verified"
+      },
+      "citation_requests": [
+        [
+          "/runs/714d1617-cc25-44c5-8c24-f27b7223ff35/citations/c1",
+          200
+        ]
+      ],
+      "run": {
+        "run_id": "714d1617-cc25-44c5-8c24-f27b7223ff35",
+        "status": "published",
+        "inference_mode": "fake",
+        "outcome_code": "answer_quotes_verified_dev_checked",
+        "served_chat": null,
+        "model_calls": [
+          {
+            "ttft": 0.0,
+            "tokens": null,
+            "purpose": "answer",
+            "seconds": 0.0
+          }
+        ]
+      },
+      "problems": [],
+      "pass": true
+    },
+    "general": {
+      "question": "Suggest a simple agenda for a 30-minute weekly team retrospective.",
+      "ui": {
+        "run_id": "a8cc8474-f0d7-43dc-9334-d391660617eb",
+        "text": "N\nRequest accepted\nChecked your access\nAsked the model (general knowledge, no company data)\nPublished the general reply\n\nFAKE general reply (deterministic development double, not model output). You asked: Suggest a simple agenda for a 30-minute weekly team retrospective.\n\nGeneral reply · no company data\nNot checked against sources\nFAKE inference — not a model\n\nGeneral reply from the model. It did not use your organization's documents, data or email, and it was not checked against any source.",
+        "pills": [
+          "General reply · no company data",
+          "Not checked against sources",
+          "FAKE inference — not a model"
+        ],
+        "error": [],
+        "citations": 0,
+        "screenshot": "3-general.png",
+        "reply": [
+          "FAKE general reply (deterministic development double, not model output). You asked: Suggest a simple agenda for a 30-minute weekly team retrospective."
+        ]
+      },
+      "run": {
+        "run_id": "a8cc8474-f0d7-43dc-9334-d391660617eb",
+        "status": "published",
+        "inference_mode": "fake",
+        "outcome_code": "general_model_reply_unverified",
+        "served_chat": null,
+        "model_calls": [
+          {
+            "ttft": 0.0,
+            "tokens": null,
+            "purpose": "general",
+            "seconds": 0.0,
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      "problems": [],
+      "pass": true
+    },
+    "sales_refusal": {
+      "question": "Why did collections lag revenue in Q1 2026?",
+      "ui": {
+        "run_id": "f10ba2e1-4d36-437f-b179-49d6bb15de26",
+        "text": "N\nRequest accepted\nChecked your access\nSearched documents you can access\n\nI couldn't find information in documents you can access that answers this.\n\nNo sources used\nFAKE inference — not a model",
+        "pills": [
+          "No sources used",
+          "FAKE inference — not a model"
+        ],
+        "error": [],
+        "citations": 0,
+        "screenshot": "2-sales-refusal.png"
+      },
+      "run": {
+        "run_id": "f10ba2e1-4d36-437f-b179-49d6bb15de26",
+        "status": "abstained",
+        "inference_mode": "fake",
+        "outcome_code": "no_sources",
+        "served_chat": null,
+        "model_calls": [
+          {
+            "ttft": 0.0,
+            "tokens": null,
+            "purpose": "answer",
+            "seconds": 0.0
+          }
+        ]
+      },
+      "problems": [],
+      "pass": true
+    }
+  },
+  "model_chip": [
+    "Finance · up to Confidential",
+    "FAKE model"
+  ],
+  "finished_at": "2026-11-28T12:05:52.786945+00:00",
+  "pass": true,
+  "exit_status": 0,
+  "build": {
+    "VITE_API_BASE_URL": "",
+    "VITE_FETCH_CREDENTIALS": "same-origin",
+    "served_by": "ml/colab-m8-chat/preview_proxy.py on 127.0.0.1:13100"
+  },
+  "rerun_into_used_folder": {
+    "exit_status": 2,
+    "message": "--out <scratch>/preview-check/local-20261128T120546Z is not empty; use a new folder for every check"
+  },
+  "cookie_probe": {
+    "stand_in_cookie": "colab_session (set on the preview origin)",
+    "preview_build": {
+      "browser_api_requests": 8,
+      "with_cookie": 8,
+      "with_bearer": 7,
+      "arrived_at_api": 10,
+      "arrived_with_cookie": 0,
+      "arrived_with_bearer": 7,
+      "api_set_cookie_reached_browser": false
+    },
+    "relative_build_without_flag": {
+      "browser_api_requests": 8,
+      "with_cookie": 0,
+      "with_bearer": 7,
+      "arrived_with_cookie": 0
+    },
+    "note": "arrived_at_api includes 2 readiness probes from the harness (no bearer); sign-in is the one browser call without a bearer"
+  }
+}

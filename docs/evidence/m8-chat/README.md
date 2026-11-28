@@ -32,7 +32,10 @@ Cell 8 downloads `m8-chat-preview-evidence-<stamp>.zip`.
 | Item | Status |
 | --- | --- |
 | Real-model preview run (badge **Connected · Qwen3-8B-AWQ**, fresh General reply, fresh Documents answer with an opening citation) | **Pending:** needs the owner to run cells 1–3 and 7 on a T4 and return `m8-chat-preview-evidence-<stamp>.zip` |
-| Same path, locally against the disposable stack (fake model), 28 Nov 13:47 UTC | **PASS** ([JSON](2026-11-28-local-preview-check-fake-model.json)). Single origin through `preview_proxy.py`. Badge **FAKE model** (correct for fake mode). Fresh Documents question *"Are public holidays that fall during my approved leave deducted from my allowance?"*: cited answer, and the citation opened through the proxy (`GET …/citations/c1` 200, *text hash verified*). Fresh General question *"Explain in plain words what a confusion matrix is."*: General reply, 0 citations. Sales reader: `no_sources`. Streaming (SSE) passed through the proxy. |
+| Same path, locally against the disposable stack (fake model), 28 Nov 11:47 UTC† | **PASS** ([JSON](2026-11-28-local-preview-check-fake-model.json)). Single origin through `preview_proxy.py`. Badge **FAKE model** (correct for fake mode). Fresh Documents question *"Are public holidays that fall during my approved leave deducted from my allowance?"*: cited answer, and the citation opened through the proxy (`GET …/citations/c1` 200, *text hash verified*). Fresh General question *"Explain in plain words what a confusion matrix is."*: General reply, 0 citations. Sales reader: `no_sources`. Streaming (SSE) passed through the proxy. |
+| Revision after `d907b0a`: same-origin credentials and fresh evidence, locally (fake model), 28 Nov 12:05 UTC | **PASS** ([JSON](2026-11-28-local-preview-check-fresh-run-fake-model.json)). Preview build (`VITE_FETCH_CREDENTIALS=same-origin`) through `preview_proxy.py`; all four checks passed into a new folder, exit 0, and the report's `run_id` matched the run. A second run into that used folder was refused (exit 2). Cookie probe: with a stand-in for Colab's session cookie set on the preview origin, the browser attached it to all 8 API requests; **0** reached the API, and the relay's `Set-Cookie` was dropped; the bearer token was on all 7 authenticated calls. The same relative build without the flag sent no cookie, which is why Colab's port window rejected the earlier preview's API calls. |
+
+† This machine's clock ran 2 hours fast until it was resynced after `d907b0a`. GitHub logged that push at 11:48:53 UTC, while the local commit says 13:48 UTC. Times marked † are corrected; the JSON files and `var/m6-demo-20261128T134625Z.json` keep the timestamps as the clock wrote them (13:46–13:47).
 
 ## 3. Local Mailpit result (disposable stack, 28 November 2026)
 
@@ -44,6 +47,6 @@ Cell 8 downloads `m8-chat-preview-evidence-<stamp>.zip`.
 | Draft to a recipient without dataset access | `422 action_blocked` |
 | Send with the pre-edit, forged and reused approvals | `409 approval_rejected` each |
 | Approved v2 sent | delivered; exactly one Mailpit message, Message-ID `<99c7a6ee-91c6-439f-b807-73dee97aed69@eaios.local>`, to `finance.reader@niletech.example` |
-| Mailpit total | 4 before → **5** after (13:46:24 UTC); still **5** at 13:47:11 UTC, so no re-send by the reconciler |
+| Mailpit total | 4 before → **5** after (11:46:24 UTC†); still **5** at 11:47:11 UTC†, so no re-send by the reconciler |
 
 The real-model email path (verified report → approval → exactly one Mailpit message) passed in Colab on 26 November ([M7 smoke](../m7-functional/2026-11-26-colab-real-model-smoke/)).

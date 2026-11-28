@@ -2,7 +2,7 @@
  * Admin console and tenant settings API (M4). The backend enforces every scope and
  * capability; the UI only hides controls the caller cannot use.
  */
-import { API_BASE_URL, ApiError, type ApiErrorBody } from "./api";
+import { API_BASE_URL, ApiError, type ApiErrorBody, FETCH_CREDENTIALS } from "./api";
 
 export interface TenantSettings {
   enabled_packs: string[];
@@ -124,7 +124,7 @@ async function call<T>(token: string, path: string, init: RequestInit = {}): Pro
   const response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
     ...init,
     headers,
-    credentials: "omit",
+    credentials: FETCH_CREDENTIALS,
     cache: "no-store",
   });
   const body: unknown = await response.json().catch(() => null);
