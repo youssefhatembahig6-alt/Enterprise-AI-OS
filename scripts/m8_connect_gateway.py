@@ -20,8 +20,12 @@ header's status button. The token is never printed and never reaches the browser
 model are not searchable with BGE-M3 (and the other way round), so after switching modes
 run ``reindex`` once. It re-embeds ONLY the synthetic demo fixtures
 (``backend/fixtures/documents/corpus.toml`` for NileTech and
-``backend/fixtures/legal/legal.toml``), never other uploads, and reports for each whether
-it is searchable afterwards (exit status 1 if an expected one is not).
+``backend/fixtures/legal/legal.toml``): a document is sent only if its title, department
+and classification match a fixture AND its current version holds that fixture file's
+exact bytes (same filename and SHA-256), and only if exactly one document matches. The
+reindex request carries the expected version and hash, and the backend re-checks them
+under a row lock (409 otherwise), so nothing else reaches the gateway. It reports each
+fixture's state and whether it is searchable (exit status 1 if an expected one is not).
 
 Transport: an external gateway must use https (plain http only for loopback or a
 private network, as the backend enforces), and no request that carries the token ever
@@ -32,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import hashlib
 import ipaddress
 import json
 import os
@@ -244,25 +249,106 @@ def disconnect() -> None:
 FIXTURES = ROOT / "backend" / "fixtures"
 
 
-def demo_fixtures() -> dict[str, str | None]:
-    """Synthetic demo fixture titles -> why one is expected NOT to be searchable (None:
-    expected searchable). NileTech corpus documents and the legal contracts only."""
+def fixture_manifest() -> dict[str, dict[str, Any]]:
+    """The synthetic demo fixtures as uploaded by the seeds: title -> exact file bytes
+    (SHA-256), filename, department, classification, and why one is expected NOT to be
+    searchable (None: expected searchable). NileTech corpus documents and the contracts."""
+
+    def sha(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
 
     corpus = tomllib.loads((FIXTURES / "documents" / "corpus.toml").read_text())
     legal = tomllib.loads((FIXTURES / "legal" / "legal.toml").read_text())
-    wanted: dict[str, str | None] = {}
+    manifest: dict[str, dict[str, Any]] = {}
     for doc in corpus["documents"]:
         if doc.get("tenant") != "niletech":
             continue
-        if "permissions" not in doc:
-            wanted[doc["title"]] = "no permissions by design (never searchable)"
+        perms = doc.get("permissions")
+        reason = None
+        if perms is None:
+            reason = "no permissions by design (never searchable)"
         elif doc.get("expect_status") == "needs_ocr":
-            wanted[doc["title"]] = "scanned PDF: needs Docling OCR on the gateway"
+            reason = "scanned PDF: needs Docling OCR on the gateway"
+        manifest[doc["title"]] = {
+            "filename": doc["file"],
+            "sha256": sha(FIXTURES / "documents" / "files" / doc["file"]),
+            "department": (perms or {}).get("department", "finance"),
+            # Uploaded without permissions: the backend stores it as unknown (never eligible).
+            "permission_state": "verified" if perms else "unknown",
+            "classification": perms["classification"] if perms else None,
+            "reason": reason,
+        }
+    for c in legal["contracts"]:
+        manifest[c["title"]] = {
+            "filename": c["file"],
+            "sha256": sha(FIXTURES / "legal" / "files" / c["file"]),
+            "department": c["department"],
+            "permission_state": "verified",
+            "classification": c["permissions"]["classification"],
+            "reason": None,
+        }
+    return manifest
+
+
+def _mismatch(doc: dict[str, Any], spec: dict[str, Any]) -> str | None:
+    """Why ``doc`` is not the fixture ``spec`` as seeded (None: identical identity AND
+    current content). Needs the administrator view (``versions`` with byte hashes)."""
+
+    if not doc.get("can_administer"):
+        return "not administered by the reindexing account"
+    if doc.get("department") != spec["department"]:
+        return f"department {doc.get('department')!r} is not the fixture's {spec['department']!r}"
+    if doc.get("permission_state") != spec["permission_state"]:
+        return f"permission state {doc.get('permission_state')!r} is not the fixture's"
+    if spec["classification"] is not None and doc.get("classification") != spec["classification"]:
+        return f"classification {doc.get('classification')!r} differs from the fixture"
+    current = next(
+        (v for v in doc.get("versions") or [] if v.get("version") == doc.get("current_version")),
+        None,
+    )
+    if current is None or not current.get("byte_sha256"):
+        return "current version or its hash is not visible (backend older than this branch?)"
+    if current.get("filename") != spec["filename"]:
+        return f"current version's file {current.get('filename')!r} is not {spec['filename']!r}"
+    if current["byte_sha256"] != spec["sha256"]:
+        return (
+            f"current content (version {doc.get('current_version')}) differs from the fixture file"
+        )
+    return None
+
+
+def select_fixtures(
+    docs: list[dict[str, Any]], manifest: dict[str, dict[str, Any]]
+) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], list[tuple[str, str]], list[str]]:
+    """Which documents may be sent for embedding: exactly one document per fixture whose
+    identity and CURRENT content equal the fixture file. Returns (targets, rejected
+    (title, reason), missing fixture titles). Documents with other titles are ignored."""
+
+    targets: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    rejected: list[tuple[str, str]] = []
+    missing: list[str] = []
+    for title, spec in manifest.items():
+        matches = []
+        for doc in (d for d in docs if d.get("title") == title):
+            reason = _mismatch(doc, spec)
+            if reason is None:
+                matches.append(doc)
+            else:
+                rejected.append((f"{title} [{doc['document_id'][:8]}]", reason))
+        if len(matches) == 1:
+            targets.append((matches[0], spec))
+        elif matches:
+            for doc in matches:
+                rejected.append(
+                    (
+                        f"{title} [{doc['document_id'][:8]}]",
+                        f"ambiguous: {len(matches)} documents match this fixture exactly",
+                    )
+                )
+            missing.append(title)
         else:
-            wanted[doc["title"]] = None
-    for contract in legal["contracts"]:
-        wanted[contract["title"]] = None
-    return wanted
+            missing.append(title)
+    return targets, rejected, missing
 
 
 def reindex(timeout: float = 1800) -> None:
@@ -270,20 +356,33 @@ def reindex(timeout: float = 1800) -> None:
     status, docs = http("GET", f"{API}/api/v1/documents", token)
     if status != 200:
         sys.exit(f"could not list documents (HTTP {status})")
-    fixtures = demo_fixtures()
-    targets = [d for d in docs if d["title"] in fixtures and d.get("can_administer")]
-    others = [d for d in docs if d["title"] not in fixtures]
-    missing = sorted(set(fixtures) - {d["title"] for d in targets})
+    manifest = fixture_manifest()
+    targets, rejected, missing = select_fixtures(docs, manifest)
+    others = sum(1 for d in docs if d["title"] not in manifest)
     print(
-        f"reindexing {len(targets)} synthetic fixture(s); "
-        f"leaving {len(others)} other document(s) alone"
+        f"verified {len(targets)} synthetic fixture(s) by identity and current content; "
+        f"{len(rejected)} same-title document(s) refused; {others} other document(s) ignored"
     )
-    for d in targets:
-        code, _ = http("POST", f"{API}/api/v1/documents/{d['document_id']}/reindex", token)
-        print(f"  reindex {d['title']}: HTTP {code}")
-    wanted = {d["document_id"] for d in targets}
+    for label, reason in rejected:
+        print(f"  NOT sent: {label}: {reason}")
+    queued = []
+    for doc, spec in targets:
+        code, _ = http(
+            "POST",
+            f"{API}/api/v1/documents/{doc['document_id']}/reindex",
+            token,
+            {"expected_version": doc["current_version"], "expected_byte_sha256": spec["sha256"]},
+        )
+        if code == 409:
+            print(f"  NOT sent: {doc['title']}: changed after the check (backend refused)")
+            missing.append(doc["title"])
+            continue
+        print(f"  reindex {doc['title']} (version {doc['current_version']}): HTTP {code}")
+        if code == 202:
+            queued.append(doc["document_id"])
+    wanted = set(queued)
     deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+    while wanted and time.monotonic() < deadline:
         _, docs = http("GET", f"{API}/api/v1/documents", token)
         pending = [
             d
@@ -291,20 +390,22 @@ def reindex(timeout: float = 1800) -> None:
             if d["document_id"] in wanted
             and (
                 d["status"] in ("queued", "parsing", "indexing")
-                or (d["status"] == "ready" and not d["searchable"] and fixtures[d["title"]] is None)
+                or (
+                    d["status"] == "ready"
+                    and not d["searchable"]
+                    and manifest[d["title"]]["reason"] is None
+                )
             )
         ]
         if not pending:
             break
         print(f"waiting for {len(pending)} document(s)…", flush=True)
         time.sleep(5)
-    else:
-        print("timed out waiting; reporting the current state")
     _, docs = http("GET", f"{API}/api/v1/documents", token)
-    problems = [f"missing fixture: {t}" for t in missing]
+    problems = [f"fixture not reindexed: {t}" for t in sorted(set(missing))]
     print("\nsynthetic fixtures after reindex:")
     for d in sorted((d for d in docs if d["document_id"] in wanted), key=lambda d: d["title"]):
-        reason = fixtures[d["title"]]
+        reason = manifest[d["title"]]["reason"]
         ok = d["searchable"] if reason is None else not d["searchable"]
         note = "" if reason is None else f"  (expected not searchable: {reason})"
         print(
@@ -316,9 +417,9 @@ def reindex(timeout: float = 1800) -> None:
     searchable = sum(
         1
         for d in docs
-        if d["document_id"] in wanted and d["searchable"] and fixtures[d["title"]] is None
+        if d["document_id"] in wanted and d["searchable"] and manifest[d["title"]]["reason"] is None
     )
-    expected = sum(1 for r in fixtures.values() if r is None)
+    expected = sum(1 for spec in manifest.values() if spec["reason"] is None)
     print(f"\n{searchable} of {expected} expected-searchable synthetic fixtures are searchable")
     if problems:
         sys.exit("reindex problems:\n  " + "\n  ".join(problems))

@@ -291,12 +291,36 @@ def add_version(
     return version, _insert_job(conn, tenant_id, document_id, version, "ingest"), key
 
 
-def reindex(conn: Connection, tenant_id: UUID, document_id: UUID) -> UUID:
+class VersionChanged(Exception):
+    """M8: the document's current version is not the one the caller expected."""
+
+
+def reindex(
+    conn: Connection,
+    tenant_id: UUID,
+    document_id: UUID,
+    *,
+    expected_version: int | None = None,
+    expected_byte_sha256: str | None = None,
+) -> UUID:
+    """Queue re-ingestion of the current version. With expectations, the document row is
+    locked and the current version's number and raw-byte hash must match first; the job
+    is pinned to that version, so a later upload cannot change what it embeds."""
+
     row = conn.execute(
-        text("SELECT current_version FROM documents WHERE id = :d AND deleted_at IS NULL"),
+        text(
+            "SELECT current_version FROM documents WHERE id = :d AND deleted_at IS NULL FOR UPDATE"
+        ),
         {"d": document_id},
     ).one()
-    return _insert_job(conn, tenant_id, document_id, int(row.current_version), "reindex")
+    current = int(row.current_version)
+    if expected_version is not None and current != expected_version:
+        raise VersionChanged(f"current version is {current}")
+    if expected_byte_sha256 is not None:
+        version = load_version(conn, document_id, current)
+        if version is None or version.byte_sha256 != expected_byte_sha256:
+            raise VersionChanged("current content differs")
+    return _insert_job(conn, tenant_id, document_id, current, "reindex")
 
 
 def set_permissions(

@@ -63,6 +63,10 @@ class DocumentForbidden(Exception):
     """Caller may see the document but may not administer it."""
 
 
+class DocumentChanged(Exception):
+    """M8: a conditional reindex found a different current version or content."""
+
+
 class InvalidRequest(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(code)
@@ -327,10 +331,26 @@ class DocumentService:
         except QdrantError:
             logger.warning("qdrant_delete_failed", extra={"document_id": str(document_id)})
 
-    def reindex(self, ctx: AccessContext, document_id: UUID) -> None:
+    def reindex(
+        self,
+        ctx: AccessContext,
+        document_id: UUID,
+        *,
+        expected_version: int | None = None,
+        expected_byte_sha256: str | None = None,
+    ) -> None:
         with tenant_transaction(self._engine, ctx.tenant_id, ctx.user_id) as conn:
             self._require_admin(conn, ctx, document_id)
-            job_id = store.reindex(conn, ctx.tenant_id, document_id)
+            try:
+                job_id = store.reindex(
+                    conn,
+                    ctx.tenant_id,
+                    document_id,
+                    expected_version=expected_version,
+                    expected_byte_sha256=expected_byte_sha256,
+                )
+            except store.VersionChanged as exc:
+                raise DocumentChanged(str(exc)) from exc
         if self._dispatch is not None:
             self._dispatch(job_id, ctx.tenant_id)
 
@@ -391,6 +411,8 @@ class DocumentService:
                     "status": v.status,
                     "error_code": v.error_code,
                     "byte_size": v.byte_size,
+                    # M8: lets an administrator verify which bytes a version holds.
+                    "byte_sha256": v.byte_sha256,
                     "created_at": v.created_at.isoformat(),
                     "parser": v.parser,
                     "parse_notes": v.parse_notes or {},
