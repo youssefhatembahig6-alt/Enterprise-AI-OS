@@ -565,9 +565,11 @@ def test_job_outcome_stays_pending_while_a_delayed_worker_leaves_the_old_index_a
     app_client: TestClient, ingest_db: DbHarness
 ) -> None:
     """M8 regression: reindex must wait for ITS job. While the job is stalled before
-    activation, the document still looks ready and searchable (old generation), but the
-    job outcome is pending; it turns active (current embedding space) only after the new
-    generation is activated."""
+    activation, the current version reports ``indexing`` (the runner sets it before
+    building the new generation and sets ``ready`` only in the activation transaction)
+    but the document is still searchable through the OLD active generation; the job
+    outcome is pending. It turns active in the current embedding space only after that
+    exact job activates the new generation."""
 
     document_id = finance(ingest_db, app_client)
     wait_status(ingest_db, document_id, {"ready"})
@@ -578,7 +580,8 @@ def test_job_outcome_stays_pending_while_a_delayed_worker_leaves_the_old_index_a
     job_id = queued.json()["job_id"]
     wait_crashed(ingest_db, uuid.UUID(job_id))
     described = app_client.get(f"/api/v1/documents/{document_id}", headers=auth(admin)).json()
-    assert (described["status"], described["searchable"]) == ("ready", True)  # old index serves
+    # Status describes the current version's ingestion; searchability the active generation.
+    assert (described["status"], described["searchable"]) == ("indexing", True)  # old index serves
     job_url = f"/api/v1/documents/{document_id}/jobs/{job_id}"
     stalled = app_client.get(job_url, headers=auth(admin)).json()
     assert stalled["outcome"] == "pending"
@@ -594,6 +597,8 @@ def test_job_outcome_stays_pending_while_a_delayed_worker_leaves_the_old_index_a
     done = app_client.get(job_url, headers=auth(admin)).json()
     assert (done["status"], done["outcome"], done["in_current_space"]) == ("done", "active", True)
     assert done["active_generation"] == 2 and done["chunk_count"] > 0
+    after = app_client.get(f"/api/v1/documents/{document_id}", headers=auth(admin)).json()
+    assert (after["status"], after["searchable"]) == ("ready", True)
     # Only administrators of the document can read job outcomes.
     reader = login(app_client, ingest_db, "niletech/finance-reader")
     assert app_client.get(job_url, headers=auth(reader)).status_code in (403, 404)

@@ -162,14 +162,15 @@ SPACE = "eaios__baai_bge_m3_5617a9f61b02_1024"
 class FakeApi:
     """The documents API as the connect script sees it. Every fixture is genuine; each
     queued job reports ``pending`` for ``delay`` polls, then its scripted final state.
-    The document list always says ready/searchable (the OLD generation keeps serving)."""
+    The document list always says searchable (the OLD generation keeps serving) with
+    status ``indexing``, as the backend reports while a reindex job is unfinished."""
 
     def __init__(self, connect: ModuleType, delay: int = 0) -> None:
         self.manifest = connect.fixture_manifest()
         self.docs = []
         for n, (title, spec) in enumerate(self.manifest.items()):
             d = doc(spec, document_id=f"{n:08d}-0000-0000-0000-000000000000", title=title)
-            d.update(status="ready", searchable=spec["reason"] is None)
+            d.update(status="indexing", searchable=spec["reason"] is None)
             self.docs.append(d)
         self.delay = delay
         self.post_status: dict[str, int] = {}  # title -> HTTP status for its reindex POST
