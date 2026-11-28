@@ -75,6 +75,7 @@ class Gateway:
     health_body: dict[str, Any] = field(default_factory=health)
     reply: str = REPLY
     reject_token: bool = False
+    qwen_up: bool = True
     chats: list[dict[str, Any]] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -82,6 +83,13 @@ class Gateway:
         assert request.headers.get("authorization") == f"Bearer {TOKEN}"
         if request.url.path.endswith("/health"):
             return httpx.Response(self.health_status, json=self.health_body)
+        if request.url.path.endswith("/ready"):
+            if self.reject_token:
+                return httpx.Response(401, json={"error": {"code": "unauthorized"}})
+            if not self.qwen_up:  # gateway process up, chat server (vLLM) down
+                return httpx.Response(503, json={"error": {"code": "chat_server_unreachable"}})
+            chat = self.health_body["models"]["chat"]
+            return httpx.Response(200, json={"status": "ready", "chat": {**chat, "ready": True}})
         if request.url.path.endswith("/embeddings"):
             if self.reject_token:
                 return httpx.Response(401, json={"error": "unauthorized"})
@@ -98,6 +106,7 @@ class Gateway:
     def reset(self) -> None:
         self.health_status, self.health_body, self.reply = 200, health(), REPLY
         self.reject_token = False
+        self.qwen_up = True
         self.chats.clear()
 
 
@@ -275,3 +284,17 @@ def test_status_requires_authenticated_gateway_access_and_refresh_skips_cache(m8
         False,
         "auth_failed",
     )
+
+
+def test_connected_needs_the_qwen_chat_server_not_just_the_gateway(m8: M8) -> None:
+    assert m8.status()["verified"] is True
+    m8.gateway.qwen_up = False  # only Qwen stops; the gateway and its public /health stay up
+    down = m8.status()
+    assert (down["verified"], down["authenticated"], down["error"]) == (
+        False,
+        False,
+        "chat_server_down",
+    )
+    m8.gateway.qwen_up = True  # Qwen restarts
+    back = m8.status()
+    assert (back["verified"], back["authenticated"], back["error"]) == (True, True, None)

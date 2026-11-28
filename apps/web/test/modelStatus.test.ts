@@ -27,6 +27,9 @@ test("offline, fake, checking, backend and session states", () => {
   assert.match(off.title, /could not be reached/);
   assert.match(statusButton({ kind: "status", status: status({ error: "auth_failed" }) }).title, /rejected the server's token/);
   assert.equal(statusButton({ kind: "status", status: status({ mode: "fake" }) }).label, "FAKE model");
+  const qwenDown = statusButton({ kind: "status", status: status({ error: "chat_server_down" }) });
+  assert.equal(qwenDown.label, "Model offline");
+  assert.match(qwenDown.title, /Qwen chat server is not running/);
   assert.equal(statusButton({ kind: "checking" }).label, "Checking…");
   assert.equal(statusButton({ kind: "backend_offline" }).label, "Backend offline");
   assert.equal(statusButton({ kind: "session_ended" }).label, "Session ended");

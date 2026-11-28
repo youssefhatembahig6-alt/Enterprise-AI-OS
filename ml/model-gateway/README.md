@@ -5,6 +5,7 @@ The backend talks to models through one gateway root URL (`LLM_BASE_URL`). This 
 | Route | Backed by | Used by M2 |
 | --- | --- | --- |
 | `GET /health` | served models, pinned revisions, engine settings | yes: the backend refuses to run unless the chat model and revision match, and refuses a different checker |
+| `GET /ready` | M8, token required: asks the chat server itself (vLLM `/health` and `/v1/models`) whether it is up and serving the pinned Qwen; 503 `chat_server_unreachable`, `chat_server_unhealthy`, `chat_server_error` or `chat_model_not_served` otherwise | the backend's model status ("Connected" in the chat header) requires it |
 | `POST /v1/chat/completions` | local vLLM, streamed relay | yes: router fallback, SQL drafts, report sentences |
 | `POST /v1/embeddings` | BGE-M3 dense | no (M3); separate route so it is never conflated with chat |
 | `POST /check` | DeBERTa-v3-base-mnli-fever-anli | yes: narrative claim scores (development baseline, not the M7 checker) |

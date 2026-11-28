@@ -69,6 +69,12 @@ class GatewayRevisionMismatch(ModelError):
     code = "revision_mismatch"
 
 
+class GatewayChatServerDown(ModelError):
+    """M8: the gateway answers but its chat server (vLLM serving Qwen) is not ready."""
+
+    code = "chat_server_down"
+
+
 class InferenceCancelled(ModelError):
     code = "cancelled"
 
@@ -144,6 +150,8 @@ class ModelClient(Protocol):
     def describe(self) -> dict[str, Any]: ...
 
     def served_models(self, cancel: CancelToken | None = None) -> ServedModels: ...
+
+    def ready(self, cancel: CancelToken | None = None) -> dict[str, Any]: ...
 
     def chat(
         self,
@@ -233,6 +241,10 @@ class GatewayModelClient:
             raise GatewayUnavailable(type(exc).__name__) from exc
 
     def _raise_for_status(self, response: httpx.Response) -> None:
+        if 300 <= response.status_code < 400:
+            # Never follow (the client has follow_redirects=False): a redirect could send
+            # the bearer token to another host.
+            raise GatewayProtocolError(f"redirect refused ({response.status_code})")
         if response.status_code in (401, 403):
             raise GatewayAuthError(str(response.status_code))
         if response.status_code >= 500 or response.status_code in (404, 429):
@@ -286,6 +298,33 @@ class GatewayModelClient:
         if max_len is not None and int(max_len) != self._s.model_expected_max_model_len:
             raise GatewayRevisionMismatch(f"max_model_len {max_len}")
         return ServedModels(raw=body)
+
+    def ready(self, cancel: CancelToken | None = None) -> dict[str, Any]:
+        """M8: authenticated readiness of the actual chat server. The gateway's ``/ready``
+        (bearer token required) asks vLLM's own /health and /v1/models; the pinned chat
+        model and revision must come back. /health alone is public and proves less."""
+
+        if cancel:
+            cancel.raise_if_cancelled()
+        with self._errors():
+            response = self._client.get(self.url(self._s.model_ready_path))
+        if response.status_code == 503:
+            body = _json_body(response) if response.content else {}
+            code = ((body or {}).get("error") or {}).get("code", "not_ready")
+            raise GatewayChatServerDown(str(code))
+        if response.status_code == 404:
+            raise GatewayProtocolError("gateway has no /ready route (update the gateway)")
+        self._raise_for_status(response)
+        body = _json_body(response)
+        chat = body.get("chat") if isinstance(body, dict) else None
+        if not isinstance(chat, dict) or not chat.get("ready"):
+            raise GatewayChatServerDown("chat not ready")
+        if (chat.get("model"), chat.get("revision")) != (
+            self._s.model_chat_name,
+            self._s.model_chat_revision,
+        ):
+            raise GatewayRevisionMismatch("ready chat model is not the pinned one")
+        return dict(body)
 
     def chat(
         self,
@@ -512,6 +551,9 @@ class FakeModelClient:
     def served_models(self, cancel: CancelToken | None = None) -> ServedModels:
         return ServedModels(raw={"fake": True, "label": FAKE_LABEL})
 
+    def ready(self, cancel: CancelToken | None = None) -> dict[str, Any]:
+        return {"fake": True, "label": FAKE_LABEL}
+
     def chat(
         self,
         messages: list[dict[str, str]],
@@ -673,6 +715,9 @@ class UnconfiguredModelClient:
         return {"mode": self.mode.value, "configured": False, "reason": self._reason}
 
     def served_models(self, cancel: CancelToken | None = None) -> ServedModels:
+        raise GatewayNotConfigured(self._reason)
+
+    def ready(self, cancel: CancelToken | None = None) -> dict[str, Any]:
         raise GatewayNotConfigured(self._reason)
 
     def chat(

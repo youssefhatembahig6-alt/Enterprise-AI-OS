@@ -997,6 +997,7 @@ MODEL_FAILURE_DETAILS = frozenset(
         "auth_failed",
         "protocol_error",
         "revision_mismatch",
+        "chat_server_down",
         "empty_reply",
     }
 )

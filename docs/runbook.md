@@ -202,8 +202,8 @@ PLAYWRIGHT_BROWSERS_PATH=<browsers> <venv>/bin/python scripts/m8_chat_ui_check.p
 | Shows | Means |
 | --- | --- |
 | **Checking…** | A check is in flight |
-| **Connected · Qwen3-8B-AWQ** | The backend confirmed the gateway serves the pinned `Qwen/Qwen3-8B-AWQ@4da05a8…` **and** accepted the server's token (one tiny authenticated embedding call; the gateway's `/health` alone is public) |
-| **Model offline** | Gateway mode, but the gateway is unreachable, timed out, rejected the token or serves another revision; the tooltip says which |
+| **Connected · Qwen3-8B-AWQ** | The backend confirmed the pinned `Qwen/Qwen3-8B-AWQ@4da05a8…` in the gateway's `/health` **and** the gateway's authenticated `/ready`, which asks the actual Qwen chat server (vLLM `/health` and `/v1/models`) behind it. So the token was accepted and Qwen itself is up; a gateway whose vLLM stopped shows Model offline |
+| **Model offline** | Gateway mode, but the gateway is unreachable, timed out, rejected the token, serves another revision, or its Qwen chat server is not ready; the tooltip says which |
 | **Backend offline** | The API itself does not answer |
 | **FAKE model** | The server runs the labelled development double |
 
@@ -213,9 +213,10 @@ PLAYWRIGHT_BROWSERS_PATH=<browsers> <venv>/bin/python scripts/m8_chat_ui_check.p
 
    ```bash
    python3 scripts/m8_connect_gateway.py connect --url https://<printed gateway URL>
-   python3 scripts/m8_connect_gateway.py reindex    # first time only: re-embeds the synthetic files with BGE-M3
+   python3 scripts/m8_connect_gateway.py reindex    # first time only: re-embeds the synthetic fixtures with BGE-M3
    ```
 
+   The gateway URL must be `https` (plain `http` only for loopback or a private network). No request that carries the token follows a redirect. `reindex` re-embeds only the synthetic demo fixtures (the NileTech documents in `backend/fixtures/documents/corpus.toml` and the contracts in `backend/fixtures/legal/legal.toml`). It reports each one's status and whether it is searchable: 13 are expected to be. The draft strategy memo (no permissions) and the scanned delivery note (needs Docling OCR) are expected not to be. It exits 1 if an expected one is not searchable.
    `connect` asks for the token without echo (or reads `EAIOS_GATEWAY_TOKEN`). It checks the gateway's pinned model and the token, then writes `MODEL_MODE=gateway`, `LLM_BASE_URL`, `MODEL_GATEWAY_TOKEN` and the remote timeouts (read 180 s, deadline 360 s) into `var/m7-acceptance/.env` (0600). It restarts only the disposable API, worker and scheduler, and prints the backend's own status. The token stays server-side. The normal `eaios` stack is never touched.
 3. Open http://localhost:13000, sign in (organization `niletech`, for example `finance.reader@niletech.example`, password from `var/m7-acceptance/dev-credentials.json`). The header should read **Connected · Qwen3-8B-AWQ**. Choose **Documents you can access** or **General (no company data)** in the composer and ask.
 4. **After Colab restarts:** run cells 1–3 and 6 again (cell 3 reuses the `EAIOS_GATEWAY_TOKEN` Secret), then `connect --url <new URL>` again. No reindex is needed while the embedding model stays the same. Click the status button to recheck.

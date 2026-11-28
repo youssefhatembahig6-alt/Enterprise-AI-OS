@@ -1,7 +1,8 @@
 /**
  * The chat header's model status button (M8): what to show for the latest check of
  * GET /api/v1/model/status. "Connected" only when the backend confirmed gateway mode,
- * the pinned model and revision, and that the gateway accepted the server's token.
+ * the pinned model and revision, and an authenticated readiness check of the actual Qwen
+ * chat server behind the gateway (token accepted, vLLM up and serving the model).
  * Type-only imports, so it runs under node:test.
  */
 
@@ -25,6 +26,7 @@ const REASONS: Record<string, string> = {
   timeout: "The model gateway did not answer in time.",
   auth_failed: "The model gateway rejected the server's token (did Colab restart with a new token?).",
   revision_mismatch: "The gateway is not serving the pinned model and revision.",
+  chat_server_down: "The gateway answers, but its Qwen chat server is not running or not ready.",
   protocol_error: "The model gateway sent an unexpected response.",
 };
 

@@ -98,6 +98,8 @@ export function modelFailureText(detail: string | null | undefined): string | nu
       return "the model gateway rejected the server's credentials";
     case "revision_mismatch":
       return "the gateway is not serving the pinned model and revision";
+    case "chat_server_down":
+      return "the gateway is up but its Qwen chat server is not ready";
     case "protocol_error":
       return "the model gateway sent an unexpected response";
     case "empty_reply":

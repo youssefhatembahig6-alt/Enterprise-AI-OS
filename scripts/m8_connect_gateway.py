@@ -18,18 +18,27 @@ header's status button. The token is never printed and never reaches the browser
 
 ``reindex``: documents are embedded per embedding space. Documents indexed with the fake
 model are not searchable with BGE-M3 (and the other way round), so after switching modes
-run ``reindex`` once; it re-embeds every document through the current model.
+run ``reindex`` once. It re-embeds ONLY the synthetic demo fixtures
+(``backend/fixtures/documents/corpus.toml`` for NileTech and
+``backend/fixtures/legal/legal.toml``), never other uploads, and reports for each whether
+it is searchable afterwards (exit status 1 if an expected one is not).
+
+Transport: an external gateway must use https (plain http only for loopback or a
+private network, as the backend enforces), and no request that carries the token ever
+follows a redirect.
 """
 
 from __future__ import annotations
 
 import argparse
 import getpass
+import ipaddress
 import json
 import os
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -46,6 +55,16 @@ PINNED = ("Qwen/Qwen3-8B-AWQ", "4da05a8edb55c6046cce958586c33b61da07bb79")
 REMOTE_TIMEOUTS = {"MODEL_READ_TIMEOUT_SECONDS": "180", "MODEL_CALL_DEADLINE_SECONDS": "360"}
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """urllib would follow 3xx and resend the Authorization header to the new host."""
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def http(
     method: str, url: str, token: str | None = None, body: Any = None, timeout: float = 30
 ) -> tuple[int, Any]:
@@ -55,10 +74,14 @@ def http(
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, headers=headers, method=method)  # noqa: S310
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        with _OPENER.open(req, timeout=timeout) as resp:
             raw = resp.read()
             return resp.status, json.loads(raw) if raw else None
     except urllib.error.HTTPError as exc:
+        if 300 <= exc.code < 400:
+            sys.exit(
+                f"refused: the gateway answered with a redirect ({exc.code}); not following it"
+            )
         return exc.code, None
 
 
@@ -71,7 +94,19 @@ def gateway_root(url: str) -> str:
     root = url.strip().rstrip("/")
     if root.endswith("/v1"):
         sys.exit("--url is the gateway ROOT (without /v1)")
+    if parts.scheme == "http" and not local_host(parts.hostname):
+        sys.exit("--url must use https for a gateway outside this machine or network")
     return root
+
+
+def local_host(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private
 
 
 def read_env() -> list[str]:
@@ -170,18 +205,17 @@ def connect(url: str) -> None:
             f"gateway /health is not serving the pinned {PINNED[0]}@{PINNED[1][:7]} "
             f"(HTTP {status}, chat {chat})"
         )
-    status, _ = http(
-        "POST",
-        f"{root}/v1/embeddings",
-        token,
-        {"model": "BAAI/bge-m3", "input": ["eaios connection check"]},
-        timeout=60,
-    )
+    status, ready = http("GET", f"{root}/ready", token, timeout=30)
     if status in (401, 403):
         sys.exit("the gateway rejected the token (Colab restarted with another token?)")
-    if status != 200:
-        sys.exit(f"authenticated gateway call failed (HTTP {status})")
-    print(f"gateway OK from the laptop: {chat['model']}@{chat['revision'][:7]}, token accepted")
+    if status == 503:
+        sys.exit("the gateway is up but its Qwen chat server is not ready (cell 3 still loading?)")
+    if status != 200 or not ((ready or {}).get("chat") or {}).get("ready"):
+        sys.exit(f"authenticated readiness check failed (HTTP {status}; gateway too old?)")
+    print(
+        f"gateway OK from the laptop: {chat['model']}@{chat['revision'][:7]}, "
+        "token accepted, Qwen chat server ready"
+    )
     write_env(
         {
             "MODEL_MODE": "gateway",
@@ -207,32 +241,87 @@ def disconnect() -> None:
     print("backend model status:", describe(backend_status()))
 
 
+FIXTURES = ROOT / "backend" / "fixtures"
+
+
+def demo_fixtures() -> dict[str, str | None]:
+    """Synthetic demo fixture titles -> why one is expected NOT to be searchable (None:
+    expected searchable). NileTech corpus documents and the legal contracts only."""
+
+    corpus = tomllib.loads((FIXTURES / "documents" / "corpus.toml").read_text())
+    legal = tomllib.loads((FIXTURES / "legal" / "legal.toml").read_text())
+    wanted: dict[str, str | None] = {}
+    for doc in corpus["documents"]:
+        if doc.get("tenant") != "niletech":
+            continue
+        if "permissions" not in doc:
+            wanted[doc["title"]] = "no permissions by design (never searchable)"
+        elif doc.get("expect_status") == "needs_ocr":
+            wanted[doc["title"]] = "scanned PDF: needs Docling OCR on the gateway"
+        else:
+            wanted[doc["title"]] = None
+    for contract in legal["contracts"]:
+        wanted[contract["title"]] = None
+    return wanted
+
+
 def reindex(timeout: float = 1800) -> None:
     token = admin_token()
     status, docs = http("GET", f"{API}/api/v1/documents", token)
     if status != 200:
         sys.exit(f"could not list documents (HTTP {status})")
-    targets = [d for d in docs if d.get("can_administer")]
+    fixtures = demo_fixtures()
+    targets = [d for d in docs if d["title"] in fixtures and d.get("can_administer")]
+    others = [d for d in docs if d["title"] not in fixtures]
+    missing = sorted(set(fixtures) - {d["title"] for d in targets})
+    print(
+        f"reindexing {len(targets)} synthetic fixture(s); "
+        f"leaving {len(others)} other document(s) alone"
+    )
     for d in targets:
         code, _ = http("POST", f"{API}/api/v1/documents/{d['document_id']}/reindex", token)
-        print(f"reindex {d['title']}: HTTP {code}")
-    deadline = time.monotonic() + timeout
+        print(f"  reindex {d['title']}: HTTP {code}")
     wanted = {d["document_id"] for d in targets}
+    deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         _, docs = http("GET", f"{API}/api/v1/documents", token)
         pending = [
-            d["title"]
+            d
             for d in docs
-            if d["document_id"] in wanted and d["status"] in ("queued", "parsing", "indexing")
+            if d["document_id"] in wanted
+            and (
+                d["status"] in ("queued", "parsing", "indexing")
+                or (d["status"] == "ready" and not d["searchable"] and fixtures[d["title"]] is None)
+            )
         ]
         if not pending:
-            for d in docs:
-                if d["document_id"] in wanted:
-                    print(f"  {d['status']:<10} searchable={d['searchable']!s:<5} {d['title']}")
-            return
+            break
         print(f"waiting for {len(pending)} document(s)…", flush=True)
         time.sleep(5)
-    sys.exit("reindex did not finish in time")
+    else:
+        print("timed out waiting; reporting the current state")
+    _, docs = http("GET", f"{API}/api/v1/documents", token)
+    problems = [f"missing fixture: {t}" for t in missing]
+    print("\nsynthetic fixtures after reindex:")
+    for d in sorted((d for d in docs if d["document_id"] in wanted), key=lambda d: d["title"]):
+        reason = fixtures[d["title"]]
+        ok = d["searchable"] if reason is None else not d["searchable"]
+        note = "" if reason is None else f"  (expected not searchable: {reason})"
+        print(
+            f"  {'OK ' if ok else 'BAD'} {d['status']:<10} searchable={d['searchable']!s:<5}"
+            f" {d['title']}{note}"
+        )
+        if not ok:
+            problems.append(f"{d['title']}: status {d['status']}, searchable {d['searchable']}")
+    searchable = sum(
+        1
+        for d in docs
+        if d["document_id"] in wanted and d["searchable"] and fixtures[d["title"]] is None
+    )
+    expected = sum(1 for r in fixtures.values() if r is None)
+    print(f"\n{searchable} of {expected} expected-searchable synthetic fixtures are searchable")
+    if problems:
+        sys.exit("reindex problems:\n  " + "\n  ".join(problems))
 
 
 def main() -> None:

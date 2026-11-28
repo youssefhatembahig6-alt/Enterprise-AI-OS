@@ -3,9 +3,10 @@ gateway mode, whether the gateway is serving the pinned chat model and revision 
 accepts the server's token.
 
 ``/ready`` deliberately never claims model capability. This endpoint runs the same check
-every real run makes (``ModelClient.served_models``) and then one small authenticated
-call (an embedding of a fixed string; ``/health`` itself is public), so ``verified``
-means the pinned model is served AND the gateway accepted the server's bearer token. The
+every real run makes (``ModelClient.served_models``) and then the gateway's authenticated
+``/ready``, which asks the chat server itself (vLLM's /health and /v1/models), so
+``verified`` means the gateway accepted the server's bearer token AND the actual Qwen
+chat server is up serving the pinned model and revision (``/health`` alone is public). The
 web UI shows the served model or a typed failure. It returns model names, revisions and
 a failure class only; never the gateway URL or token.
 """
@@ -35,7 +36,7 @@ class ServedModel(BaseModel):
 class ModelStatus(BaseModel):
     mode: Literal["fake", "gateway"]
     verified: bool
-    authenticated: bool = False  # the gateway accepted the server's token (gateway mode)
+    authenticated: bool = False  # token accepted and the chat server ready (gateway mode)
     chat: ServedModel | None = None
     embed: ServedModel | None = None
     checker: ServedModel | None = None
@@ -64,7 +65,7 @@ def check_status(model: ModelClient) -> ModelStatus:
         return ModelStatus(mode="fake", verified=False, label=FAKE_LABEL, checked_at=now)
     try:
         raw = model.served_models().summary()
-        model.embed(["eaios connection check"])  # authenticated route: proves the token
+        model.ready()  # authenticated: the gateway accepted the token AND vLLM serves Qwen
     except ModelError as exc:
         return ModelStatus(mode="gateway", verified=False, error=exc.code, checked_at=now)
     models_raw, engine_raw = raw.get("models"), raw.get("engine")
