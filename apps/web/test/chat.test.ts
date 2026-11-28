@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { activeConversation, chatReducer, INITIAL_CHAT, titleFor, type ChatState } from "../src/chatState.js";
 import type { ReportEvent } from "../src/reports.js";
-import { applyEvent, citationKind, EMPTY_RUN, runKind, type RunView } from "../src/runView.js";
+import { applyEvent, citationKind, clarifyView, EMPTY_RUN, runKind, type RunView } from "../src/runView.js";
 
 function must<T>(value: T | null | undefined): T {
   assert.ok(value !== null && value !== undefined);
@@ -75,14 +75,14 @@ test("stream errors and client failures render as errors; unfinished runs as run
 
 test("conversations: ask creates one, new chat returns to the empty screen, select switches", () => {
   let s: ChatState = INITIAL_CHAT;
-  s = chatReducer(s, { type: "ask", conversationId: "c1", turnId: "t1", question: "First question?", mode: "documents", view: EMPTY_RUN });
+  s = chatReducer(s, { type: "ask", conversationId: "c1", turnId: "t1", question: "First question?", view: EMPTY_RUN });
   assert.equal(s.activeId, "c1");
   assert.equal(activeConversation(s)?.title, "First question?");
-  s = chatReducer(s, { type: "ask", conversationId: "c1", turnId: "t2", question: "Second?", mode: "auto", view: EMPTY_RUN });
+  s = chatReducer(s, { type: "ask", conversationId: "c1", turnId: "t2", question: "Second?", view: EMPTY_RUN });
   assert.equal(activeConversation(s)?.turns.length, 2);
   s = chatReducer(s, { type: "new" });
   assert.equal(activeConversation(s), null);
-  s = chatReducer(s, { type: "ask", conversationId: "c2", turnId: "t3", question: "Other", mode: "report", view: EMPTY_RUN });
+  s = chatReducer(s, { type: "ask", conversationId: "c2", turnId: "t3", question: "Other", view: EMPTY_RUN });
   assert.deepEqual(s.conversations.map((c) => c.id), ["c2", "c1"]); // newest first
   s = chatReducer(s, { type: "select", id: "c1" });
   assert.equal(activeConversation(s)?.turns[1]?.question, "Second?");
@@ -92,9 +92,9 @@ test("conversations: ask creates one, new chat returns to the empty screen, sele
 
 test("turn updates go to the right turn even when another conversation is active", () => {
   let s: ChatState = INITIAL_CHAT;
-  s = chatReducer(s, { type: "ask", conversationId: "c1", turnId: "t1", question: "Slow", mode: "auto", view: EMPTY_RUN });
+  s = chatReducer(s, { type: "ask", conversationId: "c1", turnId: "t1", question: "Slow", view: EMPTY_RUN });
   s = chatReducer(s, { type: "new" });
-  s = chatReducer(s, { type: "ask", conversationId: "c2", turnId: "t2", question: "Fast", mode: "auto", view: EMPTY_RUN });
+  s = chatReducer(s, { type: "ask", conversationId: "c2", turnId: "t2", question: "Fast", view: EMPTY_RUN });
   const view = fold([status(1, "accepted")]);
   s = chatReducer(s, { type: "view", conversationId: "c1", turnId: "t1", view });
   s = chatReducer(s, { type: "finish", conversationId: "c1", turnId: "t1", failure: null });
@@ -108,4 +108,105 @@ test("long questions get a short title", () => {
   const title = titleFor("  What were net (tax-exclusive) fulfilled sales for Q1 2026, in USD?  ");
   assert.ok(title.length <= 48);
   assert.ok(title.endsWith("…"));
+});
+
+// --- M8: automatic routing labels and saved chats ---------------------------------------
+
+test("the handler label comes from the run's first event and survives later events", () => {
+  const first: ReportEvent = {
+    id: 1,
+    event: "status",
+    data: { step: "accepted", state: "completed", label: "Accepted", handler: "documents", handler_label: "Documents" },
+  };
+  const view = fold([first, status(2, "retrieval"), status(3, "answer")]);
+  assert.equal(view.handler, "documents");
+  assert.equal(view.handlerLabel, "Documents");
+});
+
+test("a clarifying question is its own kind, not a refusal", () => {
+  const live = fold([
+    { id: 1, event: "status", data: { step: "routing", state: "completed", label: "Needs detail", handler: "clarify", handler_label: "Clarifying question" } },
+    {
+      id: 2,
+      event: "done",
+      data: { outcome: "abstained", message_id: null, verification: null, inference: null, handler: "clarify", abstention: { code: "clarification_needed", message: "Which one?" } },
+    },
+  ]);
+  assert.equal(runKind(live, null), "clarify");
+  const saved = clarifyView("Which one?");
+  assert.equal(runKind(saved, null), "clarify");
+  assert.equal(saved.handlerLabel, "Clarifying question");
+  assert.equal(saved.done?.abstention?.message, "Which one?");
+  const refused = fold([
+    { id: 1, event: "done", data: { outcome: "abstained", message_id: null, verification: null, inference: null, abstention: { code: "no_sources", message: "None." } } },
+  ]);
+  assert.equal(runKind(refused, null), "refusal");
+});
+
+test("saved chats: the server list fills Recents, a new chat is bound to its server id", () => {
+  let s: ChatState = INITIAL_CHAT;
+  s = chatReducer(s, { type: "ask", conversationId: "local-1", turnId: "t1", question: "hello", view: EMPTY_RUN });
+  s = chatReducer(s, {
+    type: "saved",
+    items: [
+      { serverId: "srv-a", title: "Older chat" },
+      { serverId: "srv-b", title: "Oldest chat" },
+    ],
+  });
+  // The chat still waiting for its first reply stays on top with its turns.
+  assert.deepEqual(s.conversations.map((c) => c.id), ["local-1", "srv-a", "srv-b"]);
+  assert.equal(must(s.conversations[1]).loaded, false);
+  s = chatReducer(s, { type: "bind", conversationId: "local-1", serverId: "srv-new" });
+  assert.equal(must(s.conversations[0]).serverId, "srv-new");
+  // A later list without it (read before it was saved) keeps it; one with it merges.
+  s = chatReducer(s, { type: "saved", items: [{ serverId: "srv-a", title: "Older chat" }] });
+  assert.deepEqual(s.conversations.map((c) => c.id), ["local-1", "srv-a"]);
+  s = chatReducer(s, {
+    type: "saved",
+    items: [
+      { serverId: "srv-new", title: "hello" },
+      { serverId: "srv-a", title: "Older chat" },
+    ],
+  });
+  assert.deepEqual(s.conversations.map((c) => c.id), ["local-1", "srv-a"]);
+  assert.equal(must(s.conversations[0]).turns.length, 1);
+});
+
+test("saved chats: opening loads the turns once; asking moves the chat to the top", () => {
+  let s: ChatState = chatReducer(INITIAL_CHAT, {
+    type: "saved",
+    items: [
+      { serverId: "srv-a", title: "A" },
+      { serverId: "srv-b", title: "B" },
+    ],
+  });
+  s = chatReducer(s, { type: "select", id: "srv-b" });
+  s = chatReducer(s, {
+    type: "opened",
+    conversationId: "srv-b",
+    turns: [{ id: "s-1", question: "Old question", view: clarifyView("Which one?"), failure: null, running: false }],
+  });
+  const b = must(activeConversation(s));
+  assert.equal(b.loaded, true);
+  assert.equal(must(b.turns[0]).question, "Old question");
+  s = chatReducer(s, { type: "ask", conversationId: "srv-b", turnId: "t2", question: "Follow-up", view: EMPTY_RUN });
+  assert.deepEqual(s.conversations.map((c) => c.id), ["srv-b", "srv-a"]);
+  assert.equal(must(s.conversations[0]).serverId, "srv-b"); // appends to the saved chat
+});
+
+test("saved chats: a deleted chat leaves Recents and closes when open", () => {
+  let s: ChatState = chatReducer(INITIAL_CHAT, {
+    type: "saved",
+    items: [
+      { serverId: "srv-a", title: "A" },
+      { serverId: "srv-b", title: "B" },
+    ],
+  });
+  s = chatReducer(s, { type: "select", id: "srv-a" });
+  s = chatReducer(s, { type: "removed", conversationId: "srv-a" });
+  assert.equal(s.activeId, null);
+  assert.deepEqual(s.conversations.map((c) => c.id), ["srv-b"]);
+  s = chatReducer(s, { type: "select", id: "srv-b" });
+  s = chatReducer(s, { type: "removed", conversationId: "srv-a" });
+  assert.equal(s.activeId, "srv-b");
 });

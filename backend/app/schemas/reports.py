@@ -15,17 +15,53 @@ class ChatRequest(StrictModel):
     question: str = Field(min_length=1, max_length=1000)
     mode: Literal["auto", "report", "documents", "legal", "code", "general"] = Field(
         default="auto",
-        description="auto: sales/period questions go to the verified SQL report, contract "
-        "clause and expiry questions to the legal pack, repository code questions to the "
-        "code pack, everything else to authorized document answers (enabled packs only). "
-        "general (M8, explicit only): the model answers from general knowledge, without "
-        "company documents, data or actions; never chosen by auto.",
+        description="auto (the chat, M8): the server's orchestrator picks one handler: "
+        "general for greetings and ordinary questions, documents for company policies and "
+        "records, report for sales figures, legal for contract clauses and expiry, code for "
+        "company repositories, among the tenant's enabled packs; a question too vague to "
+        "route gets one short clarifying question and no run. Each handler keeps its own "
+        "permission checks, verification and citations. An explicit mode (API clients and "
+        "tests) runs that handler directly.",
     )
     client_request_id: str | None = Field(
         default=None,
         pattern=r"^[A-Za-z0-9_-]{8,64}$",
         description="Idempotency key: retrying with the same key returns the same run.",
     )
+    conversation_id: UUID | None = Field(
+        default=None,
+        description="Append this exchange to one of the caller's own conversations; omit "
+        "to start a new one. The conversation id is returned in X-Conversation-ID. A "
+        "conversation that is not the caller's returns 404 and creates no run.",
+    )
+
+
+class ConversationOut(StrictModel):
+    conversation_id: UUID
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationList(StrictModel):
+    conversations: list[ConversationOut]
+
+
+class TurnOut(StrictModel):
+    turn_id: UUID
+    question: str
+    handler: Literal["general", "documents", "report", "legal", "code", "clarify"]
+    handler_label: str
+    run_id: UUID | None = Field(
+        description="Replay the answer with GET /api/v1/runs/{run_id}/events: its content "
+        "is re-authorized for the caller at that moment. Null for a clarifying question."
+    )
+    reply: str | None = Field(description="The clarifying question's text; null otherwise.")
+    created_at: datetime
+
+
+class ConversationDetail(ConversationOut):
+    turns: list[TurnOut]
 
 
 class RunOut(StrictModel):

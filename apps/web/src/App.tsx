@@ -258,7 +258,6 @@ export function App() {
       key={session.token}
       token={session.token}
       identity={session.identity}
-      packs={settings?.enabled_packs ?? null}
       modelLabel={status.kind === "unreachable" ? "API unreachable" : null}
       canEmail={Boolean(settings?.enabled_packs.includes("actions"))}
       showActivity={showActivity}

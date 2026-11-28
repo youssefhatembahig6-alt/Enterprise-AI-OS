@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import secrets
+from collections.abc import Iterator
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -18,8 +19,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.api.admin import capability_disabled
 from app.api.deps import CurrentContext
 from app.api.errors import ApiError, unauthenticated
+from app.chat.history import ChatHistory, ConversationNotFound
+from app.chat.routing import ChatRoute, clarifying_question, route_chat
+from app.reporting.contracts import EventType
 from app.reporting.router import _TOPIC, _YEAR_ONLY, extract_periods
-from app.reporting.service import ReportService, RunNotFound
+from app.reporting.service import ReportService, RunNotFound, sse_frame
 from app.schemas.auth import ErrorResponse
 from app.schemas.reports import ChatRequest, EvidenceOut, RunOut
 from app.tenancy.config import RUN_KIND_PACK, CapabilityDisabled
@@ -109,31 +113,108 @@ def _require_available(service: ReportService) -> None:
         raise ApiError(503, "reports_unavailable", "Reporting is not configured on this server.")
 
 
+def get_chat_history(request: Request) -> ChatHistory:
+    history: ChatHistory = request.app.state.chat_history
+    return history
+
+
+History = Annotated[ChatHistory, Depends(get_chat_history)]
+
+
+def _clarify_stream(route: ChatRoute, message: str) -> Iterator[str]:
+    """A clarifying question is not a run: two events in the run stream's own format."""
+
+    yield sse_frame(
+        1,
+        EventType.STATUS.value,
+        {
+            "step": "routing",
+            "state": "completed",
+            "label": "Needs a little more detail",
+            "handler": route.route,
+            "handler_label": route.label,
+            "route_reason": route.reason,
+        },
+    )
+    yield sse_frame(
+        2,
+        EventType.DONE.value,
+        {
+            "message_id": None,
+            "outcome": "abstained",
+            "verification": None,
+            "abstention": {"code": "clarification_needed", "message": message},
+            "inference": None,
+            "handler": route.route,
+        },
+    )
+
+
 @router.post("/chat", response_class=StreamingResponse, responses=_SSE_DOC)
 def chat(
     body: ChatRequest,
     ctx: CurrentContext,
     service: Service,
+    history: History,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
 ) -> StreamingResponse:
-    """Create a report run and stream its events. Only status events are sent before
-    the result passes verification."""
+    """Route the question, create the handler's run and stream its events. Only status
+    events are sent before the result passes verification. The exchange is saved to the
+    caller's own conversation (X-Conversation-ID)."""
 
     _require_available(service)
     token = _token(credentials)
+    question = body.question.strip()
+    if body.conversation_id is not None:
+        try:
+            history.require_owned(ctx, body.conversation_id)
+        except ConversationNotFound as exc:
+            raise _not_found() from exc
+    enabled = service.enabled_packs(ctx)
+    route_reason: str | None = None
+    kind: str
+    if body.mode == "auto":
+        route = route_chat(question, enabled)
+        if route.route == "clarify":
+            message = clarifying_question(enabled)
+            conversation = history.record_turn(
+                ctx, body.conversation_id, question, "clarify", reply=message
+            )
+            return StreamingResponse(
+                _clarify_stream(route, message),
+                media_type="text/event-stream",
+                headers={
+                    **SSE_HEADERS,
+                    "X-Handler": "clarify",
+                    **({"X-Conversation-ID": str(conversation)} if conversation else {}),
+                },
+            )
+        kind, route_reason = route.route, route.reason
+    else:
+        try:
+            kind = choose_kind(question, body.mode, enabled)
+        except CapabilityDisabled as exc:
+            raise capability_disabled(exc) from exc
     try:
         run = service.create_run(
             ctx,
-            body.question.strip(),
+            question,
             body.client_request_id or secrets.token_urlsafe(16),
-            choose_kind(body.question, body.mode, service.enabled_packs(ctx)),
+            kind,
+            route_reason=route_reason,
         )
     except CapabilityDisabled as exc:
         raise capability_disabled(exc) from exc
+    conversation = history.record_turn(ctx, body.conversation_id, question, kind, run_id=run.id)
     return StreamingResponse(
         service.stream(token, ctx, run.id, 0),
         media_type="text/event-stream",
-        headers={**SSE_HEADERS, "X-Run-ID": str(run.id)},
+        headers={
+            **SSE_HEADERS,
+            "X-Run-ID": str(run.id),
+            "X-Handler": kind,
+            **({"X-Conversation-ID": str(conversation)} if conversation else {}),
+        },
     )
 
 

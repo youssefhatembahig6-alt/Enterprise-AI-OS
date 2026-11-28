@@ -15,6 +15,7 @@ from uuid import UUID
 
 from sqlalchemy import Engine, text
 
+from app.chat.routing import HANDLER_LABELS
 from app.config import ModelMode, ReportDispatch, Settings
 from app.db.engine import contextless_transaction, tenant_transaction
 from app.reporting import store
@@ -261,7 +262,13 @@ class ReportService:
             return load_settings(conn).enabled_packs
 
     def create_run(
-        self, ctx: AccessContext, question: str, client_request_id: str, kind: str = "report"
+        self,
+        ctx: AccessContext,
+        question: str,
+        client_request_id: str,
+        kind: str = "report",
+        *,
+        route_reason: str | None = None,
     ) -> store.RunRow:
         return self.create_run_for(
             ctx.tenant_id,
@@ -271,6 +278,7 @@ class ReportService:
             client_request_id,
             kind,
             request_id=ctx.request_id,
+            route_reason=route_reason,
         )
 
     def create_run_for(
@@ -283,10 +291,14 @@ class ReportService:
         kind: str = "report",
         *,
         request_id: str | None = None,
+        route_reason: str | None = None,
     ) -> store.RunRow:
         """Create (idempotently, by ``client_request_id``) and dispatch a run owned by a
         trusted, server-identified user. Request handlers pass the session's identity;
-        scheduled briefings (M6) pass the schedule owner after reloading them."""
+        scheduled briefings (M6) pass the schedule owner after reloading them.
+
+        The first event names the handler (M8), so the chat can label the answer, also
+        when it is replayed; ``route_reason`` is the chat orchestrator's rule, if any."""
 
         with tenant_transaction(self._engine, tenant_id, user_id) as conn:
             require_pack(conn, RUN_KIND_PACK[kind])  # M4: backend-enforced tenant packs
@@ -307,7 +319,11 @@ class ReportService:
                     "label": STEP_LABELS[Step.ACCEPTED],
                     "run_id": str(run.id),
                     "inference": self.inference_mode,
+                    "handler": kind,
+                    "handler_label": HANDLER_LABELS[kind],
                 }
+                if route_reason is not None:
+                    payload["route_reason"] = route_reason
                 if self.inference_mode == ModelMode.FAKE.value:
                     payload["inference_label"] = FAKE_LABEL
                 store.append_event(conn, run.id, tenant_id, EventType.STATUS, payload)
@@ -320,7 +336,12 @@ class ReportService:
                     action="report.create",
                     decision="info",
                     reason="run_created",
-                    details={"run_id": str(run.id), "inference": self.inference_mode, "kind": kind},
+                    details={
+                        "run_id": str(run.id),
+                        "inference": self.inference_mode,
+                        "kind": kind,
+                        **({"route_reason": route_reason} if route_reason else {}),
+                    },
                 )
         if created and self._dispatcher is not None:
             self._dispatcher.dispatch(run.id, tenant_id)

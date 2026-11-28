@@ -83,8 +83,8 @@ test("a delayed report B finishing after A is selected does not change the draft
   const signal = new AbortController().signal;
 
   // B is asked first and keeps streaming; A is asked next and finishes.
-  const turnB = executeChatTurn("tok", "report B", "report", signal, () => {}, published);
-  await executeChatTurn("tok", "report A", "report", signal, () => {}, published);
+  const turnB = executeChatTurn("tok", "report B", null, signal, () => {}, published);
+  await executeChatTurn("tok", "report A", null, signal, () => {}, published);
   assert.equal(s.get().source?.runId, "run-A");
 
   // The user clicks "Email this report for approval" under A.
@@ -109,8 +109,8 @@ test("without an explicit choice the newest finished report is the source", asyn
   const s = store();
   const published = (runId: string, title: string) => s.dispatch({ type: "published", runId, title });
   const signal = new AbortController().signal;
-  const turnB = executeChatTurn("tok", "report B", "report", signal, () => {}, published);
-  await executeChatTurn("tok", "report A", "report", signal, () => {}, published);
+  const turnB = executeChatTurn("tok", "report B", null, signal, () => {}, published);
+  await executeChatTurn("tok", "report A", null, signal, () => {}, published);
   api.releaseB();
   await turnB;
   assert.equal(s.get().source?.runId, "run-B");
@@ -133,7 +133,7 @@ test("an aborted turn never publishes", async () => {
   const s = store();
   const controller = new AbortController();
   controller.abort();
-  await executeChatTurn("tok", "report A", "report", controller.signal, () => {}, (runId, title) =>
+  await executeChatTurn("tok", "report A", null, controller.signal, () => {}, (runId, title) =>
     s.dispatch({ type: "published", runId, title }),
   );
   assert.equal(s.get().source, null);

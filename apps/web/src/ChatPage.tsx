@@ -4,18 +4,33 @@
  * the Files, Approvals, Activity and Settings views host the existing panels, passed in
  * by App and kept mounted so their state survives navigation.
  *
- * Every question is one POST /api/v1/chat run with the signed-in user's token; the server
- * checks access, verifies the answer and re-checks access whenever a citation is opened.
- * Chat history lives in memory only and goes away with this component on sign-out.
+ * Every question is one POST /api/v1/chat with the signed-in user's token. There is no
+ * source picker: the server's orchestrator chooses the handler (General, Documents, Sales
+ * report, Contracts or Code) and each answer shows which one replied. The server checks
+ * access, verifies the answer and re-checks access whenever a citation is opened.
+ *
+ * Chats are saved by the server for this employee only (M8) and listed under Recents after
+ * a reload or a new sign-in. Reopening a chat replays each answer from its run, so access
+ * is checked again; Delete removes a chat after confirmation.
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api, ApiError, modelFailureText, type Identity, type ModelStatus } from "./api";
 import { statusButton, type CheckOutcome } from "./modelStatusView";
-import { activeConversation, chatReducer, INITIAL_CHAT, type Turn } from "./chatState";
-import { cancelReport, type AskMode, type Citation } from "./reports";
-import { executeChatTurn } from "./runStream";
-import { citationKind, citationNumber, EMPTY_RUN, newRequestId, runKind, type RunView } from "./runView";
+import { activeConversation, chatReducer, INITIAL_CHAT, type Conversation, type Turn } from "./chatState";
+import { history } from "./history";
+import { cancelReport, type Citation } from "./reports";
+import { executeChatTurn, replayRun } from "./runStream";
+import {
+  citationKind,
+  citationNumber,
+  clarifyView,
+  EMPTY_RUN,
+  HANDLER_LABELS,
+  newRequestId,
+  runKind,
+  type RunView,
+} from "./runView";
 import { EvidenceDetail, PassageDetail } from "./sourceViews";
 import { GENERAL_LABEL, LEGAL_LABEL, verificationText } from "./verification";
 
@@ -23,17 +38,8 @@ export type ShellView = "chat" | "files" | "approvals" | "activity" | "settings"
 
 const EMPTY_TURNS: Turn[] = [];
 
-const MODE_LABELS: Record<AskMode, string> = {
-  auto: "Automatic",
-  documents: "Documents you can access",
-  report: "Sales report (SQL)",
-  legal: "Contracts (clauses and expiry)",
-  code: "Code repositories",
-  general: "General (no company data)",
-};
-
 const INDEPENDENT_NOTE =
-  "Each question is answered on its own: earlier messages in this chat are not sent to the assistant.";
+  "The assistant picks the right source for each question. Chats are saved to your account; each question is answered on its own (earlier messages are not sent to the assistant).";
 
 // The prototype's icon set (stroke paths, 24×24).
 const ICONS = {
@@ -48,6 +54,7 @@ const ICONS = {
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   panel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  trash: '<path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   up: '<path d="M12 19V5M5 12l7-7 7 7"/>',
   theme: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/>',
@@ -121,7 +128,9 @@ function verifyPills(view: RunView, served: ModelStatus | null): { text: string;
   if (view.done?.outcome === "published" && sources) {
     pills.push({ text: `${sources} source${sources === 1 ? "" : "s"} allowed`, warn: false });
   }
-  if (view.done?.abstention) pills.push({ text: "No sources used", warn: true });
+  if (view.done?.abstention && view.done.abstention.code !== "clarification_needed") {
+    pills.push({ text: "No sources used", warn: true });
+  }
   if (view.fakeLabel) pills.push({ text: "FAKE inference — not a model", warn: true });
   if (view.done?.inference === "gateway" && view.done.outcome === "published") {
     const m = v?.model ?? (served?.verified ? { name: served.chat?.model, revision: served.chat?.revision } : null);
@@ -155,9 +164,6 @@ function Composer({
   disabled,
   onSubmit,
   onUpload,
-  mode,
-  modes,
-  onMode,
 }: {
   id: string;
   placeholder: string;
@@ -166,9 +172,6 @@ function Composer({
   disabled: boolean;
   onSubmit: () => void;
   onUpload: () => void;
-  mode: AskMode;
-  modes: AskMode[];
-  onMode: (m: AskMode) => void;
 }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -191,15 +194,6 @@ function Composer({
           <Svg k="plus" />
         </button>
         <span className="sp" />
-        <label className="srcsel" title="Where the answer comes from">
-          <select id={`${id}-source`} aria-label="Source" value={mode} onChange={(e) => onMode(e.target.value as AskMode)}>
-            {modes.map((m) => (
-              <option key={m} value={m}>
-                {MODE_LABELS[m]}
-              </option>
-            ))}
-          </select>
-        </label>
         <button type="submit" className="send" aria-label="Ask" disabled={disabled || !value.trim()}>
           <Svg k="up" />
         </button>
@@ -253,11 +247,18 @@ function Answer({
   ));
   const names = [...new Map(view.citations.map((c) => [citationName(c), c])).keys()];
   const finished = kind !== "running";
+  const handler = view.handler ?? view.done?.handler ?? null;
+  const handlerLabel = view.handlerLabel ?? (handler ? HANDLER_LABELS[handler] : null) ?? null;
 
   return (
     <div className="a">
       <span className="badge">{badge}</span>
       <div className="body">
+        {handlerLabel ? (
+          <span className={`chip handler h-${handler ?? "unknown"}`} title="Which part of the assistant answered">
+            {handlerLabel}
+          </span>
+        ) : null}
         <div className="steps" aria-live="polite">
           {view.steps.map((s) => (
             <span key={s.step} className={`step${s.state === "retrying" ? " warn" : ""}`}>
@@ -284,6 +285,7 @@ function Answer({
             {view.error?.code ? ` (${view.error.code}${view.error.detail ? ` · ${view.error.detail}` : ""})` : ""}
           </div>
         ) : null}
+        {kind === "clarify" && view.done?.abstention ? <p className="clarify">{view.done.abstention.message}</p> : null}
         {kind === "refusal" && view.done?.abstention ? <p className="refuse">{view.done.abstention.message}</p> : null}
         {kind === "empty" ? <p className="note">The run ended without an answer ({view.done?.outcome}).</p> : null}
 
@@ -416,7 +418,6 @@ function SourceCard({
 export function ChatPage({
   token,
   identity,
-  packs,
   modelLabel,
   canEmail,
   showActivity,
@@ -429,7 +430,6 @@ export function ChatPage({
 }: {
   token: string;
   identity: Identity;
-  packs: string[] | null;
   /** e.g. "FAKE model" when the server runs the labelled development double. */
   modelLabel: string | null;
   canEmail: boolean;
@@ -444,7 +444,9 @@ export function ChatPage({
 }) {
   const [state, dispatch] = useReducer(chatReducer, INITIAL_CHAT);
   const [draft, setDraft] = useState("");
-  const [mode, setMode] = useState<AskMode>("auto");
+  // Recents: the server's list of this employee's chats, and the row awaiting a Delete confirmation.
+  const [historyNote, setHistoryNote] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
   const [open, setOpen] = useState(false); // narrow screens: rail + sidebar drawer
   const [menuOpen, setMenuOpen] = useState(false);
   const [search, setSearch] = useState<string | null>(null);
@@ -501,13 +503,24 @@ export function ChatPage({
     return () => live.forEach((c) => c.abort());
   }, []);
 
-  const has = (pack: string) => packs === null || packs.includes(pack);
-  const modes: AskMode[] = ["auto"];
-  if (has("documents")) modes.push("documents");
-  if (has("sales_reports")) modes.push("report");
-  if (packs?.includes("legal")) modes.push("legal");
-  if (packs?.includes("code")) modes.push("code");
-  if (packs?.includes("general")) modes.push("general");
+  // Saved chats: listed once per sign-in (the token changes on every sign-in).
+  useEffect(() => {
+    let live = true;
+    history.list(token).then(
+      (items) => {
+        if (!live) return;
+        setHistoryNote(null);
+        dispatch({
+          type: "saved",
+          items: items.map((c) => ({ serverId: c.conversation_id, title: c.title })),
+        });
+      },
+      () => live && setHistoryNote("Saved chats could not be loaded."),
+    );
+    return () => {
+      live = false;
+    };
+  }, [token]);
 
   const conversation = activeConversation(state);
   const turns = conversation?.turns ?? EMPTY_TURNS;
@@ -525,30 +538,101 @@ export function ChatPage({
   };
 
   const ask = useCallback(
-    (question: string, askMode: AskMode) => {
+    (question: string) => {
       const text = question.trim();
       if (!text) return;
-      const conversationId = state.activeId ?? `c-${newRequestId()}`;
+      const current = activeConversation(state);
+      const conversationId = current?.id ?? `local-${newRequestId()}`;
       const turnId = `t-${newRequestId()}`;
-      dispatch({ type: "ask", conversationId, turnId, question: text, mode: askMode, view: EMPTY_RUN });
+      dispatch({ type: "ask", conversationId, turnId, question: text, view: EMPTY_RUN });
       setDraft("");
       const controller = new AbortController();
       controllers.current.set(turnId, controller);
       void executeChatTurn(
         token,
         text,
-        askMode,
+        current?.serverId ?? null,
         controller.signal,
         (next) => dispatch({ type: "view", conversationId, turnId, view: next }),
         onReportPublished,
+        (start) => {
+          if (start.conversationId) dispatch({ type: "bind", conversationId, serverId: start.conversationId });
+        },
       ).then((failure) => {
         controllers.current.delete(turnId);
         if (controller.signal.aborted) return;
         dispatch({ type: "finish", conversationId, turnId, failure });
       });
     },
-    [state.activeId, token, onReportPublished],
+    [state, token, onReportPublished],
   );
+
+  // Reopen a saved chat: fetch its turns, then replay each answer from its run (the server
+  // re-checks current access while replaying). A clarifying question has no run.
+  const openSaved = useCallback(
+    (conversation: Conversation) => {
+      if (conversation.loaded || !conversation.serverId) return;
+      const conversationId = conversation.id;
+      history.get(token, conversation.serverId).then(
+        (detail) => {
+          const turns: Turn[] = detail.turns.map((t) => ({
+            id: `s-${t.turn_id}`,
+            question: t.question,
+            view: t.run_id
+              ? { ...EMPTY_RUN, runId: t.run_id, handler: t.handler, handlerLabel: t.handler_label }
+              : clarifyView(t.reply ?? ""),
+            failure: null,
+            running: Boolean(t.run_id),
+          }));
+          dispatch({ type: "opened", conversationId, turns });
+          for (const t of turns) {
+            const runId = t.view.runId;
+            if (!runId) continue;
+            const controller = new AbortController();
+            controllers.current.set(t.id, controller);
+            void replayRun(token, runId, controller.signal, (next) =>
+              dispatch({
+                type: "view",
+                conversationId,
+                turnId: t.id,
+                view: { ...next, handler: next.handler ?? t.view.handler, handlerLabel: next.handlerLabel ?? t.view.handlerLabel },
+              }),
+            ).then((failure) => {
+              controllers.current.delete(t.id);
+              if (controller.signal.aborted) return;
+              dispatch({ type: "finish", conversationId, turnId: t.id, failure });
+            });
+          }
+        },
+        (err: unknown) => {
+          if (err instanceof ApiError && err.status === 404) {
+            dispatch({ type: "removed", conversationId });
+            setHistoryNote("That chat is no longer available.");
+          } else {
+            setHistoryNote("The chat could not be opened. Try again.");
+          }
+        },
+      );
+    },
+    [token],
+  );
+
+  const removeSaved = async (conversation: Conversation) => {
+    setConfirming(null);
+    if (conversation.serverId) {
+      try {
+        await history.remove(token, conversation.serverId);
+      } catch (err) {
+        if (!(err instanceof ApiError && err.status === 404)) {
+          setHistoryNote("The chat could not be deleted. Try again.");
+          return;
+        }
+      }
+    }
+    conversation.turns.forEach((t) => controllers.current.get(t.id)?.abort());
+    dispatch({ type: "removed", conversationId: conversation.id });
+    setHistoryNote(null);
+  };
 
   const cancel = async (turn: Turn) => {
     if (!turn.view.runId) return;
@@ -670,28 +754,53 @@ export function ChatPage({
             New chat
           </button>
           <div className="label">Recents</div>
+          {historyNote ? <p className="side-empty" role="status">{historyNote}</p> : null}
           {recents.length === 0 ? (
             <p className="side-empty">
-              {state.conversations.length === 0
-                ? "Your chats appear here until you sign out."
-                : "No chats match."}
+              {state.conversations.length === 0 ? "Your saved chats appear here." : "No chats match."}
             </p>
           ) : (
-            recents.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                className="row"
-                aria-current={view === "chat" && c.id === state.activeId ? "page" : undefined}
-                onClick={() => {
-                  dispatch({ type: "select", id: c.id });
-                  setFocus(null);
-                  go("chat");
-                }}
-              >
-                <span className="t">{c.title}</span>
-              </button>
-            ))
+            recents.map((c) =>
+              confirming === c.id ? (
+                <div key={c.id} className="row confirm" role="group" aria-label={`Delete chat: ${c.title}`}>
+                  <span className="t">Delete this chat?</span>
+                  <span className="sp" />
+                  <button type="button" className="btn small danger" onClick={() => void removeSaved(c)}>
+                    Delete
+                  </button>
+                  <button type="button" className="btn small" onClick={() => setConfirming(null)}>
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div key={c.id} className="recent">
+                  <button
+                    type="button"
+                    className="row"
+                    aria-current={view === "chat" && c.id === state.activeId ? "page" : undefined}
+                    disabled={!c.serverId && c.turns.some((t) => t.running)}
+                    onClick={() => {
+                      dispatch({ type: "select", id: c.id });
+                      openSaved(c);
+                      setFocus(null);
+                      go("chat");
+                    }}
+                  >
+                    <span className="t">{c.title}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="iconbtn del"
+                    aria-label={`Delete chat: ${c.title}`}
+                    title="Delete chat"
+                    disabled={!c.serverId}
+                    onClick={() => setConfirming(c.id)}
+                  >
+                    <Svg k="trash" size={15} />
+                  </button>
+                </div>
+              ),
+            )
           )}
         </div>
       </aside>
@@ -750,11 +859,8 @@ export function ChatPage({
               value={draft}
               onChange={setDraft}
               disabled={false}
-              onSubmit={() => ask(draft, mode)}
+              onSubmit={() => ask(draft)}
               onUpload={() => go("files")}
-              mode={mode}
-              modes={modes}
-              onMode={setMode}
             />
             <p className="asknote">{INDEPENDENT_NOTE}</p>
           </section>
@@ -767,7 +873,6 @@ export function ChatPage({
                 <div key={turn.id} style={{ display: "contents" }}>
                   <div className="u">
                     {turn.question}
-                    {turn.mode !== "auto" ? <small>{MODE_LABELS[turn.mode]}</small> : null}
                   </div>
                   <Answer
                     turn={turn}
@@ -793,11 +898,8 @@ export function ChatPage({
                 value={draft}
                 onChange={setDraft}
                 disabled={anyRunning}
-                onSubmit={() => ask(draft, mode)}
+                onSubmit={() => ask(draft)}
                 onUpload={() => go("files")}
-                mode={mode}
-                modes={modes}
-                onMode={setMode}
               />
               <p className="asknote">{INDEPENDENT_NOTE}</p>
             </div>
