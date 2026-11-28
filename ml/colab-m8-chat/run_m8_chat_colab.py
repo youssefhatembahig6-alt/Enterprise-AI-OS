@@ -17,9 +17,18 @@ Everything runs inside the runtime and talks over 127.0.0.1; no tunnel is opened
             and a fresh open-ended prompt in General mode
   bundle    /content/m8-chat-evidence-<stamp>.zip after a secret scan
 
+Private preview (``preview`` step, notebook cell 7): the same app, built with a relative
+API base and served with its API on ONE loopback port (127.0.0.1:13100, preview_proxy.py),
+which the notebook shows only to its owner with Colab's serve_kernel_port_as_window. The
+step reuses the running services and API (or starts them), checks the status badge, a
+fresh General question and a fresh Documents question with an opened citation in
+headless Chromium on that same origin, and writes
+/content/m8-chat-preview-evidence-<stamp>.zip.
+
     python run_m8_chat_colab.py vllm-env   # once per runtime (M1 pinned vLLM venv)
     # launch the gateway (notebook cell 3)
     python run_m8_chat_colab.py all
+    python run_m8_chat_colab.py preview    # private same-origin preview + its browser check
 """
 
 from __future__ import annotations
@@ -42,6 +51,22 @@ sys.path.insert(0, str(HERE.parent / "colab-m3"))
 import run_m3_colab as m3  # noqa: E402
 
 WEB = "http://127.0.0.1:13000"
+PREVIEW_PORT = 13100
+PREVIEW = f"http://127.0.0.1:{PREVIEW_PORT}"
+# Fresh wording per preview run (picked by the UTC minute), each answerable from the
+# synthetic annual-leave policy; and open-ended General prompts.
+DOCUMENTS_QUESTIONS = (
+    "How many unused leave days can I carry into next year, and when do they expire?",
+    "What is the annual leave allowance for staff in Egypt after ten years of service?",
+    "Who do I contact in HR about family leave?",
+    "Are public holidays that fall during my approved leave deducted from my allowance?",
+)
+GENERAL_QUESTIONS = (
+    "Give me three tips for writing a clear project status email.",
+    "Explain in plain words what a confusion matrix is.",
+    "Suggest a simple agenda for a 30-minute weekly team retrospective.",
+    "What are two common causes of slow SQL queries and how can I spot them?",
+)
 NODE_VERSION = "v20.19.2"
 NODE_DIR = Path(f"/content/node-{NODE_VERSION}-linux-x64")
 PW_VENV = Path("/content/venv-playwright-uv")
@@ -187,16 +212,18 @@ def playwright() -> Path:
     return py
 
 
-def ui_check(py: Path) -> dict[str, object]:
-    out = m3.OUT / "ui"
+def ui_check(
+    py: Path, web: str = WEB, api: str = m3.API, name: str = "ui", extra: tuple[str, ...] = ()
+) -> dict[str, object]:
+    out = m3.OUT / name
     done = subprocess.run(  # noqa: S603
         [
             str(py),
             str(m3.REPO / "scripts" / "m8_chat_ui_check.py"),
             "--web",
-            WEB,
+            web,
             "--api",
-            m3.API,
+            api,
             "--credentials",
             str(m3.SECRETS / "dev-credentials.json"),
             "--out",
@@ -205,20 +232,21 @@ def ui_check(py: Path) -> dict[str, object]:
             "gateway",
             "--timeout",
             "420",
+            *extra,
         ],
         cwd=m3.REPO,
         text=True,
         capture_output=True,
         check=False,
     )
-    (m3.OUT / "ui-check-stdout.txt").write_text(done.stdout + "\n" + done.stderr)
+    (m3.OUT / f"{name}-check-stdout.txt").write_text(done.stdout + "\n" + done.stderr)
     print(done.stdout[-4000:], done.stderr[-2000:], sep="\n")
-    STEPS["ui_check_exit"] = done.returncode
+    STEPS[f"{name}_check_exit"] = done.returncode
     evidence = out / "m8-chat-ui-check.json"
     return json.loads(evidence.read_text()) if evidence.exists() else {"pass": False}
 
 
-def bundle() -> Path:
+def bundle(name: str = "m8-chat-evidence") -> Path:
     versions = {
         "application_commit": m3.sh(f"git -C {m3.REPO} rev-parse HEAD").stdout.strip(),
         "worktree_clean": m3.sh(f"git -C {m3.REPO} status --porcelain").stdout.strip() == "",
@@ -262,12 +290,91 @@ def bundle() -> Path:
     if leaks:
         raise SystemExit(f"secret scan failed; not bundling: {leaks}")
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    target = Path(f"/content/m8-chat-evidence-{stamp}.zip")
+    target = Path(f"/content/{name}-{stamp}.zip")
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
         for f in files:
-            zf.write(f, f"m8-chat-evidence-{stamp}/{f.relative_to(m3.OUT)}")
+            zf.write(f, f"{name}-{stamp}/{f.relative_to(m3.OUT)}")
     print(f"secret scan clean; wrote {target}")
     return target
+
+
+def api_up() -> bool:
+    try:
+        m3.get_json(f"{m3.API}/health")
+    except OSError:
+        return False
+    return True
+
+
+def build_preview() -> Path:
+    """The UI with an empty VITE_API_BASE_URL: it calls /api/... on its own origin."""
+
+    bin_dir = node()
+    web_env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "VITE_API_BASE_URL": ""}
+    if not (m3.REPO / "node_modules").exists():
+        m3.sh("npm ci --no-audit --no-fund", "preview.log", env=web_env, cwd=m3.REPO)
+    m3.sh(
+        "npm run build -w @eaios/web -- --outDir dist-preview",
+        "preview.log",
+        env=web_env,
+        cwd=m3.REPO,
+    )
+    return m3.REPO / "apps" / "web" / "dist-preview"
+
+
+def serve_preview(dist: Path) -> None:
+    try:
+        m3.get_json(f"{PREVIEW}/health")
+        return  # already serving (re-run of the cell)
+    except OSError:
+        pass
+    subprocess.Popen(  # noqa: S603
+        [
+            sys.executable,
+            str(HERE / "preview_proxy.py"),
+            "--dist",
+            str(dist),
+            "--port",
+            str(PREVIEW_PORT),
+            "--api",
+            m3.API.removeprefix("http://"),
+        ],
+        stdout=open(m3.LOGS / "preview-proxy.log", "a"),  # noqa: SIM115 - child owns the log
+        stderr=subprocess.STDOUT,
+    )
+    m3.wait_http(f"{PREVIEW}/health")
+
+
+def preview() -> None:
+    """Private same-origin preview on 127.0.0.1:13100 and its browser check."""
+
+    if not api_up():  # fresh runtime: same setup as ``all`` (minus the 13000 test build)
+        m3.services()
+        m3.backend()
+        start_api()
+        seed_corpus()
+    serve_preview(build_preview())
+    py = playwright()
+    warm_gateway()
+    minute = int(datetime.now(UTC).timestamp() // 60)
+    documents = DOCUMENTS_QUESTIONS[minute % len(DOCUMENTS_QUESTIONS)]
+    general = GENERAL_QUESTIONS[minute % len(GENERAL_QUESTIONS)]
+    result = ui_check(
+        py,
+        web=PREVIEW,
+        api=PREVIEW,
+        name="preview",
+        extra=("--documents-question", documents, "--general-question", general),
+    )
+    STEPS["preview"] = {
+        "url": PREVIEW,
+        "documents_question": documents,
+        "general_question": general,
+    }
+    bundle("m8-chat-preview-evidence")
+    if not result.get("pass"):
+        raise SystemExit("preview check FAILED; see preview/m8-chat-ui-check.json in the bundle")
+    print(f"preview check PASSED on the real gateway; serving {PREVIEW} (loopback only)")
 
 
 def main() -> None:
@@ -280,6 +387,9 @@ def main() -> None:
     Path("/content/m3-run/logs").mkdir(parents=True, exist_ok=True)  # M3 helper's Qdrant log
     health = m3.get_json(f"{m3.GATEWAY}/health")
     (m3.OUT / "gateway-health.json").write_text(json.dumps(health, indent=2) + "\n")
+    if step == "preview":
+        preview()
+        return
     m3.services()
     m3.backend()
     start_api()

@@ -229,10 +229,24 @@ PLAYWRIGHT_BROWSERS_PATH=<browsers> <venv>/bin/python scripts/m8_chat_ui_check.p
 4. **After Colab restarts:** run cells 1–3 and 6 again (cell 3 reuses the `EAIOS_GATEWAY_TOKEN` Secret), then `connect --url <new URL>` again. No reindex is needed while the embedding model stays the same. Click the status button to recheck.
 5. **Back to the fake model:** run `python3 scripts/m8_connect_gateway.py disconnect`. Documents re-embedded with BGE-M3 are then not searchable with the fake model until `reindex` runs again.
 
+**Private chat preview in Colab (no tunnel).** This is how to type your own questions on the real Qwen today, without a laptop connection:
+1. Open [`ml/colab-m8-chat/m8_real_model_chat.ipynb` in Colab](https://colab.research.google.com/github/youssefhatembahig6-alt/Enterprise-AI-OS/blob/feature/m8-real-model-chat/ml/colab-m8-chat/m8_real_model_chat.ipynb) and choose **Runtime → Change runtime type → T4 GPU**.
+2. Run cells 1–3 (clone, vLLM environment, gateway). Cell 4, the full browser test, is optional.
+3. Run **cell 7**. It:
+   - builds the UI with a relative API base;
+   - starts `ml/colab-m8-chat/preview_proxy.py`, which serves the UI and the API together on 127.0.0.1:13100 (loopback only);
+   - starts the services and API itself if cell 4 did not run, and warms the gateway;
+   - checks in headless Chromium on that origin: the badge **Connected · Qwen3-8B-AWQ**, a fresh General question (reply, no citations), a fresh annual-leave question in Documents (cited answer whose citation opens the verified passage), and the sales-reader refusal. For both answers, the run records must show `gateway`, the pinned revision and an actual model call.
+
+   It then prints the sign-in (organization `niletech`, `finance.reader@niletech.example` and that runtime's synthetic password) and opens the port with `serve_kernel_port_as_window`, visible only in your Colab session.
+4. Sign in in that window, choose **Documents you can access** or **General (no company data)** in the composer, and ask your own questions.
+5. **Cell 8** downloads `m8-chat-preview-evidence-<UTC stamp>.zip`. Results go in [`docs/evidence/m8-chat/README.md`](evidence/m8-chat/README.md).
+6. **After a runtime restart or disconnect:** run cells 1–3 and 7 again. The database, documents and password are recreated for that runtime.
+
 **Still required: the hosting decision.** The Colab browser test (cells 1–5) needs no tunnel: app, browser and gateway share one runtime on loopback. Interactive use from the laptop needs a URL that reaches the gateway, and that is a policy decision, not a technical one. Colab's FAQ lists *"connecting to remote proxies"* among the activities restricted on **all** managed runtimes, paid included. It restricts *"web service offerings not related to interactive compute with Colab"*. On free runtimes without a compute-unit balance, it also restricts *"bypassing the notebook UI to interact primarily via a web UI"*. It does not name tunnels or ngrok. The project roadmap already says a successful tunnel test does not settle acceptable use, and that changing hosts needs an explicit project decision. The options:
 - **Accept a tunnel from Colab.** The owner judges it permitted for their plan (for example Colab Pro or Pay As You Go with a positive compute-unit balance) and records that decision. Then use cell 6 and the steps above.
 - **Host the gateway elsewhere:** an approved GPU host, Colab Enterprise, a GCP VM, or a local runtime you control. Then run `connect --url https://<that host>` (the gateway code in `ml/model-gateway/` is the same).
-- **Colab's own port window** (`google.colab.output.serve_kernel_port_as_window`), with UI and API served on one origin inside the runtime. It is visible only in the owner's notebook session; it is not implemented here.
+- **Colab's own port window:** implemented as the **private chat preview** below. It needs no tunnel and no decision about remote proxies, but it is reachable only from the notebook owner's Colab session.
 
 ## Restart
 

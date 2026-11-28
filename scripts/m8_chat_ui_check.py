@@ -177,6 +177,10 @@ def main() -> int:  # noqa: PLR0915
     ap.add_argument("--out", required=True)
     ap.add_argument("--expect-inference", choices=["gateway", "fake"], required=True)
     ap.add_argument("--timeout", type=float, default=300.0, help="per question (s)")
+    ap.add_argument(
+        "--documents-question", default=LEAVE_Q, help="annual-leave question (fresh wording)"
+    )
+    ap.add_argument("--general-question", default=GENERAL_Q, help="open-ended General question")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -206,7 +210,26 @@ def main() -> int:  # noqa: PLR0915
             # 1. documents: newly phrased leave question, cited, passage opens.
             ui.sign_in(FINANCE, creds[FINANCE])
             result["model_chip"] = page.locator(".scope .chip").all_inner_texts()
-            leave = ui.ask(LEAVE_Q, "Documents you can access", args.timeout)
+            # 0. the header's model status button: Connected only after the backend's
+            # authenticated readiness check of the pinned Qwen chat server.
+            want = (
+                "Connected · Qwen3-8B-AWQ" if args.expect_inference == "gateway" else "FAKE model"
+            )
+            badge = page.locator("button.chip.status")
+            label = ""
+            for _ in range(120):
+                label = badge.inner_text().strip()
+                if label == want:
+                    break
+                time.sleep(0.5)
+            result["checks"]["status_badge"] = {
+                "label": label,
+                "title": badge.get_attribute("title"),
+                "screenshot": ui.shot("0-status-badge"),
+                "problems": [] if label == want else [f"badge shows {label!r}, expected {want!r}"],
+                "pass": label == want,
+            }
+            leave = ui.ask(args.documents_question, "Documents you can access", args.timeout)
             opened: dict[str, Any] = {}
             if leave["citations"]:
                 page.locator(".a").last.locator("button.cite").first.click()
@@ -227,7 +250,7 @@ def main() -> int:  # noqa: PLR0915
             if not any(code == 200 for _, code in ui.citation_calls):
                 problems.append("no 200 from the citation endpoint")
             result["checks"]["documents_leave"] = {
-                "question": LEAVE_Q,
+                "question": args.documents_question,
                 "ui": leave,
                 "opened": opened,
                 "citation_requests": ui.citation_calls[:],
@@ -237,7 +260,7 @@ def main() -> int:  # noqa: PLR0915
             }
             # 3. general: fresh open-ended prompt.
             page.get_by_role("button", name="New chat").click()
-            gen = ui.ask(GENERAL_Q, "General (no company data)", args.timeout)
+            gen = ui.ask(args.general_question, "General (no company data)", args.timeout)
             gen_rec = run_record(args.api, tokens[FINANCE], gen["run_id"])
             gen["screenshot"] = ui.shot("3-general")
             problems = real(gen_rec, args.expect_inference, "general")
@@ -260,7 +283,7 @@ def main() -> int:  # noqa: PLR0915
                 problems.append("general reply carries a FAKE label")
             gen["reply"] = reply
             result["checks"]["general"] = {
-                "question": GENERAL_Q,
+                "question": args.general_question,
                 "ui": gen,
                 "run": gen_rec,
                 "problems": problems,
@@ -292,7 +315,7 @@ def main() -> int:  # noqa: PLR0915
             browser.close()
     result["finished_at"] = datetime.now(UTC).isoformat()
     result["pass"] = (
-        all(c["pass"] for c in result["checks"].values()) and len(result["checks"]) == 3
+        all(c["pass"] for c in result["checks"].values()) and len(result["checks"]) == 4
     )
     (out / "m8-chat-ui-check.json").write_text(
         json.dumps(result, indent=2, ensure_ascii=False) + "\n"
