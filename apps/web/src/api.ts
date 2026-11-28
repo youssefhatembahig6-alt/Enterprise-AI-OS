@@ -77,6 +77,7 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
 export interface ModelStatus {
   mode: "fake" | "gateway";
   verified: boolean;
+  authenticated?: boolean;
   chat: { model: string | null; revision: string | null } | null;
   engine: Record<string, unknown> | null;
   error: string | null;
@@ -113,7 +114,8 @@ export const api = {
       body: JSON.stringify({ tenant, email, password }),
     }),
   me: (token: string) => request<Identity>("/api/v1/me", {}, token),
-  modelStatus: (token: string) => request<ModelStatus>("/api/v1/model/status", {}, token),
+  modelStatus: (token: string, refresh = false) =>
+    request<ModelStatus>(`/api/v1/model/status${refresh ? "?refresh=true" : ""}`, {}, token),
   logout: (token: string) => request<undefined>("/api/v1/auth/logout", { method: "POST" }, token),
   live: () => request<{ status: string }>("/health"),
   ready: async (): Promise<Readiness> => {

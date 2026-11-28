@@ -74,6 +74,7 @@ class Gateway:
     health_status: int = 200
     health_body: dict[str, Any] = field(default_factory=health)
     reply: str = REPLY
+    reject_token: bool = False
     chats: list[dict[str, Any]] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -81,6 +82,13 @@ class Gateway:
         assert request.headers.get("authorization") == f"Bearer {TOKEN}"
         if request.url.path.endswith("/health"):
             return httpx.Response(self.health_status, json=self.health_body)
+        if request.url.path.endswith("/embeddings"):
+            if self.reject_token:
+                return httpx.Response(401, json={"error": "unauthorized"})
+            body = json.loads(request.content)
+            return httpx.Response(
+                200, json={"data": [{"embedding": [0.0] * 1024} for _ in body["input"]]}
+            )
         if request.url.path.endswith("/chat/completions"):
             with self.lock:
                 self.chats.append(json.loads(request.content))
@@ -89,6 +97,7 @@ class Gateway:
 
     def reset(self) -> None:
         self.health_status, self.health_body, self.reply = 200, health(), REPLY
+        self.reject_token = False
         self.chats.clear()
 
 
@@ -214,6 +223,7 @@ def test_documents_check_the_served_model_too(m8: M8) -> None:
 def test_model_status_reports_the_verified_served_model(m8: M8) -> None:
     status = m8.status()
     assert status["verified"] is True
+    assert status["authenticated"] is True
     assert status["chat"] == {"model": CHAT, "revision": REVISION}
     assert status["engine"]["max_model_len"] == 4096
     assert status["error"] is None
@@ -248,3 +258,20 @@ def test_general_reply_is_owner_only_and_never_an_email_source(m8: M8) -> None:
     )
     assert r.status_code in (403, 404, 422), r.text
     assert r.status_code != 201
+
+
+def test_status_requires_authenticated_gateway_access_and_refresh_skips_cache(m8: M8) -> None:
+    token = m8.token(FINANCE)
+    m8.client.app.state.model_status_cache.value = None  # type: ignore[attr-defined]
+    ok = m8.client.get("/api/v1/model/status", headers=auth(token)).json()
+    assert (ok["verified"], ok["authenticated"]) == (True, True)
+    # /health still reports the pinned model, but the gateway now rejects the token.
+    m8.gateway.reject_token = True
+    cached = m8.client.get("/api/v1/model/status", headers=auth(token)).json()
+    assert cached["verified"] is True  # within the 15 s cache
+    fresh = m8.client.get("/api/v1/model/status?refresh=true", headers=auth(token)).json()
+    assert (fresh["verified"], fresh["authenticated"], fresh["error"]) == (
+        False,
+        False,
+        "auth_failed",
+    )

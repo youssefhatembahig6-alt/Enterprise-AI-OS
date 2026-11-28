@@ -44,13 +44,54 @@ import run_m3_colab as m3  # noqa: E402
 WEB = "http://127.0.0.1:13000"
 NODE_VERSION = "v20.19.2"
 NODE_DIR = Path(f"/content/node-{NODE_VERSION}-linux-x64")
-PW_VENV = Path("/content/venv-playwright")
+PW_VENV = Path("/content/venv-playwright-uv")
 PLAYWRIGHT = "1.55.0"
 STEPS: dict[str, object] = {}
 
 
+# T4 run of 27 Nov (var/m7-acceptance/2026-11-28-real-chat-ui.md): with the default 60 s read
+# timeout and 240 s deadline the first Documents and General answers on a cold T4 ended
+# with model_unavailable/timeout; the passing retry used these values plus one warm-up call.
+READ_TIMEOUT = "180"
+CALL_DEADLINE = "360"
+
+
 def env(**extra: str) -> dict[str, str]:
-    return m3.app_env(CORS_ALLOWED_ORIGINS=WEB, USE_DOCLING="false", **extra)
+    return m3.app_env(
+        CORS_ALLOWED_ORIGINS=WEB,
+        USE_DOCLING="false",
+        MODEL_READ_TIMEOUT_SECONDS=READ_TIMEOUT,
+        MODEL_CALL_DEADLINE_SECONDS=CALL_DEADLINE,
+        **extra,
+    )
+
+
+def warm_gateway() -> None:
+    """One short synthetic chat call so the first browser question does not pay vLLM's
+    cold-start (CUDA graphs, caches). Its output is discarded."""
+
+    body = json.dumps(
+        {
+            "model": "Qwen/Qwen3-8B-AWQ",
+            "messages": [{"role": "user", "content": "Reply with the single word: ready"}],
+            "max_tokens": 8,
+            "temperature": 0,
+            "stream": True,
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+    ).encode()
+    req = urllib.request.Request(  # noqa: S310 - loopback gateway
+        f"{m3.GATEWAY}/v1/chat/completions",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {os.environ['GATEWAY_TOKEN']}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=600) as resp:  # noqa: S310
+        resp.read()
+    STEPS["gateway_warmed"] = True
 
 
 def start_api() -> subprocess.Popen[bytes]:
@@ -130,10 +171,15 @@ def serve_web() -> None:
 
 
 def playwright() -> Path:
+    """Pinned Playwright in a uv venv. Colab's ``python3 -m venv`` fails at ensurepip
+    (T4 run of 27 Nov), so the venv is made with uv from the vLLM environment's Python."""
+
     py = PW_VENV / "bin" / "python"
     if not py.exists():
-        m3.sh(f"python3 -m venv {PW_VENV}", "playwright.log")
-        m3.sh(f"{py} -m pip install -q playwright=={PLAYWRIGHT}", "playwright.log")
+        base = Path("/content/vllm-env/bin/python")
+        interpreter = str(base) if base.exists() else "3.12"
+        m3.sh(f"uv venv --python {interpreter} {PW_VENV}", "playwright.log")
+        m3.sh(f"uv pip install --python {py} playwright=={PLAYWRIGHT}", "playwright.log")
         m3.sh(
             f"{PW_VENV}/bin/playwright install --with-deps chromium-headless-shell",
             "playwright.log",
@@ -187,6 +233,8 @@ def bundle() -> Path:
             "MODEL_MODE": "gateway",
             "REPORT_DISPATCH": "inline",
             "USE_DOCLING": "false",
+            "MODEL_READ_TIMEOUT_SECONDS": READ_TIMEOUT,
+            "MODEL_CALL_DEADLINE_SECONDS": CALL_DEADLINE,
             "network": "loopback only: web 127.0.0.1:13000, API 127.0.0.1:18000, "
             "gateway 127.0.0.1:8100",
         },
@@ -238,7 +286,9 @@ def main() -> None:
     seed_corpus()
     build_web()
     serve_web()
-    result = ui_check(playwright())
+    py = playwright()
+    warm_gateway()
+    result = ui_check(py)
     bundle()
     if not result.get("pass"):
         raise SystemExit("UI check FAILED; see ui/m8-chat-ui-check.json in the bundle")

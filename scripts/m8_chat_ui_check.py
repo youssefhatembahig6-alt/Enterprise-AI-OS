@@ -249,7 +249,11 @@ def main() -> int:  # noqa: PLR0915
                 problems.append("reply is not labelled as general")
             if gen["citations"]:
                 problems.append("general reply has citations")
-            reply = page.locator(".a").last.locator(".body > p:not(.note):not(.refuse)").all_inner_texts()
+            reply = (
+                page.locator(".a")
+                .last.locator(".body > p:not(.note):not(.refuse)")
+                .all_inner_texts()
+            )
             if not any(t.strip() for t in reply):
                 problems.append("general reply is empty")
             if args.expect_inference == "gateway" and any("FAKE" in t for t in reply):

@@ -197,9 +197,34 @@ The same script runs locally against the disposable stack with `--expect-inferen
 PLAYWRIGHT_BROWSERS_PATH=<browsers> <venv>/bin/python scripts/m8_chat_ui_check.py --web http://localhost:13000 --api http://localhost:18000 --credentials var/m7-acceptance/dev-credentials.json --out var/m8-ui-fake --expect-inference fake
 ```
 
-**Still required for an interactive URL on the real model.** The test above runs the app, browser and gateway together inside one Colab runtime. It produces evidence but no URL anyone can open, because the gateway, API and UI listen on 127.0.0.1 inside that runtime, and Colab's usage rules restrict exposing web services and remote proxies. Making the chat usable interactively on Qwen needs one explicit project decision:
-- **Colab's own port window:** `google.colab.output.serve_kernel_port_as_window`, with UI and API behind one origin. It is visible only in the notebook owner's own session and only while the runtime lives. Whether this is permitted interactive use is the owner's decision; nothing in the repository enables it.
-- **An approved GPU host, or an approved tunnel to the gateway:** the laptop stack then sets `MODEL_MODE=gateway`, `LLM_BASE_URL=https://<approved host>` (root, no `/v1`) and `MODEL_GATEWAY_TOKEN` in `var/m7-acceptance/.env` (or `.env`) and runs `up`. This changes the Colab-only hosting decision (roadmap: "changing hosts then needs an explicit project decision").
+**Model status button.** The chat header's status is a button. It checks on sign-in, every 30 s, and when clicked (a click skips the backend's 15 s cache):
+
+| Shows | Means |
+| --- | --- |
+| **Checking…** | A check is in flight |
+| **Connected · Qwen3-8B-AWQ** | The backend confirmed the gateway serves the pinned `Qwen/Qwen3-8B-AWQ@4da05a8…` **and** accepted the server's token (one tiny authenticated embedding call; the gateway's `/health` alone is public) |
+| **Model offline** | Gateway mode, but the gateway is unreachable, timed out, rejected the token or serves another revision; the tooltip says which |
+| **Backend offline** | The API itself does not answer |
+| **FAKE model** | The server runs the labelled development double |
+
+**Using the real model from the laptop chat UI.** This needs the laptop backend to reach the Colab gateway, which is blocked on a decision (next paragraph). Once that is decided:
+1. In Colab, create the Secrets `EAIOS_GATEWAY_TOKEN` (a long random string you also keep on the laptop) and `NGROK_AUTHTOKEN`. Run cells 1–3 of `ml/colab-m8-chat/m8_real_model_chat.ipynb`, set `TUNNEL_PERMITTED_BY_OWNER = True` in cell 6, and run it. It prints the gateway URL and the laptop command.
+2. On the laptop, in the repository, with the disposable stack up (`python3 scripts/m7_acceptance.py up`):
+
+   ```bash
+   python3 scripts/m8_connect_gateway.py connect --url https://<printed gateway URL>
+   python3 scripts/m8_connect_gateway.py reindex    # first time only: re-embeds the synthetic files with BGE-M3
+   ```
+
+   `connect` asks for the token without echo (or reads `EAIOS_GATEWAY_TOKEN`). It checks the gateway's pinned model and the token, then writes `MODEL_MODE=gateway`, `LLM_BASE_URL`, `MODEL_GATEWAY_TOKEN` and the remote timeouts (read 180 s, deadline 360 s) into `var/m7-acceptance/.env` (0600). It restarts only the disposable API, worker and scheduler, and prints the backend's own status. The token stays server-side. The normal `eaios` stack is never touched.
+3. Open http://localhost:13000, sign in (organization `niletech`, for example `finance.reader@niletech.example`, password from `var/m7-acceptance/dev-credentials.json`). The header should read **Connected · Qwen3-8B-AWQ**. Choose **Documents you can access** or **General (no company data)** in the composer and ask.
+4. **After Colab restarts:** run cells 1–3 and 6 again (cell 3 reuses the `EAIOS_GATEWAY_TOKEN` Secret), then `connect --url <new URL>` again. No reindex is needed while the embedding model stays the same. Click the status button to recheck.
+5. **Back to the fake model:** run `python3 scripts/m8_connect_gateway.py disconnect`. Documents re-embedded with BGE-M3 are then not searchable with the fake model until `reindex` runs again.
+
+**Still required: the hosting decision.** The Colab browser test (cells 1–5) needs no tunnel: app, browser and gateway share one runtime on loopback. Interactive use from the laptop needs a URL that reaches the gateway, and that is a policy decision, not a technical one. Colab's FAQ lists *"connecting to remote proxies"* among the activities restricted on **all** managed runtimes, paid included. It restricts *"web service offerings not related to interactive compute with Colab"*. On free runtimes without a compute-unit balance, it also restricts *"bypassing the notebook UI to interact primarily via a web UI"*. It does not name tunnels or ngrok. The project roadmap already says a successful tunnel test does not settle acceptable use, and that changing hosts needs an explicit project decision. The options:
+- **Accept a tunnel from Colab.** The owner judges it permitted for their plan (for example Colab Pro or Pay As You Go with a positive compute-unit balance) and records that decision. Then use cell 6 and the steps above.
+- **Host the gateway elsewhere:** an approved GPU host, Colab Enterprise, a GCP VM, or a local runtime you control. Then run `connect --url https://<that host>` (the gateway code in `ml/model-gateway/` is the same).
+- **Colab's own port window** (`google.colab.output.serve_kernel_port_as_window`), with UI and API served on one origin inside the runtime. It is visible only in the owner's notebook session; it is not implemented here.
 
 ## Restart
 

@@ -10,7 +10,8 @@
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { api, modelFailureText, type Identity, type ModelStatus } from "./api";
+import { api, ApiError, modelFailureText, type Identity, type ModelStatus } from "./api";
+import { statusButton, type CheckOutcome } from "./modelStatusView";
 import { activeConversation, chatReducer, INITIAL_CHAT, type Turn } from "./chatState";
 import { cancelReport, type AskMode, type Citation } from "./reports";
 import { executeChatTurn } from "./runStream";
@@ -454,44 +455,45 @@ export function ChatPage({
   // (and the server re-checks access). 0 / missing = collapsed.
   const [opens, setOpens] = useState<Record<string, number>>({});
   const controllers = useRef(new Map<string, AbortController>());
-  // M8: which inference the server uses and, for the real gateway, the verified served
-  // model (or the failure class). Rechecked every minute while signed in.
+  // M8: the model status button. Checked on sign-in, every 30 s and when clicked (a click
+  // skips the server's short cache). "Connected" only after the backend confirmed the
+  // pinned model and authenticated gateway access (modelStatusView.ts).
   const [served, setServed] = useState<ModelStatus | null>(null);
-  const [servedError, setServedError] = useState(false);
-  useEffect(() => {
-    let live = true;
-    const load = () =>
-      api.modelStatus(token).then(
+  const [check, setCheck] = useState<CheckOutcome>({ kind: "checking" });
+  const checkSeq = useRef(0);
+  const recheck = useCallback(
+    (refresh: boolean) => {
+      const seq = ++checkSeq.current;
+      if (refresh) setCheck({ kind: "checking" });
+      api.modelStatus(token, refresh).then(
         (s) => {
-          if (!live) return;
+          if (seq !== checkSeq.current) return;
           setServed(s);
-          setServedError(false);
+          setCheck({ kind: "status", status: s });
         },
-        () => live && setServedError(true),
+        (err: unknown) => {
+          if (seq !== checkSeq.current) return;
+          setServed(null);
+          setCheck(
+            err instanceof ApiError && err.status === 401
+              ? { kind: "session_ended" }
+              : { kind: "backend_offline" },
+          );
+        },
       );
-    void load();
-    const timer = setInterval(() => void load(), 60_000);
+    },
+    [token],
+  );
+  useEffect(() => {
+    const seq = checkSeq; // the ref object (not a rendered node); bumping it drops late replies
+    recheck(false);
+    const timer = setInterval(() => recheck(false), 30_000);
     return () => {
-      live = false;
+      seq.current++;
       clearInterval(timer);
     };
-  }, [token]);
-  const modelChip: { text: string; tone: "ok" | "warn" | "crit"; title?: string } | null = served
-    ? served.mode === "fake"
-      ? { text: "FAKE model (development double)", tone: "warn" }
-      : served.verified
-        ? {
-            text: `Real model · ${shortModel(served.chat?.model, served.chat?.revision)} · verified`,
-            tone: "ok",
-            title: `${served.chat?.model ?? ""}@${served.chat?.revision ?? ""}`,
-          }
-        : {
-            text: `Model gateway: ${modelFailureText(served.error) ?? served.error ?? "unavailable"}`,
-            tone: "crit",
-          }
-    : servedError
-      ? { text: "Model status unavailable", tone: "warn" }
-      : null;
+  }, [recheck]);
+  const button = statusButton(check);
   const threadEnd = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -708,11 +710,17 @@ export function ChatPage({
             <span>can open:</span>
             <span className="chip">{scopeText(identity)}</span>
             {modelLabel ? <span className="chip warn">{modelLabel}</span> : null}
-            {modelChip ? (
-              <span className={`chip ${modelChip.tone}`} title={modelChip.title} role="status">
-                {modelChip.text}
-              </span>
-            ) : null}
+            <button
+              type="button"
+              className={`chip status ${button.tone}`}
+              title={button.title}
+              aria-label={`Model status: ${button.label}. ${button.title}`}
+              aria-live="polite"
+              onClick={() => recheck(true)}
+            >
+              <span className="dot" aria-hidden />
+              {button.label}
+            </button>
           </div>
           <div className="right">
             {view === "chat" ? (

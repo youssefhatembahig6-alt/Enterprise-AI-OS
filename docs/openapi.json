@@ -1073,6 +1073,11 @@
       },
       "ModelStatus": {
         "properties": {
+          "authenticated": {
+            "default": false,
+            "title": "Authenticated",
+            "type": "boolean"
+          },
           "chat": {
             "anyOf": [
               {
@@ -5892,6 +5897,20 @@
       "get": {
         "description": "The inference mode and, for the real gateway, the verified served chat model.",
         "operationId": "model_status_api_v1_model_status_get",
+        "parameters": [
+          {
+            "description": "Skip the 15 s cache (explicit recheck).",
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Skip the 15 s cache (explicit recheck).",
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -5902,6 +5921,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [

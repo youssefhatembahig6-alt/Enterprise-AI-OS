@@ -1,19 +1,22 @@
 """Model status for signed-in users (M8): which inference the server is using and, in
-gateway mode, whether the gateway is serving the pinned chat model and revision.
+gateway mode, whether the gateway is serving the pinned chat model and revision and
+accepts the server's token.
 
 ``/ready`` deliberately never claims model capability. This endpoint runs the same check
-every real run makes (``ModelClient.served_models``) so the web UI can show the served
-model or a typed failure. It returns model names, revisions and a failure class only;
-never the gateway URL or token.
+every real run makes (``ModelClient.served_models``) and then one small authenticated
+call (an embedding of a fixed string; ``/health`` itself is public), so ``verified``
+means the pinned model is served AND the gateway accepted the server's bearer token. The
+web UI shows the served model or a typed failure. It returns model names, revisions and
+a failure class only; never the gateway URL or token.
 """
 
 from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
 from app.api.deps import CurrentContext
@@ -32,6 +35,7 @@ class ServedModel(BaseModel):
 class ModelStatus(BaseModel):
     mode: Literal["fake", "gateway"]
     verified: bool
+    authenticated: bool = False  # the gateway accepted the server's token (gateway mode)
     chat: ServedModel | None = None
     embed: ServedModel | None = None
     checker: ServedModel | None = None
@@ -60,6 +64,7 @@ def check_status(model: ModelClient) -> ModelStatus:
         return ModelStatus(mode="fake", verified=False, label=FAKE_LABEL, checked_at=now)
     try:
         raw = model.served_models().summary()
+        model.embed(["eaios connection check"])  # authenticated route: proves the token
     except ModelError as exc:
         return ModelStatus(mode="gateway", verified=False, error=exc.code, checked_at=now)
     models_raw, engine_raw = raw.get("models"), raw.get("engine")
@@ -69,6 +74,7 @@ def check_status(model: ModelClient) -> ModelStatus:
     return ModelStatus(
         mode="gateway",
         verified=True,
+        authenticated=True,
         chat=_served(models, "chat"),
         embed=_served(models, "embed"),
         checker=_served(models, "checker"),
@@ -78,13 +84,18 @@ def check_status(model: ModelClient) -> ModelStatus:
 
 
 @router.get("/model/status", response_model=ModelStatus)
-def model_status(request: Request, _ctx: CurrentContext) -> ModelStatus:
+def model_status(
+    request: Request,
+    _ctx: CurrentContext,
+    refresh: Annotated[bool, Query(description="Skip the 15 s cache (explicit recheck).")] = False,
+) -> ModelStatus:
     """The inference mode and, for the real gateway, the verified served chat model."""
 
     cache: _Cache = request.app.state.model_status_cache
     with cache.lock:
-        if cache.value is not None and time.time() - cache.value.checked_at < CACHE_SECONDS:
-            return cache.value
+        fresh = cache.value is not None and time.time() - cache.value.checked_at < CACHE_SECONDS
+        if fresh and not refresh:
+            return cache.value  # type: ignore[return-value]
     status = check_status(request.app.state.model)
     with cache.lock:
         cache.value = status

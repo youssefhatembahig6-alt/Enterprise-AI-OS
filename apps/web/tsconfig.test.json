@@ -10,6 +10,7 @@
     "rootDir": "."
   },
   "include": [
+    "src/modelStatusView.ts",
     "src/verification.ts",
     "src/runView.ts",
     "src/chatState.ts",
