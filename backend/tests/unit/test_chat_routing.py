@@ -178,3 +178,32 @@ def test_an_explicit_q1_sales_request_keeps_the_sql_route() -> None:
     # Owned or specific contract questions still go to Contracts.
     assert route_chat("What is our contract with Red Sea Logistics?", EVERY).route == "legal"
     assert route_chat("What is the notice period in the Aswan contract?", EVERY).route == "legal"
+
+
+# --- Requests that name a company record (PR #23 review) --------------------------------
+
+
+@pytest.mark.parametrize(
+    ("question", "route"),
+    [
+        ("Help me find our board minutes", "documents"),
+        ("What is a customer in the board memo?", "documents"),
+        ("Help me find the IT security handbook", "documents"),
+        ("Can you help me find the Aswan contract?", "legal"),
+        ("What is a renewal notice in our contract with Aswan?", "legal"),
+        ("What does churn mean in the Q1 2026 finance commentary?", "documents"),
+        ("Hi, help me find our board minutes", "documents"),
+    ],
+)
+def test_a_request_naming_a_company_record_goes_to_its_handler(question: str, route: str) -> None:
+    decision = route_chat(question, EVERY)
+    assert decision.route == route, decision
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["help", "Help me", "Can you help?", "hello", "What is a customer?", "What is a memo?"],
+)
+def test_standalone_help_greetings_and_plain_definitions_stay_general(question: str) -> None:
+    decision = route_chat(question, EVERY)
+    assert decision.route == "general", decision

@@ -1,0 +1,59 @@
+{
+  "run_id": "local-offline-fake-20261128T141035Z",
+  "started_at": "2026-11-28T14:10:35.956625+00:00",
+  "web": "http://127.0.0.1:13000",
+  "api": "http://127.0.0.1:18000",
+  "expect_inference": "offline",
+  "model_status": {
+    "mode": "fake",
+    "verified": false,
+    "authenticated": false,
+    "chat": null,
+    "embed": null,
+    "checker": null,
+    "engine": null,
+    "error": null,
+    "label": "FAKE INFERENCE (deterministic development double, not model output)",
+    "checked_at": 1795875035.9552515
+  },
+  "checks": {
+    "offline_badge": {
+      "label": "Real model offline",
+      "title": "The server is not connected to the real model, so new questions are paused. Your saved chats stay available. Click to check again.",
+      "screenshot": "0-offline-badge.png",
+      "problems": [],
+      "pass": true
+    },
+    "send_blocked": {
+      "send_disabled": true,
+      "requests_sent": 0,
+      "note": [
+        "Real model offline: sending is paused until the server is connected to the real model. Your saved chats stay available."
+      ],
+      "screenshot": "1-offline-send-blocked.png",
+      "problems": [],
+      "pass": true
+    },
+    "history_available": {
+      "saved_chats": 21,
+      "label": [
+        "Documents"
+      ],
+      "status": [],
+      "reply": [
+        "Collections lagged revenue because 370 open invoices were already past their due date at the reference date. 1"
+      ],
+      "citations": 1,
+      "error": [],
+      "passages": 1,
+      "screenshot": "2-offline-history.png",
+      "problems": [],
+      "pass": true
+    }
+  },
+  "finished_at": "2026-11-28T14:10:40.393575+00:00",
+  "pass": true,
+  "exit_status": 0,
+  "ui_build": "normal (real-model only) web image :13000",
+  "backend": "MODEL_MODE=fake (counts as real model offline)"
+}

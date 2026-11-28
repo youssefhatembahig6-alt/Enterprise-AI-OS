@@ -58,6 +58,12 @@ import run_m3_colab as m3  # noqa: E402
 WEB = "http://127.0.0.1:13000"
 PREVIEW_PORT = 13100
 PREVIEW = f"http://127.0.0.1:{PREVIEW_PORT}"
+# Real-model-only gate with the gateway unavailable (offline_check).
+OFFLINE_API_PORT = 18001
+OFFLINE_API = f"http://127.0.0.1:{OFFLINE_API_PORT}"
+OFFLINE_PREVIEW_PORT = 13101
+OFFLINE_PREVIEW = f"http://127.0.0.1:{OFFLINE_PREVIEW_PORT}"
+UNREACHABLE_GATEWAY = "http://127.0.0.1:9"  # nothing listens here
 # Fresh wording per preview run (picked by the UTC minute), each answerable from the
 # synthetic annual-leave policy; and open-ended General prompts.
 DOCUMENTS_QUESTIONS = (
@@ -259,7 +265,12 @@ def check_verdict(returncode: int, out: Path, run_id: str) -> tuple[bool, list[s
 
 
 def ui_check(
-    py: Path, web: str = WEB, api: str = m3.API, name: str = "ui", extra: tuple[str, ...] = ()
+    py: Path,
+    web: str = WEB,
+    api: str = m3.API,
+    name: str = "ui",
+    extra: tuple[str, ...] = (),
+    expect: str = "gateway",
 ) -> dict[str, object]:
     """Run scripts/m8_chat_ui_check.py into a NEW folder <name>/<run_id> and judge that run."""
 
@@ -281,7 +292,7 @@ def ui_check(
             "--run-id",
             run_id,
             "--expect-inference",
-            "gateway",
+            expect,
             "--timeout",
             "420",
             *extra,
@@ -392,27 +403,73 @@ def build_preview() -> Path:
     return m3.REPO / "apps" / "web" / "dist-preview"
 
 
-def serve_preview(dist: Path) -> None:
+def serve_preview(
+    dist: Path, port: int = PREVIEW_PORT, api: str = m3.API, log: str = "preview-proxy.log"
+) -> subprocess.Popen[bytes] | None:
+    url = f"http://127.0.0.1:{port}"
     try:
-        m3.get_json(f"{PREVIEW}/health")
-        return  # already serving (re-run of the cell)
+        m3.get_json(f"{url}/health")
+        return None  # already serving (re-run of the cell)
     except OSError:
         pass
-    subprocess.Popen(  # noqa: S603
+    proc = subprocess.Popen(  # noqa: S603
         [
             sys.executable,
             str(HERE / "preview_proxy.py"),
             "--dist",
             str(dist),
             "--port",
-            str(PREVIEW_PORT),
+            str(port),
             "--api",
-            m3.API.removeprefix("http://"),
+            api.removeprefix("http://"),
         ],
-        stdout=open(m3.LOGS / "preview-proxy.log", "a"),  # noqa: SIM115 - child owns the log
+        stdout=open(m3.LOGS / log, "a"),  # noqa: SIM115 - child owns the log
         stderr=subprocess.STDOUT,
     )
-    m3.wait_http(f"{PREVIEW}/health")
+    m3.wait_http(f"{url}/health")
+    return proc
+
+
+def offline_check(py: Path, dist: Path) -> dict[str, object]:
+    """The real-model-only gate with the gateway unavailable, without touching the gateway:
+    a second API on 127.0.0.1:18001 (same database) whose LLM_BASE_URL points at a loopback
+    port nothing listens on, served with the preview UI on 127.0.0.1:13101. The browser
+    check must see Real model offline, a disabled Send (no question sent) and saved chats
+    that still open. Both processes are stopped afterwards."""
+
+    api = subprocess.Popen(  # noqa: S603
+        [
+            f"{m3.VENV}/bin/uvicorn",
+            "app.main:create_app",
+            "--factory",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(OFFLINE_API_PORT),
+            "--no-server-header",
+        ],
+        cwd=m3.BACKEND,
+        env=env(LLM_BASE_URL=UNREACHABLE_GATEWAY),
+        stdout=open(m3.LOGS / "offline-api.log", "w"),  # noqa: SIM115 - child owns the log
+        stderr=subprocess.STDOUT,
+    )
+    proxy = None
+    try:
+        m3.wait_http(f"{OFFLINE_API}/health")
+        proxy = serve_preview(dist, OFFLINE_PREVIEW_PORT, OFFLINE_API, "offline-proxy.log")
+        result = ui_check(
+            py, web=OFFLINE_PREVIEW, api=OFFLINE_PREVIEW, name="offline", expect="offline"
+        )
+    finally:
+        for proc in (proxy, api):
+            if proc is not None:
+                proc.terminate()
+    STEPS["offline_gate"] = {
+        "api": OFFLINE_API,
+        "llm_base_url": UNREACHABLE_GATEWAY,
+        "preview": OFFLINE_PREVIEW,
+    }
+    return result
 
 
 def preview() -> None:
@@ -424,7 +481,8 @@ def preview() -> None:
         import_business_data()
         start_api()
         seed_corpus()
-    serve_preview(build_preview())
+    dist = build_preview()
+    serve_preview(dist)
     py = playwright()
     warm_gateway()
     minute = int(datetime.now(UTC).timestamp() // 60)
@@ -442,10 +500,12 @@ def preview() -> None:
         "documents_question": documents,
         "general_question": general,
     }
+    offline = offline_check(py, dist)
     bundle("m8-chat-preview-evidence")
-    if not result["pass"]:
-        reasons = "; ".join(result["reasons"])
-        raise SystemExit(f"preview check FAILED ({reasons}); see {result['evidence']}")
+    for name, check in (("preview", result), ("offline gate", offline)):
+        if not check["pass"]:
+            reasons = "; ".join(check["reasons"])  # type: ignore[arg-type]
+            raise SystemExit(f"{name} check FAILED ({reasons}); see {check['evidence']}")
     print(f"preview check PASSED on the real gateway; serving {PREVIEW} (loopback only)")
 
 
@@ -472,11 +532,13 @@ def main() -> None:
     py = playwright()
     warm_gateway()
     result = ui_check(py)
+    offline = offline_check(py, build_preview())
     bundle()
-    if not result["pass"]:
-        reasons = "; ".join(result["reasons"])
-        raise SystemExit(f"UI check FAILED ({reasons}); see {result['evidence']}")
-    print("UI check PASSED on the real gateway")
+    for name, check in (("UI", result), ("offline gate", offline)):
+        if not check["pass"]:
+            reasons = "; ".join(check["reasons"])  # type: ignore[arg-type]
+            raise SystemExit(f"{name} check FAILED ({reasons}); see {check['evidence']}")
+    print("UI check PASSED on the real gateway; offline gate PASSED")
 
 
 if __name__ == "__main__":

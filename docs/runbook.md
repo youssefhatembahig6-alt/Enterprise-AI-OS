@@ -172,7 +172,7 @@ Every question is a separate `POST /api/v1/chat` run with your token: earlier me
 
 A greeting in front of a request is ignored for routing ("Hi, what is our leave policy?" goes to Documents). Each handler keeps its own permission checks, verification and citations, so routing never widens access: a question routed to documents the employee cannot open ends with the no-sources refusal. A company question whose handler is disabled for the tenant falls back to documents or the sales report, never to General. The API still accepts an explicit `mode` (API clients, the **Approvals** report form, briefings); briefings never route to General.
 
-**Saved chats (M8).** Conversations are saved by the server for the signed-in employee (migration `0017_chat_history`) and listed under **Recents** after a reload or a new sign-in; the access token itself stays in memory only (ADR 0101). Every time a chat is reopened (from **Recents**, or by returning to **Ask** from another page) its saved answers are hidden at once (*Re-checking your access…*) and replayed from their runs through `GET /api/v1/runs/{id}/events`, which re-checks current access; an answer the employee may no longer see stays hidden (*You no longer have access to this answer*), and citations are re-checked when opened. Each Recents row has a **Delete** button (hover or focus) that asks for confirmation; a deleted chat stays gone after reload. Every history operation (`GET /api/v1/conversations`, `GET`/`DELETE /api/v1/conversations/{id}`, and `conversation_id` on `POST /api/v1/chat`) is scoped to the employee and organization; another employee's or organization's chat returns 404, and the database's RESTRICTIVE `owner_only` row policy enforces the same rule. Deleting a chat removes its history, not the runs (approvals and the audit log refer to them). Earlier messages are still not sent to the model; follow-up reasoning is a separate change.
+**Saved chats (M8).** Conversations are saved by the server for the signed-in employee (migration `0017_chat_history`) and listed under **Recents** after a reload or a new sign-in; the access token itself stays in memory only (ADR 0101). Every time a chat is reopened (from **Recents**, or by returning to **Ask** from another page), even while a newer reply in it is still streaming, its completed answers are hidden at once (*Re-checking your access…*) and replayed from their runs through `GET /api/v1/runs/{id}/events`, which re-checks current access; an answer the employee may no longer see stays hidden (*You no longer have access to this answer*), and citations are re-checked when opened. A reply still streaming is left running and finishes normally. Each Recents row has a **Delete** button (hover or focus) that asks for confirmation; a deleted chat stays gone after reload. Every history operation (`GET /api/v1/conversations`, `GET`/`DELETE /api/v1/conversations/{id}`, and `conversation_id` on `POST /api/v1/chat`) is scoped to the employee and organization; another employee's or organization's chat returns 404, and the database's RESTRICTIVE `owner_only` row policy enforces the same rule. Deleting a chat removes its history, not the runs (approvals and the audit log refer to them). Earlier messages are still not sent to the model; follow-up reasoning is a separate change.
 
 The defense demo script (`defense/demo-script.md`) uses automatic routing.
 
@@ -181,9 +181,10 @@ The defense demo script (`defense/demo-script.md`) uses automatic routing.
 **General mode.** The orchestrator routes greetings and ordinary questions to General (label **General**). The backend sends the question alone to the same chat model, with no documents, SQL results, email or briefing tools and no earlier turns. The reply is published as `general_model_reply_unverified` and labelled in the UI as a general reply that was not checked against sources. Only its owner can replay it, and it can never be emailed. Company questions are never routed to General. The tenant pack `general` switches it on. The NileTech seed enables it; the isolation tenant keeps documents only. Applying migration `0016_general_chat` and re-running `seed` enables it on an existing stack.
 
 **Model status and failures.** `GET /api/v1/model/status` (signed-in users) runs the same check as every real run: the gateway's `/health` must report the pinned `Qwen/Qwen3-8B-AWQ@4da05a8edb55c6046cce958586c33b61da07bb79`. The chat top bar shows the result:
-- **Real model · Qwen3-8B-AWQ @4da05a8 · verified**;
-- **Model gateway: <reason>** (not configured, unreachable, timeout, credentials rejected, revision mismatch);
-- **FAKE model**.
+- **Connected · Qwen3-8B-AWQ** (pinned revision verified, authenticated readiness);
+- **Real model offline**, with the reason in the tooltip (not configured, unreachable, timeout, credentials rejected, revision mismatch, Qwen chat server down), also when the server runs the fake development double.
+
+**Real-model only (M8).** The employee-facing chat sends a new question only while the status says **Connected · Qwen3-8B-AWQ**. Otherwise **Send** is disabled, pressing Enter sends nothing, and the composer says *"Real model offline: sending is paused until the server is connected to the real model. Your saved chats stay available."* Saved chats still open, with the same access checks; an old answer made by the fake double shows **Not from the real model**. The labelled fake model remains a test double for automated tests only: a UI built with `VITE_TEST_ALLOW_FAKE_MODEL=true` (never a normal build) may send to a fake-mode backend and shows **FAKE model (test build)**.
 
 A run that fails on the model ends with `model_unavailable` plus a `detail` class, and the answer shows the reason in words. Document answers now also verify the served model and revision before calling it (SQL reports already did; the legal pack uses no model). The gateway token stays server-side (`MODEL_GATEWAY_TOKEN`).
 
@@ -205,7 +206,7 @@ Every browser check writes into a new folder `ui/<run id>/` (the check script re
 4. **Documents:** a fresh annual-leave question: labelled **Documents**, published with a citation whose passage opens with **text hash verified** (`GET …/citations/{id}` returns 200).
 5. **Sales report:** *"What were fulfilled sales in Q1 2026?"*: labelled **Sales report (SQL)**, a verified table, and **Email this report for approval** opening the approval form for that report (nothing is drafted or sent).
 6. **Clarify:** *"the numbers?"* gets one short clarifying question and starts no run.
-7. **Revalidation (same session):** a cited finance answer, switch away, an administrator removes finance.reader from `finance-team`, reopen: while the replay is held the old answer, citation and passage are hidden; afterwards the answer stays hidden (`access_revoked`) and the citation returns 404; after the membership is restored, the next reopen shows it again.
+7. **Revalidation (same session):** a cited finance answer, a newer question in flight in the same chat, switch away, an administrator removes finance.reader from `finance-team`, reopen: while the replay is held the old answer, citation and passage are hidden; afterwards the answer stays hidden (`access_revoked`) and the citation returns 404; the newer reply keeps working and finishes; after the membership is restored, the next reopen shows it again.
 8. **Saved chats:** after a reload and a new sign-in the chats are under **Recents**; the first chat reopens with both answers replayed and labelled; a second employee gets 404 when listing, opening or deleting it and sees none of the first employee's chats; **Delete** with confirmation removes it, also after another reload.
 9. **Refusal:** sales.reader asks *"Why did collections lag revenue in Q1 2026?"*: routed to **Documents**, the no-sources refusal, and none of the restricted figures on the page.
 
@@ -214,10 +215,26 @@ For the published answers, the run record (`GET /api/v1/runs/{id}` with the user
 - the pinned chat model and revision in `served_models`;
 - an actual model call (purpose `general` / `answer` / `sql`, with a measured duration and a token count).
 
-The same script runs locally against the disposable stack with `--expect-inference fake`. That run checks the UI only and is never model evidence:
+The runner then checks the real-model-only gate with the gateway unavailable, without touching the gateway: a second API on 127.0.0.1:18001 (same database, `LLM_BASE_URL` pointing at a loopback port nothing listens on) behind the preview UI on 127.0.0.1:13101, checked with `--expect-inference offline` (**Real model offline**, Send disabled, nothing sent, saved chats open). Both processes are stopped afterwards; the bundle holds `offline/<run id>/`.
+
+Locally, against the disposable stack (fake model; UI evidence only, never model evidence):
+
+- **Real-model-only gate** on the normal UI (the stack runs the fake double, which counts as offline):
 
 ```bash
-PLAYWRIGHT_BROWSERS_PATH=<browsers> <venv>/bin/python scripts/m8_chat_ui_check.py --web http://localhost:13000 --api http://localhost:18000 --credentials var/m7-acceptance/dev-credentials.json --out var/m8-ui-fake --expect-inference fake
+PLAYWRIGHT_BROWSERS_PATH=<browsers> <venv>/bin/python scripts/m8_chat_ui_check.py --web http://localhost:13000 --api http://localhost:18000 --credentials var/m7-acceptance/dev-credentials.json --out <new empty dir> --expect-inference offline
+```
+
+- **Answering checks with the fake test double:** build a test UI that may send to the fake backend and serve it next to the API, then run the check on that origin:
+
+```bash
+VITE_API_BASE_URL="" VITE_TEST_ALLOW_FAKE_MODEL=true npm run build -w @eaios/web -- --outDir dist-testfake
+```
+```bash
+python3 ml/colab-m8-chat/preview_proxy.py --dist apps/web/dist-testfake --port 13101 --api 127.0.0.1:18000
+```
+```bash
+PLAYWRIGHT_BROWSERS_PATH=<browsers> <venv>/bin/python scripts/m8_chat_ui_check.py --web http://127.0.0.1:13101 --api http://127.0.0.1:13101 --credentials var/m7-acceptance/dev-credentials.json --out <new empty dir> --expect-inference fake
 ```
 
 **Model status button.** The chat header's status is a button. It checks on sign-in, every 30 s, and when clicked (a click skips the backend's 15 s cache):
@@ -225,10 +242,10 @@ PLAYWRIGHT_BROWSERS_PATH=<browsers> <venv>/bin/python scripts/m8_chat_ui_check.p
 | Shows | Means |
 | --- | --- |
 | **Checking…** | A check is in flight |
-| **Connected · Qwen3-8B-AWQ** | The backend confirmed the pinned `Qwen/Qwen3-8B-AWQ@4da05a8…` in the gateway's `/health` **and** the gateway's authenticated `/ready`, which asks the actual Qwen chat server (vLLM `/health` and `/v1/models`) behind it. So the token was accepted and Qwen itself is up; a gateway whose vLLM stopped shows Model offline |
-| **Model offline** | Gateway mode, but the gateway is unreachable, timed out, rejected the token, serves another revision, or its Qwen chat server is not ready; the tooltip says which |
+| **Connected · Qwen3-8B-AWQ** | The backend confirmed the pinned `Qwen/Qwen3-8B-AWQ@4da05a8…` in the gateway's `/health` **and** the gateway's authenticated `/ready`, which asks the actual Qwen chat server (vLLM `/health` and `/v1/models`) behind it. So the token was accepted and Qwen itself is up; a gateway whose vLLM stopped shows Real model offline. **Send is enabled only in this state** |
+| **Real model offline** | Gateway mode, but the gateway is unreachable, timed out, rejected the token, serves another revision, or its Qwen chat server is not ready; or the server runs the fake double. The tooltip says which. Send is disabled; saved chats stay available |
 | **Backend offline** | The API itself does not answer |
-| **FAKE model** | The server runs the labelled development double |
+| **FAKE model (test build)** | Only in a UI built with `VITE_TEST_ALLOW_FAKE_MODEL=true` for automated tests |
 
 **Using the real model from the laptop chat UI.** This needs the laptop backend to reach the Colab gateway, which is blocked on a decision (next paragraph). Once that is decided:
 1. In Colab, create the Secrets `EAIOS_GATEWAY_TOKEN` (a long random string you also keep on the laptop) and `NGROK_AUTHTOKEN`. Run cells 1–3 of `ml/colab-m8-chat/m8_real_model_chat.ipynb`, set `TUNNEL_PERMITTED_BY_OWNER = True` in cell 6, and run it. It prints the gateway URL and the laptop command.

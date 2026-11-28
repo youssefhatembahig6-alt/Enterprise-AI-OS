@@ -60,8 +60,15 @@ export function hiddenView(view: RunView): RunView {
 }
 
 /** Whether reopening this chat can replay its answers now (no answer is still streaming). */
+/** A reply streaming live in this page (not a saved answer being replayed). */
+export function isLive(turn: Turn): boolean {
+  return turn.running && !turn.reopening;
+}
+
+/** Whether reopening this chat can re-check its saved answers: it is saved on the server.
+ * A newer reply that is still streaming does not prevent it; that reply is left alone. */
 export function canRevalidate(conversation: Conversation): boolean {
-  return Boolean(conversation.serverId) && !conversation.turns.some((t) => t.running && !t.reopening);
+  return Boolean(conversation.serverId);
 }
 
 export function titleFor(question: string): string {
@@ -168,7 +175,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             : {
                 ...c,
                 turns: c.turns.map((t) =>
-                  t.view.runId
+                  t.view.runId && !isLive(t)
                     ? {
                         ...t,
                         view: hiddenView(t.view),
@@ -182,11 +189,26 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ),
       };
     case "opened":
+      // The saved turns from the server, except that a reply still streaming in this page
+      // keeps its live turn (matched by run id, or appended if the server has not seen it
+      // yet), so reopening never interrupts or replaces it.
       return {
         ...state,
-        conversations: state.conversations.map((c) =>
-          c.id === action.conversationId ? { ...c, turns: action.turns, loaded: true } : c,
-        ),
+        conversations: state.conversations.map((c) => {
+          if (c.id !== action.conversationId) return c;
+          const live = c.turns.filter(isLive);
+          const byRun = new Map(live.filter((t) => t.view.runId).map((t) => [t.view.runId, t]));
+          const used = new Set<string>();
+          const turns = action.turns.map((t) => {
+            const match = t.view.runId ? byRun.get(t.view.runId) : undefined;
+            if (match) {
+              used.add(match.id);
+              return match;
+            }
+            return t;
+          });
+          return { ...c, turns: [...turns, ...live.filter((t) => !used.has(t.id))], loaded: true };
+        }),
       };
     case "removed":
       return {

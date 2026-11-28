@@ -238,8 +238,7 @@ test("reopening a chat hides every saved answer until it is replayed, every time
     assert.equal(must(answer).question, "Why did collections lag?");
     assert.equal(must(answer).reopening, true);
     assert.equal(runKind(must(answer).view, null), "running");
-    // While it is being re-checked, the chat cannot be revalidated again concurrently by a
-    // live ask, but a second reopen is allowed (it restarts the replay).
+    // A second reopen while it is being re-checked is allowed (it restarts the replay).
     assert.equal(canRevalidate(must(activeConversation(s))), true);
     // The clarifying question (no run, no company content) is unchanged.
     assert.equal(must(clarify).view.done?.abstention?.message, "Which one?");
@@ -259,12 +258,75 @@ test("reopening a chat hides every saved answer until it is replayed, every time
   }
 });
 
-test("a chat with an answer still streaming is not revalidated", () => {
-  let s: ChatState = chatReducer(INITIAL_CHAT, { type: "ask", conversationId: "local-1", turnId: "t1", question: "hello", view: EMPTY_RUN });
-  s = chatReducer(s, { type: "bind", conversationId: "local-1", serverId: "srv-1" });
-  assert.equal(canRevalidate(must(activeConversation(s))), false);
-  s = chatReducer(s, { type: "finish", conversationId: "local-1", turnId: "t1", failure: null });
-  assert.equal(canRevalidate(must(activeConversation(s))), true);
+test("reopening during a newer live reply hides and re-checks the older answer, and keeps the live reply", () => {
+  const cited = fold([
+    { id: 1, event: "status", data: { step: "accepted", state: "completed", label: "Accepted", run_id: "run-old", handler: "documents", handler_label: "Documents" } },
+    { id: 2, event: "token", data: { part: "text", text: "Collections lagged revenue.", citations: ["c1"] } },
+    { id: 3, event: "citation", data: { citation_id: "c1", document_id: "d1", title: "Q1 2026 finance commentary", quote: "370 open invoices" } },
+    { id: 4, event: "done", data: { outcome: "published", message_id: "m", verification: null, abstention: null, inference: "gateway" } },
+  ]);
+  // A saved chat with the older cited answer; a newer question is streaming live.
+  let s: ChatState = chatReducer(INITIAL_CHAT, { type: "saved", items: [{ serverId: "srv-a", title: "Why?" }] });
+  s = chatReducer(s, {
+    type: "opened",
+    conversationId: "srv-a",
+    turns: [{ id: "s-1", question: "Why did collections lag?", view: cited, failure: null, running: false }],
+  });
+  s = chatReducer(s, { type: "select", id: "srv-a" });
+  s = chatReducer(s, { type: "ask", conversationId: "srv-a", turnId: "t-live", question: "hello", view: EMPTY_RUN });
+  const liveStart = fold([{ id: 1, event: "status", data: { step: "accepted", state: "completed", label: "Accepted", run_id: "run-live", handler: "general", handler_label: "General" } }]);
+  s = chatReducer(s, { type: "view", conversationId: "srv-a", turnId: "t-live", view: liveStart });
+  assert.equal(canRevalidate(must(activeConversation(s))), true); // not blocked by the live reply
+
+  // Reopen: the older answer is hidden at once; the live reply is untouched.
+  s = chatReducer(s, { type: "revalidating", conversationId: "srv-a" });
+  let [older, live] = must(activeConversation(s)).turns;
+  assert.deepEqual(must(older).view.sentences, []);
+  assert.deepEqual(must(older).view.citations, []);
+  assert.equal(must(older).reopening, true);
+  assert.equal(must(live).id, "t-live");
+  assert.equal(must(live).view.handlerLabel, "General");
+  assert.equal(must(live).running, true);
+
+  // The server's saved turns arrive (both runs): the live turn is kept, not replaced.
+  s = chatReducer(s, {
+    type: "opened",
+    conversationId: "srv-a",
+    turns: [
+      { id: "s-1", question: "Why did collections lag?", view: { ...EMPTY_RUN, runId: "run-old", handler: "documents", handlerLabel: "Documents" }, failure: null, running: true, reopening: true },
+      { id: "s-2", question: "hello", view: { ...EMPTY_RUN, runId: "run-live" }, failure: null, running: true, reopening: true },
+    ],
+  });
+  [older, live] = must(activeConversation(s)).turns;
+  assert.equal(must(activeConversation(s)).turns.length, 2);
+  assert.equal(must(live).id, "t-live");
+  assert.equal(must(live).reopening, undefined);
+
+  // The live reply keeps streaming and finishes normally.
+  const liveDone = applyEvent(
+    applyEvent(liveStart, { id: 2, event: "token", data: { part: "text", text: "Hello! How can I help?", citations: [] } }),
+    { id: 3, event: "done", data: { outcome: "published", message_id: "m2", verification: null, abstention: null, inference: "gateway" } },
+  );
+  s = chatReducer(s, { type: "view", conversationId: "srv-a", turnId: "t-live", view: liveDone });
+  s = chatReducer(s, { type: "finish", conversationId: "srv-a", turnId: "t-live", failure: null });
+  // The older answer's replay ends with the server's refusal: it stays hidden.
+  s = chatReducer(s, {
+    type: "view",
+    conversationId: "srv-a",
+    turnId: "s-1",
+    view: applyEvent(must(older).view, { id: null, event: "error", data: { code: "access_revoked", message: "No access." } }),
+  });
+  s = chatReducer(s, { type: "finish", conversationId: "srv-a", turnId: "s-1", failure: null });
+  [older, live] = must(activeConversation(s)).turns;
+  assert.equal(runKind(must(older).view, null), "error");
+  assert.deepEqual(must(older).view.citations, []);
+  assert.deepEqual(must(older).view.sentences, []);
+  assert.equal(runKind(must(live).view, null), "answer");
+  assert.equal(must(live).view.sentences[0]?.text, "Hello! How can I help?");
+  assert.equal(must(live).running, false);
+});
+
+test("an unsaved chat (no server id yet) is not revalidated", () => {
   const unsaved = chatReducer(INITIAL_CHAT, { type: "ask", conversationId: "local-2", turnId: "t2", question: "x", view: EMPTY_RUN });
   assert.equal(canRevalidate(must(activeConversation(unsaved))), false);
 });

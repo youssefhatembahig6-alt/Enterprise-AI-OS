@@ -1,5 +1,7 @@
 # Defense demo script (10–15 minutes)
 
+> **Real-model only (M8, PR #23).** The employee-facing chat now sends questions only while the real Qwen model is connected; on the fake-model presentation stack the normal UI shows **Real model offline** and Send is disabled. To run this script live, either use the real model (the private Colab chat preview, notebook cells 1–3 and 7) or a UI built for automated tests with `VITE_TEST_ALLOW_FAKE_MODEL=true` (runbook, "Real-model only"), which shows **FAKE model (test build)** wherever this script says **FAKE model**.
+
 The demo runs on the **presentation stack** ([setup Path A](setup-clean-checkout.md#path-a--presentation-stack-recommended-for-the-defense)): app at http://localhost:13000, Mailpit at http://localhost:18025, organization `niletech` for every sign-in. Every run is labelled **FAKE INFERENCE**. Say this once at the start: *"The live demo uses a labelled stand-in model so it is deterministic and needs no GPU. The same workflows were run with the real Qwen model in Colab; I'll show that evidence at the end."*
 
 Priorities, in order: **(1)** document permissions and citations, **(2)** a verified sales report, **(3)** approval followed by exactly one Mailpit delivery. Sections 4 and 5 are optional and can be dropped to fit the time.

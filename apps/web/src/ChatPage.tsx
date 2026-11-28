@@ -17,12 +17,13 @@
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { api, ApiError, modelFailureText, type Identity, type ModelStatus } from "./api";
-import { statusButton, type CheckOutcome } from "./modelStatusView";
+import { api, ApiError, modelFailureText, TEST_ALLOW_FAKE_MODEL, type Identity, type ModelStatus } from "./api";
+import { canSend, statusButton, type CheckOutcome } from "./modelStatusView";
 import {
   activeConversation,
   canRevalidate,
   chatReducer,
+  isLive,
   INITIAL_CHAT,
   type Conversation,
   type Turn,
@@ -140,7 +141,10 @@ function verifyPills(view: RunView, served: ModelStatus | null): { text: string;
   if (view.done?.abstention && view.done.abstention.code !== "clarification_needed") {
     pills.push({ text: "No sources used", warn: true });
   }
-  if (view.fakeLabel) pills.push({ text: "FAKE inference — not a model", warn: true });
+  if (view.fakeLabel) {
+    // An old answer from the development double (normal builds never send new ones).
+    pills.push({ text: TEST_ALLOW_FAKE_MODEL ? "FAKE inference — not a model" : "Not from the real model", warn: true });
+  }
   if (view.done?.inference === "gateway" && view.done.outcome === "published") {
     const m = v?.model ?? (served?.verified ? { name: served.chat?.model, revision: served.chat?.revision } : null);
     pills.push({ text: `Real model · ${m ? shortModel(m.name, m.revision) : "gateway"}`, warn: false });
@@ -163,6 +167,15 @@ function citationMeta(c: Citation): string {
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+function OfflineNote() {
+  return (
+    <p className="offline-note" role="status">
+      Real model offline: sending is paused until the server is connected to the real model. Your saved chats stay
+      available.
+    </p>
+  );
 }
 
 function Composer({
@@ -442,7 +455,7 @@ export function ChatPage({
 }: {
   token: string;
   identity: Identity;
-  /** e.g. "FAKE model" when the server runs the labelled development double. */
+  /** e.g. "API unreachable" when the backend cannot be reached. */
   modelLabel: string | null;
   canEmail: boolean;
   showActivity: boolean;
@@ -507,7 +520,10 @@ export function ChatPage({
       clearInterval(timer);
     };
   }, [recheck]);
-  const button = statusButton(check);
+  const button = statusButton(check, TEST_ALLOW_FAKE_MODEL);
+  // Real-model only: a new question can be sent only while the backend has verified the
+  // pinned Qwen model (authenticated readiness). Saved chats stay readable either way.
+  const sendable = canSend(check, TEST_ALLOW_FAKE_MODEL);
   const threadEnd = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -552,7 +568,7 @@ export function ChatPage({
   const ask = useCallback(
     (question: string) => {
       const text = question.trim();
-      if (!text) return;
+      if (!text || !sendable) return;
       const current = activeConversation(state);
       const conversationId = current?.id ?? `local-${newRequestId()}`;
       const turnId = `t-${newRequestId()}`;
@@ -576,7 +592,7 @@ export function ChatPage({
         dispatch({ type: "finish", conversationId, turnId, failure });
       });
     },
-    [state, token, onReportPublished],
+    [state, token, onReportPublished, sendable],
   );
 
   // Reopen a chat (every time, not only the first): hide its saved answers at once, fetch
@@ -587,7 +603,10 @@ export function ChatPage({
     (conversation: Conversation) => {
       if (!canRevalidate(conversation) || !conversation.serverId) return;
       const conversationId = conversation.id;
-      conversation.turns.forEach((t) => controllers.current.get(t.id)?.abort());
+      // A newer reply still streaming here keeps running; only saved answers are re-checked.
+      const live = conversation.turns.filter(isLive);
+      const liveRuns = new Set(live.map((t) => t.view.runId).filter(Boolean));
+      conversation.turns.filter((t) => !isLive(t)).forEach((t) => controllers.current.get(t.id)?.abort());
       dispatch({ type: "revalidating", conversationId });
       setOpens({});
       setFocus(null);
@@ -606,7 +625,7 @@ export function ChatPage({
           dispatch({ type: "opened", conversationId, turns });
           for (const t of turns) {
             const runId = t.view.runId;
-            if (!runId) continue;
+            if (!runId || liveRuns.has(runId)) continue; // live replies are not replayed
             const controller = new AbortController();
             controllers.current.get(t.id)?.abort();
             controllers.current.set(t.id, controller);
@@ -882,10 +901,11 @@ export function ChatPage({
               placeholder="Ask about policies, contracts, budgets, sales…"
               value={draft}
               onChange={setDraft}
-              disabled={false}
+              disabled={!sendable}
               onSubmit={() => ask(draft)}
               onUpload={() => go("files")}
             />
+            {sendable ? null : <OfflineNote />}
             <p className="asknote">{INDEPENDENT_NOTE}</p>
           </section>
         ) : null}
@@ -921,11 +941,12 @@ export function ChatPage({
                 placeholder="Ask a follow-up…"
                 value={draft}
                 onChange={setDraft}
-                disabled={anyRunning}
+                disabled={anyRunning || !sendable}
                 onSubmit={() => ask(draft)}
                 onUpload={() => go("files")}
               />
-              <p className="asknote">{INDEPENDENT_NOTE}</p>
+              {sendable ? null : <OfflineNote />}
+            <p className="asknote">{INDEPENDENT_NOTE}</p>
             </div>
           </section>
         ) : null}

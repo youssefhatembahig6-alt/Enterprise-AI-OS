@@ -1,8 +1,8 @@
 {
-  "run_id": "local-reval-20261128T133206Z",
-  "started_at": "2026-11-28T13:32:06.899383+00:00",
-  "web": "http://127.0.0.1:13000",
-  "api": "http://127.0.0.1:18000",
+  "run_id": "local-fake-20261128T141103Z",
+  "started_at": "2026-11-28T14:11:03.458831+00:00",
+  "web": "http://127.0.0.1:13101",
+  "api": "http://127.0.0.1:13101",
   "expect_inference": "fake",
   "model_status": {
     "mode": "fake",
@@ -14,12 +14,12 @@
     "engine": null,
     "error": null,
     "label": "FAKE INFERENCE (deterministic development double, not model output)",
-    "checked_at": 1795872726.89805
+    "checked_at": 1795875063.4568164
   },
   "checks": {
     "status_badge": {
-      "label": "FAKE model",
-      "title": "The server uses the labelled development double, not a model. Click to check again.",
+      "label": "FAKE model (test build)",
+      "title": "Automated-test build: the server uses the labelled development double. Click to check again.",
       "screenshot": "0-status-badge.png",
       "problems": [],
       "pass": true
@@ -32,9 +32,9 @@
     "hello": {
       "question": "hello",
       "ui": {
-        "run_id": "3258ff23-6dc1-4811-b09d-199cfa66ca6b",
+        "run_id": "b22ef0c1-a1f1-4fa6-a48a-489390daf70a",
         "handler_header": "general",
-        "conversation_id": "b0bf5869-97e7-4656-813d-85e2ac7fd4e7",
+        "conversation_id": "54bc5d2a-56da-48ac-83b7-d5e8ff994ee3",
         "label": [
           "General"
         ],
@@ -52,7 +52,7 @@
         "screenshot": "1-hello.png"
       },
       "run": {
-        "run_id": "3258ff23-6dc1-4811-b09d-199cfa66ca6b",
+        "run_id": "b22ef0c1-a1f1-4fa6-a48a-489390daf70a",
         "status": "published",
         "inference_mode": "fake",
         "outcome_code": "general_model_reply_unverified",
@@ -71,17 +71,17 @@
       "pass": true
     },
     "general": {
-      "question": "Explain in plain words what a confusion matrix is.",
+      "question": "Suggest a simple agenda for a 30-minute weekly team retrospective.",
       "ui": {
-        "run_id": "698d8bb1-31d2-44d3-9f94-705449276357",
+        "run_id": "cc7ccc6e-559a-4f2d-babc-324d6e78daa0",
         "handler_header": "general",
-        "conversation_id": "b0bf5869-97e7-4656-813d-85e2ac7fd4e7",
+        "conversation_id": "54bc5d2a-56da-48ac-83b7-d5e8ff994ee3",
         "label": [
           "General"
         ],
-        "text": "N\nGeneral\nRequest accepted\nChecked your access\nAsked the model (general knowledge, no company data)\nPublished the general reply\n\nFAKE general reply (deterministic development double, not model output). You asked: Explain in plain words what a confusion matrix is.\n\nGeneral reply · no company data\nNot checked against sources\nFAKE inference — not a model\n\nGeneral reply from the model. It did not use your organization's documents, data or email, and it was not checked against any source.",
+        "text": "N\nGeneral\nRequest accepted\nChecked your access\nAsked the model (general knowledge, no company data)\nPublished the general reply\n\nFAKE general reply (deterministic development double, not model output). You asked: Suggest a simple agenda for a 30-minute weekly team retrospective.\n\nGeneral reply · no company data\nNot checked against sources\nFAKE inference — not a model\n\nGeneral reply from the model. It did not use your organization's documents, data or email, and it was not checked against any source.",
         "reply": [
-          "FAKE general reply (deterministic development double, not model output). You asked: Explain in plain words what a confusion matrix is."
+          "FAKE general reply (deterministic development double, not model output). You asked: Suggest a simple agenda for a 30-minute weekly team retrospective."
         ],
         "pills": [
           "General reply · no company data",
@@ -93,7 +93,7 @@
         "screenshot": "2-general.png"
       },
       "run": {
-        "run_id": "698d8bb1-31d2-44d3-9f94-705449276357",
+        "run_id": "cc7ccc6e-559a-4f2d-babc-324d6e78daa0",
         "status": "published",
         "inference_mode": "fake",
         "outcome_code": "general_model_reply_unverified",
@@ -112,17 +112,17 @@
       "pass": true
     },
     "documents_leave": {
-      "question": "How many unused leave days can I carry into next year, and when do they expire?",
+      "question": "Who do I contact in HR about family leave?",
       "ui": {
-        "run_id": "1ba68ebd-0154-4e93-88fa-3384a7a58ea3",
+        "run_id": "55ce6e0b-eb87-4c19-a71d-9eff9f11df62",
         "handler_header": "documents",
-        "conversation_id": "cb31bcf6-6365-4fee-a1bb-4aba763fbb83",
+        "conversation_id": "038942ab-affe-4ba8-9552-4afcc14d6ed9",
         "label": [
           "Documents"
         ],
-        "text": "N\nDocuments\nRequest accepted\nChecked your access\nSearched documents you can access\nDrafted the answer\nChecked the answer against its sources\nPublished the verified result\n\nUp to five unused days may be carried into the first quarter of the next year. 1\n\nEvery sentence quotes a source you can open\nClaims checked (development checker)\n1 source allowed\nFAKE inference — not a model\n\nEvery sentence quotes an exact passage of a document you can access (re-checked at publication); claims checked by the development baseline checker (not the final trained checker).\n\nAnnual leave policy 2026",
+        "text": "N\nDocuments\nRequest accepted\nChecked your access\nSearched documents you can access\nDrafted the answer\nChecked the answer against its sources\nPublished the verified result\n\nParents may take ten days of family leave per year for school events and caregiving. 1\n\nEvery sentence quotes a source you can open\nClaims checked (development checker)\n1 source allowed\nFAKE inference — not a model\n\nEvery sentence quotes an exact passage of a document you can access (re-checked at publication); claims checked by the development baseline checker (not the final trained checker).\n\nAnnual leave policy 2026",
         "reply": [
-          "Up to five unused days may be carried into the first quarter of the next year. 1"
+          "Parents may take ten days of family leave per year for school events and caregiving. 1"
         ],
         "pills": [
           "Every sentence quotes a source you can open",
@@ -135,17 +135,17 @@
         "screenshot": "3-documents-leave.png"
       },
       "opened": {
-        "passage": "…service this rises to 30 days. Employees in the UAE receive 30 calendar days.\n\nRequests must be approved by the line manager.\n\n| Country | Standard days | After 10 years |\n| Egypt (مصر) | 21 | 30 |\n| UAE (الإمارات) | 30 | 30 |\n\nCarry-over\n\nUp to five unused days may be carried into the first quarter of the next year. Carried days expire on 31 March. Requests must be approved by the line manager.\n\nPublic holidays 🏖️\n\nPublic holidays follow the official calendar of each country, including Sham el-Nessim and Eid al-Fitr (عيد الفطر). Holidays that fall dur…",
+        "passage": "…d by the line manager.\n\nPublic holidays 🏖️\n\nPublic holidays follow the official calendar of each country, including Sham el-Nessim and Eid al-Fitr (عيد الفطر). Holidays that fall during approved leave are not deducted.\n\nFamily leave 👨‍👩‍👧\n\nParents may take ten days of family leave per year for school events and caregiving. Contact Hélène Dubois or Yasmin El-Sayed in HR for questions.…",
         "badge": "text hash verified"
       },
       "citation_requests": [
         [
-          "/runs/1ba68ebd-0154-4e93-88fa-3384a7a58ea3/citations/c1",
+          "/runs/55ce6e0b-eb87-4c19-a71d-9eff9f11df62/citations/c1",
           200
         ]
       ],
       "run": {
-        "run_id": "1ba68ebd-0154-4e93-88fa-3384a7a58ea3",
+        "run_id": "55ce6e0b-eb87-4c19-a71d-9eff9f11df62",
         "status": "published",
         "inference_mode": "fake",
         "outcome_code": "answer_quotes_verified_dev_checked",
@@ -165,9 +165,9 @@
     "sales_report": {
       "question": "What were fulfilled sales in Q1 2026?",
       "ui": {
-        "run_id": "0d46d431-9858-4745-8cf3-400070f60f9e",
+        "run_id": "c8378bd7-e45c-4f15-903e-db5cf5119c41",
         "handler_header": "report",
-        "conversation_id": "63f4d78b-4ac7-47ee-8222-187779ec0744",
+        "conversation_id": "ee97c8bb-cf4c-4677-9fe7-f8b032132ca1",
         "label": [
           "Sales report (SQL)"
         ],
@@ -189,10 +189,10 @@
         "email_action": 1,
         "screenshot": "4-sales-report.png",
         "approval_screenshot": "5-email-approval-form.png",
-        "approval_form": "Email “Fulfilled sales, Q1 2026 · report 0d46d431”"
+        "approval_form": "Email “Fulfilled sales, Q1 2026 · report c8378bd7”"
       },
       "run": {
-        "run_id": "0d46d431-9858-4745-8cf3-400070f60f9e",
+        "run_id": "c8378bd7-e45c-4f15-903e-db5cf5119c41",
         "status": "published",
         "inference_mode": "fake",
         "outcome_code": "figures_verified_narrative_dev_checked",
@@ -220,7 +220,7 @@
       "ui": {
         "run_id": null,
         "handler_header": "clarify",
-        "conversation_id": "f0688f9b-e38b-45b5-aae5-2a8b00cec94d",
+        "conversation_id": "664ecf8d-01f4-4ea4-bce8-7416a5c73186",
         "label": [
           "Clarifying question"
         ],
@@ -241,12 +241,13 @@
     },
     "revalidation": {
       "question": "Why did collections lag revenue in Q1 2026?",
-      "chat": "47579646-5958-4ce6-83b6-4e6d896a23f6",
-      "run_id": "780e4f9d-7467-4795-b0cf-da1e01f54b6d",
+      "newer_question": "hello",
+      "chat": "95cad485-3d19-44a3-9cba-32619b063c5e",
+      "run_id": "086299c5-dbba-469a-8d7d-f0310c7f3aaa",
       "cited": {
-        "run_id": "780e4f9d-7467-4795-b0cf-da1e01f54b6d",
+        "run_id": "086299c5-dbba-469a-8d7d-f0310c7f3aaa",
         "handler_header": "documents",
-        "conversation_id": "47579646-5958-4ce6-83b6-4e6d896a23f6",
+        "conversation_id": "95cad485-3d19-44a3-9cba-32619b063c5e",
         "label": [
           "Documents"
         ],
@@ -276,6 +277,17 @@
         "citations": 0,
         "error": [],
         "passages": 0,
+        "answers": 2,
+        "live_reply": {
+          "label": [],
+          "status": [
+            "Working…"
+          ],
+          "reply": [],
+          "citations": 0,
+          "error": [],
+          "passages": 0
+        },
         "replay_held": true,
         "page_has_old_text": false,
         "screenshot": "7b-revalidation-during.png"
@@ -298,6 +310,19 @@
           404
         ]
       },
+      "live_reply": {
+        "label": [
+          "General"
+        ],
+        "status": [],
+        "reply": [
+          "FAKE general reply (deterministic development double, not model output). You asked: hello"
+        ],
+        "citations": 0,
+        "error": [],
+        "passages": 0,
+        "screenshot": "7d-revalidation-live-reply.png"
+      },
       "restored": {
         "label": [
           "Documents"
@@ -309,19 +334,23 @@
         "citations": 1,
         "error": [],
         "passages": 1,
-        "screenshot": "7d-revalidation-restored.png"
+        "screenshot": "7e-revalidation-restored.png"
       },
       "problems": [],
       "pass": true
     },
     "history": {
-      "chat": "b0bf5869-97e7-4656-813d-85e2ac7fd4e7",
+      "chat": "54bc5d2a-56da-48ac-83b7-d5e8ff994ee3",
       "recents_after_reload": [
+        "95cad485-3d19-44a3-9cba-32619b063c5e",
+        "664ecf8d-01f4-4ea4-bce8-7416a5c73186",
+        "ee97c8bb-cf4c-4677-9fe7-f8b032132ca1",
+        "038942ab-affe-4ba8-9552-4afcc14d6ed9",
+        "54bc5d2a-56da-48ac-83b7-d5e8ff994ee3",
         "47579646-5958-4ce6-83b6-4e6d896a23f6",
         "f0688f9b-e38b-45b5-aae5-2a8b00cec94d",
         "63f4d78b-4ac7-47ee-8222-187779ec0744",
         "cb31bcf6-6365-4fee-a1bb-4aba763fbb83",
-        "b0bf5869-97e7-4656-813d-85e2ac7fd4e7",
         "bfa01ad8-3236-4dec-8cb7-47a06c47ea5a",
         "cd426b7e-88dc-4226-9592-2ecc92e68bdd",
         "5aca662a-5ce0-4279-938c-4a50066023c1",
@@ -343,7 +372,7 @@
       "reopened": {
         "questions": [
           "hello",
-          "Explain in plain words what a confusion matrix is."
+          "Suggest a simple agenda for a 30-minute weekly team retrospective."
         ],
         "labels": [
           "General",
@@ -354,7 +383,7 @@
             "FAKE general reply (deterministic development double, not model output). You asked: hello"
           ],
           [
-            "FAKE general reply (deterministic development double, not model output). You asked: Explain in plain words what a confusion matrix is."
+            "FAKE general reply (deterministic development double, not model output). You asked: Suggest a simple agenda for a 30-minute weekly team retrospective."
           ]
         ],
         "screenshot": "8-history-reopened.png"
@@ -369,6 +398,7 @@
         "after_reload": true
       },
       "second_employee_recents": [
+        "7b6102f6-570b-4a65-9543-9b161627c6f5",
         "8695acf9-a450-4103-b3da-fef014fcd7f0",
         "2683d3fe-7704-4500-817b-305c7940dadc",
         "a74a1ae6-ab74-409c-80a3-01da4c1adcad",
@@ -380,9 +410,9 @@
     "sales_refusal": {
       "question": "Why did collections lag revenue in Q1 2026?",
       "ui": {
-        "run_id": "bc169a1b-8141-4175-acf1-906f9f5635c6",
+        "run_id": "a880fe9a-d7c8-47ea-b924-a003c61c029a",
         "handler_header": "documents",
-        "conversation_id": "7b6102f6-570b-4a65-9543-9b161627c6f5",
+        "conversation_id": "43f1d172-437b-4423-8ad9-7d2e55908715",
         "label": [
           "Documents"
         ],
@@ -397,7 +427,7 @@
         "screenshot": "10-sales-refusal.png"
       },
       "run": {
-        "run_id": "bc169a1b-8141-4175-acf1-906f9f5635c6",
+        "run_id": "a880fe9a-d7c8-47ea-b924-a003c61c029a",
         "status": "abstained",
         "inference_mode": "fake",
         "outcome_code": "no_sources",
@@ -417,9 +447,10 @@
   },
   "model_chip": [
     "Finance · up to Confidential",
-    "FAKE model"
+    "FAKE model (test build)"
   ],
-  "finished_at": "2026-11-28T13:32:24.122791+00:00",
+  "finished_at": "2026-11-28T14:11:21.556049+00:00",
   "pass": true,
-  "exit_status": 0
+  "exit_status": 0,
+  "ui_build": "VITE_API_BASE_URL='' VITE_TEST_ALLOW_FAKE_MODEL=true (automated-test build) behind preview_proxy.py :13101 -> API :18000"
 }

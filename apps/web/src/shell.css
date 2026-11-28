@@ -65,6 +65,8 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .eaios-shell .row.confirm { cursor: default; gap: 6px; background: var(--surface-2); }
 .eaios-shell .row.confirm .sp { flex: 1; }
 .eaios-shell .btn.small.danger { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 50%, var(--bg)); }
+/* M8: real-model only; shown under the composer while sending is paused. */
+.eaios-shell .offline-note { margin: 8px auto 0; max-width: 680px; font-size: 13px; color: var(--crit); text-align: center; }
 /* M8: which handler answered. */
 .eaios-shell .a .chip.handler { align-self: flex-start; font-size: 11.5px; padding: 1px 8px; }
 .eaios-shell .a p.clarify { color: var(--fg); }

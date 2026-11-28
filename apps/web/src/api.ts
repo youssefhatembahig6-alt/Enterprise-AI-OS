@@ -10,6 +10,10 @@ import { fetchCredentials } from "./fetchPolicy.js";
 export const API_BASE_URL: string = (import.meta.env?.VITE_API_BASE_URL ?? "http://localhost:8000")
   .replace(/\/+$/, "");
 
+/** Automated UI tests only: let the chat use the labelled fake model as a test double
+ * (modelStatusView.ts). Normal builds leave it unset and are real-model only. */
+export const TEST_ALLOW_FAKE_MODEL: boolean = import.meta.env?.VITE_TEST_ALLOW_FAKE_MODEL === "true";
+
 /** "omit" everywhere except the private Colab preview build (see fetchPolicy.ts). */
 export const FETCH_CREDENTIALS: RequestCredentials = fetchCredentials(
   import.meta.env?.VITE_FETCH_CREDENTIALS,

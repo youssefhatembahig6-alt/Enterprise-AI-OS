@@ -51,8 +51,12 @@ _GREETING_PREFIX = re.compile(
     r"(?:\s*[,.!:;-]+|\s+|$))+",
     re.I,
 )
+# Small talk only when it is the whole message: "help" is General, "Help me find our board
+# minutes" is a request for a company record.
 _SMALL_TALK = re.compile(
-    r"^(bye|goodbye|see\s+you|how\s+are\s+you|who\s+are\s+you|what\s+can\s+you\s+do|help)\b",
+    r"^(?:bye|goodbye|see\s+you(?:\s+later)?|how\s+are\s+you(?:\s+doing)?(?:\s+today)?|"
+    r"who\s+are\s+you|what\s+can\s+you\s+do|what\s+do\s+you\s+do|help|help\s+me|"
+    r"can\s+you\s+help(?:\s+me)?|please\s+help)[\s?!.]*$",
     re.I,
 )
 # Ordinary definitions ("What is a contract?", "Define a termination clause") ask about a
@@ -64,6 +68,15 @@ _DEFINITION = re.compile(
     re.I,
 )
 _OWNED = re.compile(r"\b(our|my|we|us|niletech|the\s+company|company's|internal)\b", re.I)
+# A definition asked about a specific company record ("What is a customer in the board
+# memo?") is a question about that record, not a general definition.
+_RECORD_REF = re.compile(
+    r"\b(?:in|from|according\s+to|per|under)\s+(?:the|this|that|our)\s+[\w\s-]{0,40}?"
+    r"\b(?:memos?|minutes|handbook|polic(?:y|ies)|contracts?|agreements?|licen[cs]es?|"
+    r"reports?|commentary|catalogue|catalog|workbook|documents?|files?|notes|guidelines|"
+    r"procedures?|repositor(?:y|ies)|codebase)\b",
+    re.I,
+)
 _LEGAL = re.compile(
     r"\b(contracts?|agreements?|clauses?|licen[cs]es?|termination\s+terms?)\b", re.I
 )
@@ -169,7 +182,7 @@ def route_chat(question: str, enabled_packs: frozenset[str] | None) -> ChatRoute
 
     if not words or (_SMALL_TALK.match(text) and len(words) <= 6):
         return general("greeting" if greeted or not words else "small_talk")
-    if _DEFINITION.match(text) and not _OWNED.search(text):
+    if _DEFINITION.match(text) and not (_OWNED.search(text) or _RECORD_REF.search(text)):
         return general("definition")
 
     company = _company_handler(text)

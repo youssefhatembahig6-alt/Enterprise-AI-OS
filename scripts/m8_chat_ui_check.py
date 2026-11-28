@@ -51,6 +51,7 @@ accepts a run only on exit 0 plus a passing report carrying its own run id.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 import time
@@ -78,6 +79,13 @@ REFUSAL = "I couldn't find information in documents you can access that answers 
 HELLO = "hello"
 SALES_Q = "What were fulfilled sales in Q1 2026?"
 VAGUE_Q = "the numbers?"
+OFFLINE_CHECKS = ("offline_badge", "send_blocked", "history_available")
+
+
+class _Done(Exception):
+    """The offline gate ran; skip the answering checks."""
+
+
 CHECKS = (
     "status_badge",
     "no_source_picker",
@@ -271,8 +279,9 @@ def real(record: dict[str, Any], expect: str, purpose: str) -> list[str]:
     return problems
 
 
-def answer_state(page: Page) -> dict[str, Any]:
-    answer = page.locator(".convo .a").last
+def answer_state(page: Page, index: int = -1) -> dict[str, Any]:
+    answers = page.locator(".convo .a")
+    answer = answers.last if index == -1 else answers.nth(index)
     return {
         "label": answer.locator(".chip.handler").all_inner_texts(),
         "status": answer.locator(".step.run").all_inner_texts(),
@@ -283,9 +292,22 @@ def answer_state(page: Page) -> dict[str, Any]:
     }
 
 
+def wait_finished(page: Page, index: int, timeout_s: float) -> None:
+    answer = page.locator(".convo .a").nth(index)
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline and not (
+        answer.locator(".errbox").count() or answer.locator(".verify").count()
+    ):
+        page.wait_for_timeout(250)
+
+
 def revalidation(  # noqa: PLR0915 - one scripted scenario
     page: Page, ui: Ui, args: argparse.Namespace, creds: dict[str, str], tokens: dict[str, str]
 ) -> dict[str, Any]:
+    """Same session, no reload: an older cited answer, a newer reply in flight, switch away,
+    revoke access, reopen. The older answer stays hidden during and after the re-check; the
+    newer reply keeps working and finishes."""
+
     problems: list[str] = []
     page.get_by_role("button", name="New chat").click()
     cited = ui.ask(RESTRICTED_Q, args.timeout)
@@ -302,6 +324,18 @@ def revalidation(  # noqa: PLR0915 - one scripted scenario
     before_shot = ui.shot("7a-revalidation-cited")
     page.get_by_role("button", name="Close panel").click()
 
+    # A newer question in the same chat; its request is held, so the reply is in flight.
+    live_held: list[Any] = []
+    page.route("**/api/v1/chat", lambda route: live_held.append(route))
+    box = page.locator("form.composer").last.get_by_label("Your question")
+    box.fill(HELLO)
+    box.press("Enter")
+    deadline = time.monotonic() + 15
+    while not live_held and time.monotonic() < deadline:
+        page.wait_for_timeout(100)
+    if not live_held:
+        problems.append("the newer question was not sent")
+
     page.get_by_role("button", name="New chat").click()  # switch away
     admin = api_json(
         args.api,
@@ -313,6 +347,7 @@ def revalidation(  # noqa: PLR0915 - one scripted scenario
     pattern = f"**/api/v1/runs/{run_id}/events**"
     during: dict[str, Any] = {}
     after: dict[str, Any] = {}
+    live: dict[str, Any] = {}
     restored: dict[str, Any] = {}
     try:
         page.route(pattern, lambda route: held.append(route))
@@ -321,26 +356,27 @@ def revalidation(  # noqa: PLR0915 - one scripted scenario
         deadline = time.monotonic() + 30
         while not held and time.monotonic() < deadline:
             page.wait_for_timeout(200)
-        during = answer_state(page)
+        during = answer_state(page, 0)
+        during["answers"] = page.locator(".convo .a").count()
+        during["live_reply"] = answer_state(page, -1)
         during["replay_held"] = bool(held)
         during["page_has_old_text"] = any(t in page.inner_text("body") for t in old_reply)
         during["screenshot"] = ui.shot("7b-revalidation-during")
         if not held:
-            problems.append("the reopen did not replay the answer from the server")
+            problems.append("the reopen did not replay the older answer from the server")
         if during["page_has_old_text"] or during["citations"] or during["passages"]:
             problems.append(f"old answer visible while re-checking: {during}")
         if not any("Re-checking your access" in t for t in during["status"]):
             problems.append(f"no re-checking state shown: {during['status']}")
+        if during["answers"] != 2 or not any(
+            "Working" in t for t in during["live_reply"]["status"]
+        ):
+            problems.append(f"the newer reply is not still in flight: {during['live_reply']}")
         for route in held:
             route.continue_()
         page.unroute(pattern)
-        deadline = time.monotonic() + 60
-        answer = page.locator(".convo .a").last
-        while time.monotonic() < deadline and not (
-            answer.locator(".errbox").count() or answer.locator(".verify").count()
-        ):
-            page.wait_for_timeout(250)
-        after = answer_state(page)
+        wait_finished(page, 0, 60)
+        after = answer_state(page, 0)
         after["page_has_old_text"] = any(t in page.inner_text("body") for t in old_reply)
         after["leaked_markers"] = [m for m in RESTRICTED_MARKERS if m in page.content()]
         after["screenshot"] = ui.shot("7c-revalidation-after")
@@ -355,33 +391,108 @@ def revalidation(  # noqa: PLR0915 - one scripted scenario
             problems.append(f"no access_revoked after re-checking: {after['error']}")
         if not citation_paths or any(code != 404 for code in after["citation_status"]):
             problems.append(f"citation endpoint after revocation: {after['citation_status']}")
+        # Release the newer question: the live reply keeps working and finishes.
+        for route in live_held:
+            route.continue_()
+        live_held.clear()
+        page.unroute("**/api/v1/chat")
+        wait_finished(page, 1, args.timeout)
+        live = answer_state(page, 1)
+        live["screenshot"] = ui.shot("7d-revalidation-live-reply")
+        if live["label"] != ["General"] or not any(t.strip() for t in live["reply"]):
+            problems.append(f"the newer reply did not finish normally: {live}")
+        still_hidden = answer_state(page, 0)
+        if still_hidden["citations"] or any(t in page.inner_text("body") for t in old_reply):
+            problems.append("the older answer reappeared when the newer reply finished")
     finally:
         set_groups(args.api, admin, FINANCE, lambda g: original)
+        for route in live_held:  # still held only if the scenario stopped early
+            with contextlib.suppress(Exception):
+                route.continue_()
     # Reopen again with access restored: revalidation runs every time, so it comes back.
     page.get_by_role("button", name="New chat").click()
     page.locator(f".side .recent[data-conversation='{chat}'] button.row").click()
-    answer = page.locator(".convo .a").last
-    deadline = time.monotonic() + 60
-    while time.monotonic() < deadline and not (
-        answer.locator(".errbox").count() or answer.locator(".verify").count()
-    ):
-        page.wait_for_timeout(250)
-    restored = answer_state(page)
-    restored["screenshot"] = ui.shot("7d-revalidation-restored")
+    wait_finished(page, 0, 60)
+    restored = answer_state(page, 0)
+    restored["screenshot"] = ui.shot("7e-revalidation-restored")
     if not restored["citations"] or not any(t.strip() for t in restored["reply"]):
         problems.append(f"answer did not come back after access was restored: {restored}")
     return {
         "question": RESTRICTED_Q,
+        "newer_question": HELLO,
         "chat": chat,
         "run_id": run_id,
         "cited": {**cited, "screenshot": before_shot},
         "revoked": "finance.reader removed from finance-team by access.admin",
         "during": during,
         "after": after,
+        "live_reply": live,
         "restored": restored,
         "problems": problems,
         "pass": not problems,
     }
+
+
+def offline_gate(
+    page: Page, ui: Ui, args: argparse.Namespace, creds: dict[str, str]
+) -> dict[str, Any]:
+    """Real-model only: with the gateway unavailable (or the server in fake mode) the badge
+    reads Real model offline, Send is disabled and nothing is sent; saved chats still open."""
+
+    checks: dict[str, Any] = {}
+    ui.sign_in(FINANCE, creds[FINANCE])
+    badge = page.locator("button.chip.status")
+    label = ""
+    for _ in range(120):
+        label = badge.inner_text().strip()
+        if label not in ("Checking…", ""):
+            break
+        time.sleep(0.5)
+    checks["offline_badge"] = {
+        "label": label,
+        "title": badge.get_attribute("title"),
+        "screenshot": ui.shot("0-offline-badge"),
+        "problems": [] if label == "Real model offline" else [f"badge shows {label!r}"],
+    }
+    composer = page.locator("form.composer").last
+    composer.get_by_label("Your question").fill(HELLO)
+    send = composer.get_by_role("button", name="Ask")
+    before = len(ui.chats)
+    composer.get_by_label("Your question").press("Enter")
+    page.wait_for_timeout(2000)
+    note = page.locator(".offline-note").all_inner_texts()
+    blocked = {
+        "send_disabled": send.is_disabled(),
+        "requests_sent": len(ui.chats) - before,
+        "note": note,
+        "screenshot": ui.shot("1-offline-send-blocked"),
+    }
+    problems = []
+    if not blocked["send_disabled"]:
+        problems.append("Send is enabled")
+    if blocked["requests_sent"]:
+        problems.append("a question was sent to the server")
+    if not any("Real model offline" in t for t in note):
+        problems.append("no offline notice")
+    checks["send_blocked"] = {**blocked, "problems": problems}
+    rows = page.locator(".side .recent[data-conversation]")
+    problems = []
+    opened: dict[str, Any] = {"saved_chats": rows.count()}
+    if rows.count():
+        rows.first.locator("button.row").click()
+        page.locator(".convo .a").first.wait_for(timeout=15_000)
+        wait_finished(page, 0, 60)
+        opened.update(answer_state(page, 0))
+        opened["screenshot"] = ui.shot("2-offline-history")
+        if not (opened["reply"] or opened["error"]):
+            problems.append("the saved chat did not open")
+    else:
+        problems.append("no saved chats to open")
+    checks["history_available"] = {**opened, "problems": problems}
+    for check in checks.values():
+        check["pass"] = not check["problems"]
+    ui.sign_out()
+    return checks
 
 
 def main() -> int:  # noqa: PLR0915
@@ -392,7 +503,13 @@ def main() -> int:  # noqa: PLR0915
     ap.add_argument("--api", required=True)
     ap.add_argument("--credentials", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--expect-inference", choices=["gateway", "fake"], required=True)
+    ap.add_argument(
+        "--expect-inference",
+        choices=["gateway", "fake", "offline"],
+        required=True,
+        help="gateway: real Qwen; fake: an automated-test build (VITE_TEST_ALLOW_FAKE_MODEL) "
+        "with the labelled fake double; offline: the real-model-only gate (no question sent)",
+    )
     ap.add_argument("--timeout", type=float, default=300.0, help="per question (s)")
     ap.add_argument(
         "--documents-question", default=LEAVE_Q, help="annual-leave question (fresh wording)"
@@ -436,12 +553,17 @@ def main() -> int:  # noqa: PLR0915
         ui = Ui(page, args.web, out)
         checks: dict[str, Any] = result["checks"]
         try:
+            if args.expect_inference == "offline":
+                checks.update(offline_gate(page, ui, args, creds))
+                raise _Done
             ui.sign_in(FINANCE, creds[FINANCE])
             result["model_chip"] = page.locator(".scope .chip").all_inner_texts()
             # The header's model status button: Connected only after the backend's
             # authenticated readiness check of the pinned Qwen chat server.
             want = (
-                "Connected · Qwen3-8B-AWQ" if args.expect_inference == "gateway" else "FAKE model"
+                "Connected · Qwen3-8B-AWQ"
+                if args.expect_inference == "gateway"
+                else "FAKE model (test build)"
             )
             badge = page.locator("button.chip.status")
             label = ""
@@ -714,10 +836,13 @@ def main() -> int:  # noqa: PLR0915
                 "pass": not problems,
             }
             ui.sign_out()
+        except _Done:
+            pass
         finally:
             browser.close()
     result["finished_at"] = datetime.now(UTC).isoformat()
-    result["pass"] = set(result["checks"]) == set(CHECKS) and all(
+    expected = OFFLINE_CHECKS if args.expect_inference == "offline" else CHECKS
+    result["pass"] = set(result["checks"]) == set(expected) and all(
         c["pass"] for c in result["checks"].values()
     )
     (out / "m8-chat-ui-check.json").write_text(
