@@ -1,0 +1,59 @@
+{
+  "run_id": "local-offline-gateway-20261128T141203Z",
+  "started_at": "2026-11-28T14:12:03.487756+00:00",
+  "web": "http://127.0.0.1:13102",
+  "api": "http://127.0.0.1:13102",
+  "expect_inference": "offline",
+  "model_status": {
+    "mode": "gateway",
+    "verified": false,
+    "authenticated": false,
+    "chat": null,
+    "embed": null,
+    "checker": null,
+    "engine": null,
+    "error": "unavailable",
+    "label": null,
+    "checked_at": 1795875123.085889
+  },
+  "checks": {
+    "offline_badge": {
+      "label": "Real model offline",
+      "title": "The model gateway could not be reached (is the Colab runtime and its connection up?). New questions are paused; your saved chats stay available. Click to check again.",
+      "screenshot": "0-offline-badge.png",
+      "problems": [],
+      "pass": true
+    },
+    "send_blocked": {
+      "send_disabled": true,
+      "requests_sent": 0,
+      "note": [
+        "Real model offline: sending is paused until the server is connected to the real model. Your saved chats stay available."
+      ],
+      "screenshot": "1-offline-send-blocked.png",
+      "problems": [],
+      "pass": true
+    },
+    "history_available": {
+      "saved_chats": 25,
+      "label": [
+        "Documents"
+      ],
+      "status": [],
+      "reply": [
+        "Collections lagged revenue because 370 open invoices were already past their due date at the reference date. 1"
+      ],
+      "citations": 1,
+      "error": [],
+      "passages": 1,
+      "screenshot": "2-offline-history.png",
+      "problems": [],
+      "pass": true
+    }
+  },
+  "finished_at": "2026-11-28T14:12:07.477268+00:00",
+  "pass": true,
+  "exit_status": 0,
+  "ui_build": "normal (real-model only) build behind preview_proxy.py :13102",
+  "backend": "one-off API container :18002, MODEL_MODE=gateway, LLM_BASE_URL=http://127.0.0.1:9 (nothing listens), model status error=unavailable"
+}

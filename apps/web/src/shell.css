@@ -53,6 +53,23 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .eaios-shell .side-scroll { overflow: auto; padding: 0 8px 12px; flex: 1; }
 .eaios-shell .row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 7px 10px; border-radius: 8px; font-size: 13.5px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: none; border: 0; cursor: pointer; }
 .eaios-shell .row > span.t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* M8 Recents: each saved chat has a Delete button (shown on hover/focus) and an inline confirmation. */
+.eaios-shell .recent { display: flex; align-items: center; border-radius: 8px; }
+.eaios-shell .recent > .row { flex: 1; min-width: 0; }
+.eaios-shell .recent > .iconbtn.del { flex: none; width: 28px; height: 28px; opacity: 0; color: var(--muted); }
+.eaios-shell .recent:hover > .iconbtn.del,
+.eaios-shell .recent > .iconbtn.del:focus-visible,
+.eaios-shell .recent:has(.row[aria-current="page"]) > .iconbtn.del { opacity: 1; }
+.eaios-shell .recent > .iconbtn.del:hover { color: var(--crit); }
+.eaios-shell .recent > .iconbtn.del:disabled { opacity: 0; pointer-events: none; }
+.eaios-shell .row.confirm { cursor: default; gap: 6px; background: var(--surface-2); }
+.eaios-shell .row.confirm .sp { flex: 1; }
+.eaios-shell .btn.small.danger { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 50%, var(--bg)); }
+/* M8: real-model only; shown under the composer while sending is paused. */
+.eaios-shell .offline-note { margin: 8px auto 0; max-width: 680px; font-size: 13px; color: var(--crit); text-align: center; }
+/* M8: which handler answered. */
+.eaios-shell .a .chip.handler { align-self: flex-start; font-size: 11.5px; padding: 1px 8px; }
+.eaios-shell .a p.clarify { color: var(--fg); }
 .eaios-shell .row:hover { background: var(--surface-2); }
 .eaios-shell .row[aria-current="page"] { background: var(--surface-2); font-weight: 500; }
 .eaios-shell .label { font-size: 12.5px; color: var(--muted); padding: 14px 10px 5px; }

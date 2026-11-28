@@ -16,9 +16,10 @@ from app.actions.mail import Mailer, MailLookup, MailpitLookup, SmtpMailer
 from app.actions.service import ActionService
 from app.actions.store import mark_outbox_dispatched
 from app.admin.service import AdminService
-from app.api import actions, admin, auth, documents, health, local_folders, reports
+from app.api import actions, admin, auth, conversations, documents, health, local_folders, reports
 from app.api import model as model_api
 from app.api.errors import install_error_handlers
+from app.chat.history import ChatHistory
 from app.config import Settings, get_settings
 from app.connectors.drive import ConnectorConfig, DriveClientFactory, http_client_factory
 from app.connectors.github import GitHubClientFactory, GitHubConnectorConfig
@@ -139,6 +140,7 @@ def create_app(  # noqa: PLR0915
         reauthenticate=lambda token: identity.authenticate(token, request_id_var.get()),
     )
     app.state.report_runner = runner
+    app.state.chat_history = ChatHistory(engine)  # M8: private chat history
     # M6: email actions. With inline dispatch the API delivers on its own thread pool;
     # with Celery the worker does and beat runs recovery, reconciliation and briefings.
     delivery = EmailDelivery(
@@ -268,13 +270,20 @@ def create_app(  # noqa: PLR0915
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
-        expose_headers=["X-Request-ID", "Retry-After", "X-Run-ID"],
+        expose_headers=[
+            "X-Request-ID",
+            "Retry-After",
+            "X-Run-ID",
+            "X-Conversation-ID",
+            "X-Handler",
+        ],
         max_age=600,
     )
     install_error_handlers(app)
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(reports.router)
+    app.include_router(conversations.router)
     app.include_router(model_api.router)
     app.include_router(documents.router)
     app.include_router(admin.router)

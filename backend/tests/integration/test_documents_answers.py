@@ -530,7 +530,8 @@ def test_t10_restricted_and_removed_documents_are_indistinguishable(
     client, ids, _ = corpus
     doc = ids["finance-q1-commentary"]
     token = login(client, documents_db, "niletech/sales-reader")
-    volatile = {"x-request-id", "x-run-id", "date", "content-length"}
+    # Per-request ids (the run and, since M8, the saved conversation) differ every time.
+    volatile = {"x-request-id", "x-run-id", "x-conversation-id", "date", "content-length"}
 
     def set_removed(removed: bool) -> None:
         owner_exec(

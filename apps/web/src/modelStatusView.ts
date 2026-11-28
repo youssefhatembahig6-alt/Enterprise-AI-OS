@@ -3,6 +3,12 @@
  * GET /api/v1/model/status. "Connected" only when the backend confirmed gateway mode,
  * the pinned model and revision, and an authenticated readiness check of the actual Qwen
  * chat server behind the gateway (token accepted, vLLM up and serving the model).
+ *
+ * The employee-facing chat is real-model only: every other state, including a server that
+ * runs the fake development double, reads "Real model offline", and `canSend` lets the
+ * chat send a new question only while the real model is connected. Automated UI tests may
+ * build with `allowFake` (VITE_TEST_ALLOW_FAKE_MODEL=true) to use the labelled fake model
+ * as a test double; normal builds never do.
  * Type-only imports, so it runs under node:test.
  */
 
@@ -34,7 +40,16 @@ export function shortModelName(name: string | null | undefined): string {
   return (name ?? "model").split("/").pop() ?? "model";
 }
 
-export function statusButton(outcome: CheckOutcome): StatusButton {
+/** Whether the chat may send a new question: the backend verified the pinned real model
+ * with an authenticated readiness check (or, in a test build only, the fake double). */
+export function canSend(outcome: CheckOutcome, allowFake = false): boolean {
+  if (outcome.kind !== "status") return false;
+  const s = outcome.status;
+  if (s.mode === "fake") return allowFake;
+  return Boolean(s.verified && s.authenticated && s.chat?.model && s.chat.revision);
+}
+
+export function statusButton(outcome: CheckOutcome, allowFake = false): StatusButton {
   switch (outcome.kind) {
     case "checking":
       return { label: "Checking…", tone: "unknown", title: "Checking the model connection…" };
@@ -53,11 +68,17 @@ export function statusButton(outcome: CheckOutcome): StatusButton {
     case "status": {
       const s = outcome.status;
       if (s.mode === "fake") {
-        return {
-          label: "FAKE model",
-          tone: "warn",
-          title: "The server uses the labelled development double, not a model. Click to check again.",
-        };
+        return allowFake
+          ? {
+              label: "FAKE model (test build)",
+              tone: "warn",
+              title: "Automated-test build: the server uses the labelled development double. Click to check again.",
+            }
+          : {
+              label: "Real model offline",
+              tone: "crit",
+              title: "The server is not connected to the real model, so new questions are paused. Your saved chats stay available. Click to check again.",
+            };
       }
       if (s.verified && s.authenticated && s.chat?.model && s.chat.revision) {
         return {
@@ -67,9 +88,9 @@ export function statusButton(outcome: CheckOutcome): StatusButton {
         };
       }
       return {
-        label: "Model offline",
+        label: "Real model offline",
         tone: "crit",
-        title: `${REASONS[s.error ?? ""] ?? "The model gateway is not available."} Click to check again.`,
+        title: `${REASONS[s.error ?? ""] ?? "The model gateway is not available."} New questions are paused; your saved chats stay available. Click to check again.`,
       };
     }
   }

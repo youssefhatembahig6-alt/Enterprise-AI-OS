@@ -824,6 +824,16 @@ def _membership(db: DbHarness, ref: str, present: bool) -> None:
         owner_exec(db, "DELETE FROM group_memberships WHERE group_id = :g AND user_id = :u", params)
 
 
+class _NoChatHistory:
+    """Chat history for an app running on a schema older than migration 0017."""
+
+    def require_owned(self, ctx: Any, conversation_id: Any) -> None:
+        return None
+
+    def record_turn(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
 def queued(client: TestClient, db: DbHarness, to: str) -> tuple[str, dict[str, Any], Any]:
     """A send queued in the outbox but not dispatched (the test drives the worker)."""
 
@@ -1475,6 +1485,9 @@ def test_upgrade_treats_pre_0014_attempts_as_possibly_sent(
         # Before the upgrade: real drafts, approvals and queued sends (schema 0013).
         rows: dict[str, Any] = {}
         with TestClient(create_app(settings)) as old:
+            # Schema 0013 predates chat history (0017): this phase stands in for the old
+            # workers, so the chat's history store is replaced by one that saves nothing.
+            old.app.state.chat_history = _NoChatHistory()  # type: ignore[attr-defined]
             for case in (
                 "dispatching",
                 "requeued",

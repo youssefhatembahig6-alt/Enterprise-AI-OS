@@ -1,22 +1,42 @@
 #!/usr/bin/env python3
-"""M8 browser check of the chat UI (Playwright, headless Chromium).
+"""M8 browser check of the chat UI with automatic routing (Playwright, headless Chromium).
 
-Drives the built web app like a user and records evidence:
+The composer has no source picker: every question is routed by the server's orchestrator,
+and each answer must carry the label of the handler that replied. Checks:
 
-  1. documents  finance.reader asks a newly phrased annual-leave question with the
-                **Documents** source; the reply must be published with a citation, and
-                clicking the citation must open the passage ("text hash verified")
-                through GET /api/v1/runs/{id}/citations/{cid} (access re-checked).
-  2. refusal    sales.reader asks for the restricted Q1 finance commentary content with
-                the **Documents** source; the reply must be the no-sources refusal and
-                the page must not show the restricted figures.
-  3. general    finance.reader sends a fresh open-ended prompt with the **General**
-                source; the reply must be published and labelled as a general reply.
+  status_badge     the header shows Connected · Qwen3-8B-AWQ (gateway) or FAKE model.
+  no_source_picker the composer has no Source control.
+  hello            "hello" gets a natural General reply (label General, no citations).
+  general          a fresh open-ended question: label General, published, uncited.
+  documents_leave  a fresh annual-leave question: label Documents, published with a
+                   citation whose passage opens ("text hash verified") through
+                   GET /api/v1/runs/{id}/citations/{cid} (access re-checked).
+  sales_report     a sales question: label Sales report (SQL), a verified table, and the
+                   "Email this report for approval" action opening the approval form for
+                   that report (nothing is drafted or sent here).
+  clarify          a vague request ("the numbers?") gets one short clarifying question,
+                   labelled as such, with no run.
+  revalidation     same session, no reload: finance.reader gets a cited answer from the
+                   finance commentary and opens the citation, switches to a new chat, an
+                   administrator removes finance.reader from finance-team, and the chat is
+                   reopened from Recents. While the replay is held open the old answer, its
+                   citation and its passage are hidden ("Re-checking your access…"); after
+                   it, the answer ends with access_revoked and the citation endpoint
+                   returns 404. Membership is restored (also on failure) and a further
+                   reopen shows the answer again: revalidation runs on every reopen.
+  sales_refusal    sales.reader asks for restricted finance commentary: the documents
+                   handler's no-sources refusal, no restricted figures on the page.
+  history          the chats survive a reload and a new sign-in under Recents; a chat
+                   reopens with its answers replayed (labels intact); Delete asks for
+                   confirmation, removes it, and it stays gone after another reload; a
+                   second employee cannot list, open or delete the first one's chat
+                   (API 404) and does not see it in Recents.
 
 For every run the script reads GET /api/v1/runs/{id} with the user's own token and
 records ``inference_mode`` and the served chat model. With ``--expect-inference gateway``
-the successful runs (1 and 3) must say ``gateway`` with the pinned revision; with
-``fake`` they must say ``fake`` (local plumbing check only, never model evidence).
+the published answers must say ``gateway`` with the pinned revision and an actual model
+call; with ``fake`` they must say ``fake`` (local plumbing check only, never model
+evidence).
 
     python scripts/m8_chat_ui_check.py --web http://127.0.0.1:13000 \\
         --api http://127.0.0.1:18000 --credentials <dev-credentials.json> \\
@@ -31,9 +51,11 @@ accepts a run only on exit 0 plus a passing report carrying its own run id.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -44,6 +66,7 @@ from playwright.sync_api import Page, Response, sync_playwright
 TENANT = "niletech"
 FINANCE = "finance.reader@niletech.example"
 SALES = "sales.reader@niletech.example"
+ADMIN = "access.admin@niletech.example"
 PINNED_CHAT = ("Qwen/Qwen3-8B-AWQ", "4da05a8edb55c6046cce958586c33b61da07bb79")
 LEAVE_Q = "If I don't use all my vacation this year, how many days can I roll over, and until when?"
 RESTRICTED_Q = "Why did collections lag revenue in Q1 2026?"
@@ -53,6 +76,28 @@ GENERAL_Q = (
     "and more useful."
 )
 REFUSAL = "I couldn't find information in documents you can access that answers this."
+HELLO = "hello"
+SALES_Q = "What were fulfilled sales in Q1 2026?"
+VAGUE_Q = "the numbers?"
+OFFLINE_CHECKS = ("offline_badge", "send_blocked", "history_available")
+
+
+class _Done(Exception):
+    """The offline gate ran; skip the answering checks."""
+
+
+CHECKS = (
+    "status_badge",
+    "no_source_picker",
+    "hello",
+    "general",
+    "documents_leave",
+    "sales_report",
+    "clarify",
+    "revalidation",
+    "sales_refusal",
+    "history",
+)
 
 
 def api_json(api: str, path: str, token: str | None = None, body: Any = None) -> Any:
@@ -67,21 +112,67 @@ def api_json(api: str, path: str, token: str | None = None, body: Any = None) ->
         return json.loads(resp.read() or b"null")
 
 
+def api_status(api: str, path: str, token: str, method: str = "GET") -> int:
+    req = urllib.request.Request(  # noqa: S310 - local stack
+        api + path, headers={"Authorization": f"Bearer {token}"}, method=method
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+            return int(resp.status)
+    except urllib.error.HTTPError as exc:
+        return int(exc.code)
+
+
+def api_put(api: str, path: str, token: str, body: Any) -> Any:
+    req = urllib.request.Request(  # noqa: S310 - local stack
+        api + path,
+        data=json.dumps(body).encode(),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="PUT",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+        return json.loads(resp.read() or b"null")
+
+
+def set_groups(api: str, admin_token: str, email: str, change: Any) -> list[str]:
+    """Change a user's groups through the admin API; returns the groups before."""
+
+    users = api_json(api, "/api/v1/admin/users", admin_token)
+    user = next(u for u in users if u["email"] == email)
+    before = list(user["groups"])
+    api_put(
+        api,
+        f"/api/v1/admin/users/{user['user_id']}/groups",
+        admin_token,
+        {"groups": change(before)},
+    )
+    return before
+
+
+def conversation_ids(api: str, token: str) -> set[str]:
+    listed = api_json(api, "/api/v1/conversations", token)["conversations"]
+    return {c["conversation_id"] for c in listed}
+
+
 class Ui:
     def __init__(self, page: Page, web: str, out: Path) -> None:
         self.page = page
         self.web = web
         self.out = out
-        self.run_ids: list[str] = []
+        self.chats: list[dict[str, str | None]] = []
         self.citation_calls: list[tuple[str, int]] = []
         page.on("response", self._on_response)
 
     def _on_response(self, response: Response) -> None:
         url = response.url
         if url.endswith("/api/v1/chat") and response.request.method == "POST":
-            run_id = response.headers.get("x-run-id")
-            if run_id:
-                self.run_ids.append(run_id)
+            self.chats.append(
+                {
+                    "run_id": response.headers.get("x-run-id"),
+                    "handler": response.headers.get("x-handler"),
+                    "conversation_id": response.headers.get("x-conversation-id"),
+                }
+            )
         elif "/citations/" in url and response.request.method == "GET":
             self.citation_calls.append((url.split("/api/v1", 1)[-1], response.status))
 
@@ -105,31 +196,50 @@ class Ui:
         p.get_by_role("menuitem", name="Sign out").click()
         p.get_by_role("button", name="Sign in").wait_for(timeout=15_000)
 
-    def ask(self, question: str, source_label: str, timeout_s: float) -> dict[str, Any]:
-        """Type into the visible composer, pick the Source, press Enter, wait for the end."""
+    def ask(self, question: str, timeout_s: float) -> dict[str, Any]:
+        """Type into the visible composer and press Enter (no source is chosen: the server
+        routes the question); wait until the answer has finished."""
 
         p = self.page
-        before = len(self.run_ids)
-        composer = p.locator("form.composer").last  # the chat composer, not the hidden report form
+        before = len(self.chats)
+        composer = p.locator("form.composer").last  # the chat composer, not the report form
         box = composer.get_by_label("Your question")
-        composer.get_by_label("Source").select_option(label=source_label)
         box.fill(question)
         box.press("Enter")
         deadline = time.monotonic() + timeout_s
-        answer = p.locator(".a").last
+        answer = p.locator(".convo .a").last
         while time.monotonic() < deadline:
-            if answer.locator(".verify").count() or answer.locator(".errbox").count():
+            if (
+                answer.locator(".verify").count()
+                or answer.locator(".errbox").count()
+                or answer.locator("p.clarify").count()
+            ):
                 break
             time.sleep(0.5)
         else:
             raise TimeoutError(f"no finished answer after {timeout_s:.0f} s")
+        chat = self.chats[before] if len(self.chats) > before else {}
         return {
-            "run_id": self.run_ids[before] if len(self.run_ids) > before else None,
+            "run_id": chat.get("run_id"),
+            "handler_header": chat.get("handler"),
+            "conversation_id": chat.get("conversation_id"),
+            "label": answer.locator(".chip.handler").all_inner_texts(),
             "text": answer.inner_text(),
+            "reply": answer.locator(".body > p:not(.note):not(.refuse)").all_inner_texts(),
             "pills": answer.locator(".vpill").all_inner_texts(),
             "error": answer.locator(".errbox").all_inner_texts(),
             "citations": answer.locator("button.cite").count(),
         }
+
+    def recents(self) -> list[str]:
+        rows = self.page.locator(".side .recent[data-conversation]")
+        return [rows.nth(i).get_attribute("data-conversation") or "" for i in range(rows.count())]
+
+
+def labelled(ui: dict[str, Any], want: str) -> list[str]:
+    return (
+        [] if ui.get("label") == [want] else [f"answer labelled {ui.get('label')!r}, not {want!r}"]
+    )
 
 
 def run_record(api: str, token: str, run_id: str | None) -> dict[str, Any]:
@@ -169,6 +279,222 @@ def real(record: dict[str, Any], expect: str, purpose: str) -> list[str]:
     return problems
 
 
+def answer_state(page: Page, index: int = -1) -> dict[str, Any]:
+    answers = page.locator(".convo .a")
+    answer = answers.last if index == -1 else answers.nth(index)
+    return {
+        "label": answer.locator(".chip.handler").all_inner_texts(),
+        "status": answer.locator(".step.run").all_inner_texts(),
+        "reply": answer.locator(".body > p:not(.note):not(.refuse)").all_inner_texts(),
+        "citations": answer.locator("button.cite").count(),
+        "error": answer.locator(".errbox").all_inner_texts(),
+        "passages": page.locator(".panel .pcard blockquote").count(),
+    }
+
+
+def wait_finished(page: Page, index: int, timeout_s: float) -> None:
+    answer = page.locator(".convo .a").nth(index)
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline and not (
+        answer.locator(".errbox").count() or answer.locator(".verify").count()
+    ):
+        page.wait_for_timeout(250)
+
+
+def revalidation(  # noqa: PLR0915 - one scripted scenario
+    page: Page, ui: Ui, args: argparse.Namespace, creds: dict[str, str], tokens: dict[str, str]
+) -> dict[str, Any]:
+    """Same session, no reload: an older cited answer, a newer reply in flight, switch away,
+    revoke access, reopen. The older answer stays hidden during and after the re-check; the
+    newer reply keeps working and finishes."""
+
+    problems: list[str] = []
+    page.get_by_role("button", name="New chat").click()
+    cited = ui.ask(RESTRICTED_Q, args.timeout)
+    chat, run_id = cited["conversation_id"], cited["run_id"]
+    old_reply = [t for t in cited["reply"] if t.strip()]
+    if cited["label"] != ["Documents"] or not cited["citations"] or not old_reply:
+        problems.append(
+            f"no cited Documents answer to start from: {cited['label']} {cited['citations']}"
+        )
+        return {"ui": cited, "problems": problems, "pass": False}
+    page.locator(".convo .a").last.locator("button.cite").first.click()
+    page.get_by_text("text hash verified").first.wait_for(timeout=30_000)
+    citation_paths = [path for path, code in ui.citation_calls if run_id in path and code == 200]
+    before_shot = ui.shot("7a-revalidation-cited")
+    page.get_by_role("button", name="Close panel").click()
+
+    # A newer question in the same chat; its request is held, so the reply is in flight.
+    live_held: list[Any] = []
+    page.route("**/api/v1/chat", lambda route: live_held.append(route))
+    box = page.locator("form.composer").last.get_by_label("Your question")
+    box.fill(HELLO)
+    box.press("Enter")
+    deadline = time.monotonic() + 15
+    while not live_held and time.monotonic() < deadline:
+        page.wait_for_timeout(100)
+    if not live_held:
+        problems.append("the newer question was not sent")
+
+    page.get_by_role("button", name="New chat").click()  # switch away
+    admin = api_json(
+        args.api,
+        "/api/v1/auth/login",
+        body={"tenant": TENANT, "email": ADMIN, "password": creds[ADMIN]},
+    )["access_token"]
+    original = set_groups(args.api, admin, FINANCE, lambda g: [x for x in g if x != "finance-team"])
+    held: list[Any] = []
+    pattern = f"**/api/v1/runs/{run_id}/events**"
+    during: dict[str, Any] = {}
+    after: dict[str, Any] = {}
+    live: dict[str, Any] = {}
+    restored: dict[str, Any] = {}
+    try:
+        page.route(pattern, lambda route: held.append(route))
+        row = page.locator(f".side .recent[data-conversation='{chat}'] button.row")
+        row.click()
+        deadline = time.monotonic() + 30
+        while not held and time.monotonic() < deadline:
+            page.wait_for_timeout(200)
+        during = answer_state(page, 0)
+        during["answers"] = page.locator(".convo .a").count()
+        during["live_reply"] = answer_state(page, -1)
+        during["replay_held"] = bool(held)
+        during["page_has_old_text"] = any(t in page.inner_text("body") for t in old_reply)
+        during["screenshot"] = ui.shot("7b-revalidation-during")
+        if not held:
+            problems.append("the reopen did not replay the older answer from the server")
+        if during["page_has_old_text"] or during["citations"] or during["passages"]:
+            problems.append(f"old answer visible while re-checking: {during}")
+        if not any("Re-checking your access" in t for t in during["status"]):
+            problems.append(f"no re-checking state shown: {during['status']}")
+        if during["answers"] != 2 or not any(
+            "Working" in t for t in during["live_reply"]["status"]
+        ):
+            problems.append(f"the newer reply is not still in flight: {during['live_reply']}")
+        for route in held:
+            route.continue_()
+        page.unroute(pattern)
+        wait_finished(page, 0, 60)
+        after = answer_state(page, 0)
+        after["page_has_old_text"] = any(t in page.inner_text("body") for t in old_reply)
+        after["leaked_markers"] = [m for m in RESTRICTED_MARKERS if m in page.content()]
+        after["screenshot"] = ui.shot("7c-revalidation-after")
+        after["citation_status"] = [
+            api_status(args.api, f"/api/v1{path}", tokens[FINANCE]) for path in citation_paths
+        ]
+        if after["page_has_old_text"] or after["citations"] or after["passages"]:
+            problems.append(f"old answer came back after re-checking: {after}")
+        if after["leaked_markers"]:
+            problems.append(f"restricted content on the page: {after['leaked_markers']}")
+        if not any("access_revoked" in t or "no longer have access" in t for t in after["error"]):
+            problems.append(f"no access_revoked after re-checking: {after['error']}")
+        if not citation_paths or any(code != 404 for code in after["citation_status"]):
+            problems.append(f"citation endpoint after revocation: {after['citation_status']}")
+        # Release the newer question: the live reply keeps working and finishes.
+        for route in live_held:
+            route.continue_()
+        live_held.clear()
+        page.unroute("**/api/v1/chat")
+        wait_finished(page, 1, args.timeout)
+        live = answer_state(page, 1)
+        live["screenshot"] = ui.shot("7d-revalidation-live-reply")
+        if live["label"] != ["General"] or not any(t.strip() for t in live["reply"]):
+            problems.append(f"the newer reply did not finish normally: {live}")
+        still_hidden = answer_state(page, 0)
+        if still_hidden["citations"] or any(t in page.inner_text("body") for t in old_reply):
+            problems.append("the older answer reappeared when the newer reply finished")
+    finally:
+        set_groups(args.api, admin, FINANCE, lambda g: original)
+        for route in live_held:  # still held only if the scenario stopped early
+            with contextlib.suppress(Exception):
+                route.continue_()
+    # Reopen again with access restored: revalidation runs every time, so it comes back.
+    page.get_by_role("button", name="New chat").click()
+    page.locator(f".side .recent[data-conversation='{chat}'] button.row").click()
+    wait_finished(page, 0, 60)
+    restored = answer_state(page, 0)
+    restored["screenshot"] = ui.shot("7e-revalidation-restored")
+    if not restored["citations"] or not any(t.strip() for t in restored["reply"]):
+        problems.append(f"answer did not come back after access was restored: {restored}")
+    return {
+        "question": RESTRICTED_Q,
+        "newer_question": HELLO,
+        "chat": chat,
+        "run_id": run_id,
+        "cited": {**cited, "screenshot": before_shot},
+        "revoked": "finance.reader removed from finance-team by access.admin",
+        "during": during,
+        "after": after,
+        "live_reply": live,
+        "restored": restored,
+        "problems": problems,
+        "pass": not problems,
+    }
+
+
+def offline_gate(
+    page: Page, ui: Ui, args: argparse.Namespace, creds: dict[str, str]
+) -> dict[str, Any]:
+    """Real-model only: with the gateway unavailable (or the server in fake mode) the badge
+    reads Real model offline, Send is disabled and nothing is sent; saved chats still open."""
+
+    checks: dict[str, Any] = {}
+    ui.sign_in(FINANCE, creds[FINANCE])
+    badge = page.locator("button.chip.status")
+    label = ""
+    for _ in range(120):
+        label = badge.inner_text().strip()
+        if label not in ("Checking…", ""):
+            break
+        time.sleep(0.5)
+    checks["offline_badge"] = {
+        "label": label,
+        "title": badge.get_attribute("title"),
+        "screenshot": ui.shot("0-offline-badge"),
+        "problems": [] if label == "Real model offline" else [f"badge shows {label!r}"],
+    }
+    composer = page.locator("form.composer").last
+    composer.get_by_label("Your question").fill(HELLO)
+    send = composer.get_by_role("button", name="Ask")
+    before = len(ui.chats)
+    composer.get_by_label("Your question").press("Enter")
+    page.wait_for_timeout(2000)
+    note = page.locator(".offline-note").all_inner_texts()
+    blocked = {
+        "send_disabled": send.is_disabled(),
+        "requests_sent": len(ui.chats) - before,
+        "note": note,
+        "screenshot": ui.shot("1-offline-send-blocked"),
+    }
+    problems = []
+    if not blocked["send_disabled"]:
+        problems.append("Send is enabled")
+    if blocked["requests_sent"]:
+        problems.append("a question was sent to the server")
+    if not any("Real model offline" in t for t in note):
+        problems.append("no offline notice")
+    checks["send_blocked"] = {**blocked, "problems": problems}
+    rows = page.locator(".side .recent[data-conversation]")
+    problems = []
+    opened: dict[str, Any] = {"saved_chats": rows.count()}
+    if rows.count():
+        rows.first.locator("button.row").click()
+        page.locator(".convo .a").first.wait_for(timeout=15_000)
+        wait_finished(page, 0, 60)
+        opened.update(answer_state(page, 0))
+        opened["screenshot"] = ui.shot("2-offline-history")
+        if not (opened["reply"] or opened["error"]):
+            problems.append("the saved chat did not open")
+    else:
+        problems.append("no saved chats to open")
+    checks["history_available"] = {**opened, "problems": problems}
+    for check in checks.values():
+        check["pass"] = not check["problems"]
+    ui.sign_out()
+    return checks
+
+
 def main() -> int:  # noqa: PLR0915
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -177,7 +503,13 @@ def main() -> int:  # noqa: PLR0915
     ap.add_argument("--api", required=True)
     ap.add_argument("--credentials", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--expect-inference", choices=["gateway", "fake"], required=True)
+    ap.add_argument(
+        "--expect-inference",
+        choices=["gateway", "fake", "offline"],
+        required=True,
+        help="gateway: real Qwen; fake: an automated-test build (VITE_TEST_ALLOW_FAKE_MODEL) "
+        "with the labelled fake double; offline: the real-model-only gate (no question sent)",
+    )
     ap.add_argument("--timeout", type=float, default=300.0, help="per question (s)")
     ap.add_argument(
         "--documents-question", default=LEAVE_Q, help="annual-leave question (fresh wording)"
@@ -219,14 +551,19 @@ def main() -> int:  # noqa: PLR0915
         browser = pw.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1440, "height": 900})
         ui = Ui(page, args.web, out)
+        checks: dict[str, Any] = result["checks"]
         try:
-            # 1. documents: newly phrased leave question, cited, passage opens.
+            if args.expect_inference == "offline":
+                checks.update(offline_gate(page, ui, args, creds))
+                raise _Done
             ui.sign_in(FINANCE, creds[FINANCE])
             result["model_chip"] = page.locator(".scope .chip").all_inner_texts()
-            # 0. the header's model status button: Connected only after the backend's
+            # The header's model status button: Connected only after the backend's
             # authenticated readiness check of the pinned Qwen chat server.
             want = (
-                "Connected · Qwen3-8B-AWQ" if args.expect_inference == "gateway" else "FAKE model"
+                "Connected · Qwen3-8B-AWQ"
+                if args.expect_inference == "gateway"
+                else "FAKE model (test build)"
             )
             badge = page.locator("button.chip.status")
             label = ""
@@ -235,25 +572,82 @@ def main() -> int:  # noqa: PLR0915
                 if label == want:
                     break
                 time.sleep(0.5)
-            result["checks"]["status_badge"] = {
+            checks["status_badge"] = {
                 "label": label,
                 "title": badge.get_attribute("title"),
                 "screenshot": ui.shot("0-status-badge"),
                 "problems": [] if label == want else [f"badge shows {label!r}, expected {want!r}"],
                 "pass": label == want,
             }
-            leave = ui.ask(args.documents_question, "Documents you can access", args.timeout)
+            pickers = page.locator("form.composer select, form.composer [aria-label='Source']")
+            checks["no_source_picker"] = {
+                "source_controls": pickers.count(),
+                "problems": []
+                if pickers.count() == 0
+                else ["the composer still has a Source control"],
+                "pass": pickers.count() == 0,
+            }
+
+            # hello, then a fresh general question in the same chat.
+            hello = ui.ask(HELLO, args.timeout)
+            hello_rec = run_record(args.api, tokens[FINANCE], hello["run_id"])
+            hello["screenshot"] = ui.shot("1-hello")
+            problems = labelled(hello, "General") + real(
+                hello_rec, args.expect_inference, "general"
+            )
+            if hello["handler_header"] != "general":
+                problems.append(f"routed to {hello['handler_header']!r}")
+            if not any(t.strip() for t in hello["reply"]):
+                problems.append("empty reply")
+            if hello["citations"]:
+                problems.append("hello reply has citations")
+            checks["hello"] = {
+                "question": HELLO,
+                "ui": hello,
+                "run": hello_rec,
+                "problems": problems,
+                "pass": not problems,
+            }
+            history_chat = hello["conversation_id"]
+
+            gen = ui.ask(args.general_question, args.timeout)
+            gen_rec = run_record(args.api, tokens[FINANCE], gen["run_id"])
+            gen["screenshot"] = ui.shot("2-general")
+            problems = labelled(gen, "General") + real(gen_rec, args.expect_inference, "general")
+            if gen_rec.get("outcome_code") != "general_model_reply_unverified":
+                problems.append(f"outcome_code {gen_rec.get('outcome_code')!r}")
+            if gen["citations"]:
+                problems.append("general reply has citations")
+            if not any(t.strip() for t in gen["reply"]):
+                problems.append("general reply is empty")
+            if args.expect_inference == "gateway" and any("FAKE" in t for t in gen["reply"]):
+                problems.append("general reply carries a FAKE label")
+            if gen["conversation_id"] != history_chat:
+                problems.append("the follow-up was not saved to the same chat")
+            checks["general"] = {
+                "question": args.general_question,
+                "ui": gen,
+                "run": gen_rec,
+                "problems": problems,
+                "pass": not problems,
+            }
+
+            # documents: fresh leave question in a new chat, citation opens.
+            page.get_by_role("button", name="New chat").click()
+            leave = ui.ask(args.documents_question, args.timeout)
             opened: dict[str, Any] = {}
             if leave["citations"]:
-                page.locator(".a").last.locator("button.cite").first.click()
+                page.locator(".convo .a").last.locator("button.cite").first.click()
                 page.get_by_text("text hash verified").first.wait_for(timeout=30_000)
                 opened = {
                     "passage": page.locator(".panel .pcard.on blockquote").first.inner_text(),
                     "badge": "text hash verified",
                 }
             leave_rec = run_record(args.api, tokens[FINANCE], leave["run_id"])
-            leave["screenshot"] = ui.shot("1-documents-leave")
-            problems = real(leave_rec, args.expect_inference, "answer")
+            leave["screenshot"] = ui.shot("3-documents-leave")
+            problems = labelled(leave, "Documents") + real(
+                leave_rec, args.expect_inference, "answer"
+            )
             if leave_rec.get("status") != "published":
                 problems.append(f"run status {leave_rec.get('status')!r}")
             if not leave["citations"]:
@@ -262,7 +656,7 @@ def main() -> int:  # noqa: PLR0915
                 problems.append("citation passage did not open")
             if not any(code == 200 for _, code in ui.citation_calls):
                 problems.append("no 200 from the citation endpoint")
-            result["checks"]["documents_leave"] = {
+            checks["documents_leave"] = {
                 "question": args.documents_question,
                 "ui": leave,
                 "opened": opened,
@@ -271,44 +665,162 @@ def main() -> int:  # noqa: PLR0915
                 "problems": problems,
                 "pass": not problems,
             }
-            # 3. general: fresh open-ended prompt.
+            page.get_by_role("button", name="Close panel").click()
+
+            # sales report: verified table and the email-for-approval action.
             page.get_by_role("button", name="New chat").click()
-            gen = ui.ask(args.general_question, "General (no company data)", args.timeout)
-            gen_rec = run_record(args.api, tokens[FINANCE], gen["run_id"])
-            gen["screenshot"] = ui.shot("3-general")
-            problems = real(gen_rec, args.expect_inference, "general")
-            if gen_rec.get("status") != "published":
-                problems.append(f"run status {gen_rec.get('status')!r}")
-            if gen_rec.get("outcome_code") != "general_model_reply_unverified":
-                problems.append(f"outcome_code {gen_rec.get('outcome_code')!r}")
-            if not any("General reply" in p for p in gen["pills"]):
-                problems.append("reply is not labelled as general")
-            if gen["citations"]:
-                problems.append("general reply has citations")
-            reply = (
-                page.locator(".a")
-                .last.locator(".body > p:not(.note):not(.refuse)")
-                .all_inner_texts()
+            sales = ui.ask(SALES_Q, args.timeout)
+            sales_rec = run_record(args.api, tokens[FINANCE], sales["run_id"])
+            answer = page.locator(".convo .a").last
+            table_rows = answer.locator("table.res tbody tr").count()
+            email = answer.get_by_role("button", name="Email this report for approval")
+            sales["table_rows"] = table_rows
+            sales["email_action"] = email.count()
+            sales["screenshot"] = ui.shot("4-sales-report")
+            problems = labelled(sales, "Sales report (SQL)") + real(
+                sales_rec, args.expect_inference, "sql"
             )
-            if not any(t.strip() for t in reply):
-                problems.append("general reply is empty")
-            if args.expect_inference == "gateway" and any("FAKE" in t for t in reply):
-                problems.append("general reply carries a FAKE label")
-            gen["reply"] = reply
-            result["checks"]["general"] = {
-                "question": args.general_question,
-                "ui": gen,
-                "run": gen_rec,
+            if sales_rec.get("status") != "published":
+                problems.append(f"run status {sales_rec.get('status')!r}")
+            if not table_rows:
+                problems.append("no verified table")
+            if not any("Numbers match query rows" in p for p in sales["pills"]):
+                problems.append("figures not shown as verified")
+            approval_form = ""
+            if email.count():
+                email.click()
+                form = page.get_by_text("Email “", exact=False).first
+                form.wait_for(timeout=15_000)
+                approval_form = form.inner_text()
+                sales["approval_screenshot"] = ui.shot("5-email-approval-form")
+                page.get_by_role("button", name="Ask").first.click()
+            else:
+                problems.append("no 'Email this report for approval' action")
+            if email.count() and "Q1 2026" not in approval_form:
+                problems.append(f"approval form is not for this report: {approval_form!r}")
+            sales["approval_form"] = approval_form
+            checks["sales_report"] = {
+                "question": SALES_Q,
+                "ui": sales,
+                "run": sales_rec,
                 "problems": problems,
                 "pass": not problems,
             }
-            ui.sign_out()
-            # 2. refusal: sales.reader asks for restricted finance content.
-            ui.sign_in(SALES, creds[SALES])
-            refused = ui.ask(RESTRICTED_Q, "Documents you can access", args.timeout)
-            ref_rec = run_record(args.api, tokens[SALES], refused["run_id"])
-            refused["screenshot"] = ui.shot("2-sales-refusal")
+
+            # clarify: a vague request gets a short question back and starts no run.
+            page.get_by_role("button", name="New chat").click()
+            vague = ui.ask(VAGUE_Q, args.timeout)
+            clarify_text = page.locator(".convo .a").last.locator("p.clarify").all_inner_texts()
+            vague["clarifying_question"] = clarify_text
+            vague["screenshot"] = ui.shot("6-clarify")
+            problems = labelled(vague, "Clarifying question")
+            if vague["handler_header"] != "clarify":
+                problems.append(f"routed to {vague['handler_header']!r}")
+            if vague["run_id"]:
+                problems.append("a clarifying question started a run")
+            if not clarify_text or "?" not in clarify_text[0]:
+                problems.append("no clarifying question shown")
+            checks["clarify"] = {
+                "question": VAGUE_Q,
+                "ui": vague,
+                "problems": problems,
+                "pass": not problems,
+            }
+
+            # revalidation: same session, no reload. Cited answer, switch away, revoke,
+            # reopen: the old answer stays hidden while it is re-checked and afterwards.
+            checks["revalidation"] = revalidation(page, ui, args, creds, tokens)
+
+            # history: reload (the token is memory-only, so sign in again), reopen, delete.
             problems = []
+            page.reload()
+            ui.sign_in(FINANCE, creds[FINANCE])
+            page.locator(f".side .recent[data-conversation='{history_chat}']").wait_for(
+                timeout=15_000
+            )
+            after_reload = ui.recents()
+            for chat in {history_chat, leave["conversation_id"], sales["conversation_id"]}:
+                if chat not in after_reload:
+                    problems.append(f"chat {chat} missing from Recents after reload")
+            row = page.locator(f".side .recent[data-conversation='{history_chat}']")
+            row.locator("button.row").click()
+            thread = page.locator(".convo .a")
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline and (
+                thread.count() < 2 or thread.locator(".verify").count() < 2
+            ):
+                time.sleep(0.5)
+            reopened = {
+                "questions": page.locator(".convo .u").all_inner_texts(),
+                "labels": thread.locator(".chip.handler").all_inner_texts(),
+                "replies": [
+                    thread.nth(i).locator(".body > p:not(.note):not(.refuse)").all_inner_texts()
+                    for i in range(thread.count())
+                ],
+                "screenshot": ui.shot("8-history-reopened"),
+            }
+            if reopened["questions"] != [HELLO, args.general_question]:
+                problems.append(f"reopened questions {reopened['questions']!r}")
+            if reopened["labels"] != ["General", "General"]:
+                problems.append(f"reopened labels {reopened['labels']!r}")
+            if not all(any(t.strip() for t in r) for r in reopened["replies"]):
+                problems.append("a reopened answer is empty")
+
+            # A second employee cannot list, open or delete it.
+            sales_token = tokens[SALES]
+            other = {
+                "listed": history_chat in conversation_ids(args.api, sales_token),
+                "open": api_status(args.api, f"/api/v1/conversations/{history_chat}", sales_token),
+                "delete": api_status(
+                    args.api, f"/api/v1/conversations/{history_chat}", sales_token, "DELETE"
+                ),
+            }
+            if other != {"listed": False, "open": 404, "delete": 404}:
+                problems.append(f"second employee reached the chat: {other}")
+            if history_chat not in conversation_ids(args.api, tokens[FINANCE]):
+                problems.append("the owner lost the chat after the second employee's attempts")
+
+            # Delete with confirmation; gone now and after another reload.
+            row.hover()
+            row.get_by_role("button", name="Delete chat:").click()
+            confirm = page.get_by_role("group", name="Delete chat:")
+            confirm.get_by_role("button", name="Delete", exact=True).click()
+            page.locator(f".side .recent[data-conversation='{history_chat}']").wait_for(
+                state="detached", timeout=15_000
+            )
+            ui.shot("9-history-deleted")
+            gone_api = history_chat not in conversation_ids(args.api, tokens[FINANCE])
+            page.reload()
+            ui.sign_in(FINANCE, creds[FINANCE])
+            time.sleep(1.5)
+            gone_ui = history_chat not in ui.recents()
+            if not gone_api:
+                problems.append("the deleted chat is still listed by the API")
+            if not gone_ui:
+                problems.append("the deleted chat came back after reload")
+            ui.sign_out()
+
+            # restricted question as an employee without access; finance's chats are not shown.
+            ui.sign_in(SALES, creds[SALES])
+            time.sleep(1.5)
+            sales_recents = ui.recents()
+            leaked_chats = {leave["conversation_id"], sales["conversation_id"]} & set(sales_recents)
+            if leaked_chats:
+                problems.append(f"second employee sees the first one's chats: {leaked_chats}")
+            checks["history"] = {
+                "chat": history_chat,
+                "recents_after_reload": after_reload,
+                "reopened": reopened,
+                "second_employee": other,
+                "deleted": {"api": gone_api, "after_reload": gone_ui},
+                "second_employee_recents": sales_recents,
+                "problems": problems,
+                "pass": not problems,
+            }
+            refused = ui.ask(RESTRICTED_Q, args.timeout)
+            ref_rec = run_record(args.api, tokens[SALES], refused["run_id"])
+            refused["screenshot"] = ui.shot("10-sales-refusal")
+            problems = labelled(refused, "Documents")
             if REFUSAL not in refused["text"]:
                 problems.append("the reply is not the no-sources refusal")
             leaked = [m for m in RESTRICTED_MARKERS if m in page.content()]
@@ -316,7 +828,7 @@ def main() -> int:  # noqa: PLR0915
                 problems.append(f"restricted content on the page: {leaked}")
             if ref_rec.get("inference_mode") != args.expect_inference:
                 problems.append(f"inference_mode={ref_rec.get('inference_mode')!r}")
-            result["checks"]["sales_refusal"] = {
+            checks["sales_refusal"] = {
                 "question": RESTRICTED_Q,
                 "ui": refused,
                 "run": ref_rec,
@@ -324,11 +836,14 @@ def main() -> int:  # noqa: PLR0915
                 "pass": not problems,
             }
             ui.sign_out()
+        except _Done:
+            pass
         finally:
             browser.close()
     result["finished_at"] = datetime.now(UTC).isoformat()
-    result["pass"] = (
-        all(c["pass"] for c in result["checks"].values()) and len(result["checks"]) == 4
+    expected = OFFLINE_CHECKS if args.expect_inference == "offline" else CHECKS
+    result["pass"] = set(result["checks"]) == set(expected) and all(
+        c["pass"] for c in result["checks"].values()
     )
     (out / "m8-chat-ui-check.json").write_text(
         json.dumps(result, indent=2, ensure_ascii=False) + "\n"

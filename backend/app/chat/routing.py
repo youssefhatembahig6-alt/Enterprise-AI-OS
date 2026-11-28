@@ -1,0 +1,232 @@
+"""Chat orchestrator (M8): picks the handler for a question typed in the chat.
+
+The employee no longer chooses a source. For each question this module picks exactly one
+of the existing handlers, or asks one short clarifying question:
+
+* ``general``: greetings, small talk and ordinary questions that do not ask about the
+  company (the model alone; no documents, data or actions);
+* ``documents``: company policies, memos, handbooks, people and processes (authorized
+  document answers with citations);
+* ``report``: sales, revenue and order figures (the verified SQL report);
+* ``legal``: contract clauses and expiry (exact contract passages);
+* ``code``: the company's code repositories;
+* ``clarify``: the question is too vague to route (a short reply asks for detail; no run).
+
+The decision is made on the server by fixed rules, never by the client and never by model
+output, and only among the handlers the tenant has enabled. Each handler then applies its
+own permission checks, verification and citations unchanged, so routing can never widen
+what an employee may see: a question routed to documents the employee cannot open still
+ends with the documents handler's no-sources refusal.
+
+Briefings and explicit API modes keep using ``app.api.reports.choose_kind``; General is
+never a briefing or email source.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Literal
+
+from app.reporting.router import _TOPIC, _YEAR_ONLY, extract_periods
+from app.tenancy.config import RUN_KIND_PACK
+
+Handler = Literal["general", "documents", "report", "legal", "code"]
+Route = Literal["general", "documents", "report", "legal", "code", "clarify"]
+
+HANDLER_LABELS: dict[str, str] = {
+    "general": "General",
+    "documents": "Documents",
+    "report": "Sales report (SQL)",
+    "legal": "Contracts",
+    "code": "Code repositories",
+    "clarify": "Clarifying question",
+}
+
+# A greeting at the start ("Hi, ...", "Good morning! ..."). It is stripped before routing,
+# so "Hi, what is our leave policy?" keeps its company intent; a greeting alone is General.
+_GREETING_PREFIX = re.compile(
+    r"^(?:\s*(?:hi|hello|hey|hiya|yo|salam|ahlan|good\s+(?:morning|afternoon|evening|day)|"
+    r"thanks|thank\s+you|thx|cheers)(?:\s+(?:there|team|all|everyone|assistant|again))?"
+    r"(?:\s*[,.!:;-]+|\s+|$))+",
+    re.I,
+)
+# Small talk only when it is the whole message: "help" is General, "Help me find our board
+# minutes" is a request for a company record.
+_SMALL_TALK = re.compile(
+    r"^(?:bye|goodbye|see\s+you(?:\s+later)?|how\s+are\s+you(?:\s+doing)?(?:\s+today)?|"
+    r"who\s+are\s+you|what\s+can\s+you\s+do|what\s+do\s+you\s+do|help|help\s+me|"
+    r"can\s+you\s+help(?:\s+me)?|please\s+help)[\s?!.]*$",
+    re.I,
+)
+# Ordinary definitions ("What is a contract?", "Define a termination clause") ask about a
+# concept, not about the company's records, unless they name the company's own ("our").
+_DEFINITION = re.compile(
+    r"^\s*(?:what\s+(?:is|are)\s+(?:a|an)\b|what'?s\s+(?:a|an)\b|define\b|"
+    r"what\s+does\s+(?:the\s+(?:word|term)\s+)?[\w'-]+\s+mean\b|meaning\s+of\b|"
+    r"(?:explain|describe)\s+(?:what|how)\s+(?:a|an)\b)",
+    re.I,
+)
+_OWNED = re.compile(r"\b(our|my|we|us|niletech|the\s+company|company's|internal)\b", re.I)
+# A definition asked about a specific company record ("What is a customer in the board
+# memo?") is a question about that record, not a general definition.
+_RECORD_REF = re.compile(
+    r"\b(?:in|from|according\s+to|per|under)\s+(?:the|this|that|our)\s+[\w\s-]{0,40}?"
+    r"\b(?:memos?|minutes|handbook|polic(?:y|ies)|contracts?|agreements?|licen[cs]es?|"
+    r"reports?|commentary|catalogue|catalog|workbook|documents?|files?|notes|guidelines|"
+    r"procedures?|repositor(?:y|ies)|codebase)\b",
+    re.I,
+)
+_LEGAL = re.compile(
+    r"\b(contracts?|agreements?|clauses?|licen[cs]es?|termination\s+terms?)\b", re.I
+)
+# Company code: a repository, a path, a function, an endpoint, or "our/the ... code".
+# General programming questions ("how do I write a Python loop?") stay General.
+_CODE = re.compile(
+    r"\b(codebase|source\s+code|repositor(?:y|ies)|repos?|endpoints?)\b|"
+    r"\b(our|the|this|in\s+the)\s+code\b|"
+    r"\bfunction\s+`?\w+|\b\w+\(\)|`[^`]+`|"
+    r"\b[\w/-]+\.(?:py|ts|tsx|js|jsx|go|java|rs|sql)\b|"
+    r"\bwhere\s+is\s+[\w\s]{1,40}\bimplemented\b",
+    re.I,
+)
+# Company documents: policies, people, processes and the organisation's own records.
+_DOCUMENTS = re.compile(
+    r"\b(polic(?:y|ies)|handbook|guidelines?|procedures?|leave|vacation|holidays?|"
+    r"annual\s+leave|sick|maternity|paternity|parental|allowance|carry\s*(?:over|forward)|"
+    r"roll\s*over|benefits?|payroll|salar(?:y|ies)|bonus(?:es)?|overtime|working\s+hours|"
+    r"remote\s+work|expenses?|reimburse\w*|travel|per\s+diem|onboarding|hr|"
+    r"human\s+resources|employees?|staff|colleagues?|manager|department|team\s+lead|"
+    r"memos?|minutes|board|strategy|commentary|catalogue|catalog|customers?|clients?|"
+    r"suppliers?|deliver(?:y|ies)|security\s+handbook|it\s+security|passwords?|"
+    r"invoices?|overdue|collections?|receivables?|payables?|reference\s+date|"
+    r"company|organi[sz]ation|internal|niletech|our)\b",
+    re.I,
+)
+# Explanations ("why did collections lag revenue?") are answered from documents such as
+# commentary and memos; the SQL report returns figures, not reasons.
+_WHY = re.compile(r"^\s*(why|what\s+caused|what\s+explains|explain\s+why)\b", re.I)
+# Business figures: with a named period ("the numbers for Q1 2026") they ask for the report.
+# A period alone is not enough: "How many days are in February 2026?" is a calendar
+# question for General.
+_BUSINESS = re.compile(
+    r"\b(totals?|numbers|figures?|results|performance|metrics|kpis?|amounts?|"
+    r"how\s+did\s+we\s+do)\b",
+    re.I,
+)
+# Vague requests that name no subject the rules can route.
+_VAGUE = re.compile(
+    r"\b(it|that|this|those|these|them|the\s+(report|numbers|figures|data|results|file|"
+    r"document|one)|numbers|figures|data|results|status|update|details|more|info)\b",
+    re.I,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ChatRoute:
+    route: Route
+    reason: str
+
+    @property
+    def label(self) -> str:
+        return HANDLER_LABELS[self.route]
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[\w'\u2019-]+", text)
+
+
+def _company_handler(text: str) -> tuple[Handler, str] | None:
+    """The company handler the question names, or None when it names none."""
+
+    if _LEGAL.search(text):
+        return "legal", "contract_terms"
+    if _CODE.search(text):
+        return "code", "repository_terms"
+    sales = bool(_TOPIC.search(text))
+    documents = bool(_DOCUMENTS.search(text))
+    if sales and _WHY.search(text):
+        return "documents", "explanation_of_figures"
+    if sales:
+        return "report", "sales_terms"
+    if documents:
+        return "documents", "company_terms"
+    # A named quarter, month or year with business-figure words ("the numbers for Q1
+    # 2026", "the total in 2026").
+    if (extract_periods(text) or _YEAR_ONLY.search(text)) and _BUSINESS.search(text):
+        return "report", "figures_for_period"
+    return None
+
+
+def route_chat(question: str, enabled_packs: frozenset[str] | None) -> ChatRoute:
+    """Choose the handler for one chat question among the tenant's enabled packs."""
+
+    def on(handler: str) -> bool:
+        return enabled_packs is None or RUN_KIND_PACK[handler] in enabled_packs
+
+    text = " ".join(question.split())
+    if not _words(text):
+        return ChatRoute("clarify", "empty")
+    rest = _GREETING_PREFIX.sub("", text, count=1).strip()
+    greeted = rest != text
+    text, words = rest, _words(rest)
+
+    def general(reason: str) -> ChatRoute:
+        if on("general"):
+            return ChatRoute("general", reason)
+        # Without the general pack: an ordinary question goes to documents (whose own
+        # no-sources refusal applies); a greeting gets the clarifying question.
+        if reason not in ("greeting", "small_talk") and on("documents"):
+            return ChatRoute("documents", "general_disabled")
+        return ChatRoute("clarify", f"{reason}_without_general")
+
+    if not words or (_SMALL_TALK.match(text) and len(words) <= 6):
+        return general("greeting" if greeted or not words else "small_talk")
+    if _DEFINITION.match(text) and not (_OWNED.search(text) or _RECORD_REF.search(text)):
+        return general("definition")
+
+    company = _company_handler(text)
+    if company is not None:
+        handler, reason = company
+        if on(handler):
+            return ChatRoute(handler, reason)
+        # The named handler is not enabled for this tenant: fall back to the nearest
+        # company handler that is, as the explicit router does; never to General.
+        for other in ("documents", "report"):
+            if on(other):
+                return ChatRoute(other, f"{reason}_fallback")
+        return ChatRoute("clarify", f"{reason}_disabled")
+
+    if greeted:
+        # "thanks, that helped": a greeting with no company request is small talk.
+        return general("greeting")
+    if len(words) <= 4 and _VAGUE.search(text):
+        return ChatRoute("clarify", "vague")
+    if len(words) <= 2 and not text.rstrip().endswith("?"):
+        # One or two words with no subject the rules know ("budget", "Q3"): ask.
+        return ChatRoute("clarify", "too_short")
+    return general("no_company_terms")
+
+
+def clarifying_question(enabled_packs: frozenset[str] | None) -> str:
+    """One short question naming only the handlers this tenant can use."""
+
+    def on(handler: str) -> bool:
+        return enabled_packs is None or RUN_KIND_PACK[handler] in enabled_packs
+
+    options = []
+    if on("documents"):
+        options.append("a company policy or document")
+    if on("report"):
+        options.append("sales figures for a period")
+    if on("legal"):
+        options.append("a contract")
+    if on("code"):
+        options.append("company code")
+    if on("general"):
+        options.append("a general question")
+    if not options:
+        return "Could you say a little more about what you need?"
+    if len(options) == 1:
+        return f"Could you say a little more? I can help with {options[0]}."
+    return f"Could you say a little more? Is this about {', '.join(options[:-1])} or {options[-1]}?"

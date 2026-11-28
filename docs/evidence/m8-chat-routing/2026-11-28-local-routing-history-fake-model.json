@@ -1,0 +1,456 @@
+{
+  "run_id": "local-fake-20261128T141103Z",
+  "started_at": "2026-11-28T14:11:03.458831+00:00",
+  "web": "http://127.0.0.1:13101",
+  "api": "http://127.0.0.1:13101",
+  "expect_inference": "fake",
+  "model_status": {
+    "mode": "fake",
+    "verified": false,
+    "authenticated": false,
+    "chat": null,
+    "embed": null,
+    "checker": null,
+    "engine": null,
+    "error": null,
+    "label": "FAKE INFERENCE (deterministic development double, not model output)",
+    "checked_at": 1795875063.4568164
+  },
+  "checks": {
+    "status_badge": {
+      "label": "FAKE model (test build)",
+      "title": "Automated-test build: the server uses the labelled development double. Click to check again.",
+      "screenshot": "0-status-badge.png",
+      "problems": [],
+      "pass": true
+    },
+    "no_source_picker": {
+      "source_controls": 0,
+      "problems": [],
+      "pass": true
+    },
+    "hello": {
+      "question": "hello",
+      "ui": {
+        "run_id": "b22ef0c1-a1f1-4fa6-a48a-489390daf70a",
+        "handler_header": "general",
+        "conversation_id": "54bc5d2a-56da-48ac-83b7-d5e8ff994ee3",
+        "label": [
+          "General"
+        ],
+        "text": "N\nGeneral\nRequest accepted\nChecked your access\nAsked the model (general knowledge, no company data)\nPublished the general reply\n\nFAKE general reply (deterministic development double, not model output). You asked: hello\n\nGeneral reply · no company data\nNot checked against sources\nFAKE inference — not a model\n\nGeneral reply from the model. It did not use your organization's documents, data or email, and it was not checked against any source.",
+        "reply": [
+          "FAKE general reply (deterministic development double, not model output). You asked: hello"
+        ],
+        "pills": [
+          "General reply · no company data",
+          "Not checked against sources",
+          "FAKE inference — not a model"
+        ],
+        "error": [],
+        "citations": 0,
+        "screenshot": "1-hello.png"
+      },
+      "run": {
+        "run_id": "b22ef0c1-a1f1-4fa6-a48a-489390daf70a",
+        "status": "published",
+        "inference_mode": "fake",
+        "outcome_code": "general_model_reply_unverified",
+        "served_chat": null,
+        "model_calls": [
+          {
+            "ttft": 0.0,
+            "tokens": null,
+            "purpose": "general",
+            "seconds": 0.0,
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      "problems": [],
+      "pass": true
+    },
+    "general": {
+      "question": "Suggest a simple agenda for a 30-minute weekly team retrospective.",
+      "ui": {
+        "run_id": "cc7ccc6e-559a-4f2d-babc-324d6e78daa0",
+        "handler_header": "general",
+        "conversation_id": "54bc5d2a-56da-48ac-83b7-d5e8ff994ee3",
+        "label": [
+          "General"
+        ],
+        "text": "N\nGeneral\nRequest accepted\nChecked your access\nAsked the model (general knowledge, no company data)\nPublished the general reply\n\nFAKE general reply (deterministic development double, not model output). You asked: Suggest a simple agenda for a 30-minute weekly team retrospective.\n\nGeneral reply · no company data\nNot checked against sources\nFAKE inference — not a model\n\nGeneral reply from the model. It did not use your organization's documents, data or email, and it was not checked against any source.",
+        "reply": [
+          "FAKE general reply (deterministic development double, not model output). You asked: Suggest a simple agenda for a 30-minute weekly team retrospective."
+        ],
+        "pills": [
+          "General reply · no company data",
+          "Not checked against sources",
+          "FAKE inference — not a model"
+        ],
+        "error": [],
+        "citations": 0,
+        "screenshot": "2-general.png"
+      },
+      "run": {
+        "run_id": "cc7ccc6e-559a-4f2d-babc-324d6e78daa0",
+        "status": "published",
+        "inference_mode": "fake",
+        "outcome_code": "general_model_reply_unverified",
+        "served_chat": null,
+        "model_calls": [
+          {
+            "ttft": 0.0,
+            "tokens": null,
+            "purpose": "general",
+            "seconds": 0.0,
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      "problems": [],
+      "pass": true
+    },
+    "documents_leave": {
+      "question": "Who do I contact in HR about family leave?",
+      "ui": {
+        "run_id": "55ce6e0b-eb87-4c19-a71d-9eff9f11df62",
+        "handler_header": "documents",
+        "conversation_id": "038942ab-affe-4ba8-9552-4afcc14d6ed9",
+        "label": [
+          "Documents"
+        ],
+        "text": "N\nDocuments\nRequest accepted\nChecked your access\nSearched documents you can access\nDrafted the answer\nChecked the answer against its sources\nPublished the verified result\n\nParents may take ten days of family leave per year for school events and caregiving. 1\n\nEvery sentence quotes a source you can open\nClaims checked (development checker)\n1 source allowed\nFAKE inference — not a model\n\nEvery sentence quotes an exact passage of a document you can access (re-checked at publication); claims checked by the development baseline checker (not the final trained checker).\n\nAnnual leave policy 2026",
+        "reply": [
+          "Parents may take ten days of family leave per year for school events and caregiving. 1"
+        ],
+        "pills": [
+          "Every sentence quotes a source you can open",
+          "Claims checked (development checker)",
+          "1 source allowed",
+          "FAKE inference — not a model"
+        ],
+        "error": [],
+        "citations": 1,
+        "screenshot": "3-documents-leave.png"
+      },
+      "opened": {
+        "passage": "…d by the line manager.\n\nPublic holidays 🏖️\n\nPublic holidays follow the official calendar of each country, including Sham el-Nessim and Eid al-Fitr (عيد الفطر). Holidays that fall during approved leave are not deducted.\n\nFamily leave 👨‍👩‍👧\n\nParents may take ten days of family leave per year for school events and caregiving. Contact Hélène Dubois or Yasmin El-Sayed in HR for questions.…",
+        "badge": "text hash verified"
+      },
+      "citation_requests": [
+        [
+          "/runs/55ce6e0b-eb87-4c19-a71d-9eff9f11df62/citations/c1",
+          200
+        ]
+      ],
+      "run": {
+        "run_id": "55ce6e0b-eb87-4c19-a71d-9eff9f11df62",
+        "status": "published",
+        "inference_mode": "fake",
+        "outcome_code": "answer_quotes_verified_dev_checked",
+        "served_chat": null,
+        "model_calls": [
+          {
+            "ttft": 0.0,
+            "tokens": null,
+            "purpose": "answer",
+            "seconds": 0.0
+          }
+        ]
+      },
+      "problems": [],
+      "pass": true
+    },
+    "sales_report": {
+      "question": "What were fulfilled sales in Q1 2026?",
+      "ui": {
+        "run_id": "c8378bd7-e45c-4f15-903e-db5cf5119c41",
+        "handler_header": "report",
+        "conversation_id": "ee97c8bb-cf4c-4677-9fe7-f8b032132ca1",
+        "label": [
+          "Sales report (SQL)"
+        ],
+        "text": "N\nSales report (SQL)\nRequest accepted\nChecked your access\nUnderstood the request\nDrafted a read-only query\nValidated the query\nRan a read-only query\nChecked the query's meaning\nDrafted the report\nVerified figures and claims\nPublished the verified result\n\nFulfilled sales, Q1 2026\n\nFigure\tValue\nFulfilled orders\t291 1\nNet sales (tax-exclusive)\tUSD 80,934,385.00 2\nTax\tUSD 11,330,813.90 3\nGross sales (tax-inclusive)\tUSD 92,265,198.90 4\n\nIn Q1 2026, net sales (tax-exclusive) were USD 80,934,385.00 from 291 fulfilled orders. 21\n\nTax was USD 11,330,813.90, giving gross sales of USD 92,265,198.90. 34\n\nDefinition: order date basis; included statuses FULFILLED (excluded PENDING, CANCELLED); net sales are tax-exclusive; gross = net + tax; currency USD.\n\nNumbers match query rows\nSummary checked (development checker)\n1 source allowed\nFAKE inference — not a model\n\nFigures verified exactly against the query result; summary checked by the development baseline checker (not the final trained checker).\n\nFulfilled orders\nNet sales (tax-exclusive)\nTax\nGross sales (tax-inclusive)\nEmail this report for approval",
+        "reply": [
+          "Fulfilled sales, Q1 2026",
+          "In Q1 2026, net sales (tax-exclusive) were USD 80,934,385.00 from 291 fulfilled orders. 21",
+          "Tax was USD 11,330,813.90, giving gross sales of USD 92,265,198.90. 34"
+        ],
+        "pills": [
+          "Numbers match query rows",
+          "Summary checked (development checker)",
+          "1 source allowed",
+          "FAKE inference — not a model"
+        ],
+        "error": [],
+        "citations": 8,
+        "table_rows": 4,
+        "email_action": 1,
+        "screenshot": "4-sales-report.png",
+        "approval_screenshot": "5-email-approval-form.png",
+        "approval_form": "Email “Fulfilled sales, Q1 2026 · report c8378bd7”"
+      },
+      "run": {
+        "run_id": "c8378bd7-e45c-4f15-903e-db5cf5119c41",
+        "status": "published",
+        "inference_mode": "fake",
+        "outcome_code": "figures_verified_narrative_dev_checked",
+        "served_chat": null,
+        "model_calls": [
+          {
+            "ttft": 0.0,
+            "tokens": null,
+            "purpose": "sql",
+            "seconds": 0.0
+          },
+          {
+            "ttft": 0.0,
+            "tokens": null,
+            "purpose": "report",
+            "seconds": 0.0
+          }
+        ]
+      },
+      "problems": [],
+      "pass": true
+    },
+    "clarify": {
+      "question": "the numbers?",
+      "ui": {
+        "run_id": null,
+        "handler_header": "clarify",
+        "conversation_id": "664ecf8d-01f4-4ea4-bce8-7416a5c73186",
+        "label": [
+          "Clarifying question"
+        ],
+        "text": "N\nClarifying question\nNeeds a little more detail\n\nCould you say a little more? Is this about a company policy or document, sales figures for a period, a contract, company code or a general question?",
+        "reply": [
+          "Could you say a little more? Is this about a company policy or document, sales figures for a period, a contract, company code or a general question?"
+        ],
+        "pills": [],
+        "error": [],
+        "citations": 0,
+        "clarifying_question": [
+          "Could you say a little more? Is this about a company policy or document, sales figures for a period, a contract, company code or a general question?"
+        ],
+        "screenshot": "6-clarify.png"
+      },
+      "problems": [],
+      "pass": true
+    },
+    "revalidation": {
+      "question": "Why did collections lag revenue in Q1 2026?",
+      "newer_question": "hello",
+      "chat": "95cad485-3d19-44a3-9cba-32619b063c5e",
+      "run_id": "086299c5-dbba-469a-8d7d-f0310c7f3aaa",
+      "cited": {
+        "run_id": "086299c5-dbba-469a-8d7d-f0310c7f3aaa",
+        "handler_header": "documents",
+        "conversation_id": "95cad485-3d19-44a3-9cba-32619b063c5e",
+        "label": [
+          "Documents"
+        ],
+        "text": "N\nDocuments\nRequest accepted\nChecked your access\nSearched documents you can access\nDrafted the answer\nChecked the answer against its sources\nPublished the verified result\n\nCollections lagged revenue because 370 open invoices were already past their due date at the reference date. 1\n\nEvery sentence quotes a source you can open\nClaims checked (development checker)\n1 source allowed\nFAKE inference — not a model\n\nEvery sentence quotes an exact passage of a document you can access (re-checked at publication); claims checked by the development baseline checker (not the final trained checker).\n\nQ1 2026 finance commentary",
+        "reply": [
+          "Collections lagged revenue because 370 open invoices were already past their due date at the reference date. 1"
+        ],
+        "pills": [
+          "Every sentence quotes a source you can open",
+          "Claims checked (development checker)",
+          "1 source allowed",
+          "FAKE inference — not a model"
+        ],
+        "error": [],
+        "citations": 1,
+        "screenshot": "7a-revalidation-cited.png"
+      },
+      "revoked": "finance.reader removed from finance-team by access.admin",
+      "during": {
+        "label": [
+          "Documents"
+        ],
+        "status": [
+          "Re-checking your access…"
+        ],
+        "reply": [],
+        "citations": 0,
+        "error": [],
+        "passages": 0,
+        "answers": 2,
+        "live_reply": {
+          "label": [],
+          "status": [
+            "Working…"
+          ],
+          "reply": [],
+          "citations": 0,
+          "error": [],
+          "passages": 0
+        },
+        "replay_held": true,
+        "page_has_old_text": false,
+        "screenshot": "7b-revalidation-during.png"
+      },
+      "after": {
+        "label": [
+          "Documents"
+        ],
+        "status": [],
+        "reply": [],
+        "citations": 0,
+        "error": [
+          "You no longer have access to this answer, so it is hidden. (access_revoked)"
+        ],
+        "passages": 0,
+        "page_has_old_text": false,
+        "leaked_markers": [],
+        "screenshot": "7c-revalidation-after.png",
+        "citation_status": [
+          404
+        ]
+      },
+      "live_reply": {
+        "label": [
+          "General"
+        ],
+        "status": [],
+        "reply": [
+          "FAKE general reply (deterministic development double, not model output). You asked: hello"
+        ],
+        "citations": 0,
+        "error": [],
+        "passages": 0,
+        "screenshot": "7d-revalidation-live-reply.png"
+      },
+      "restored": {
+        "label": [
+          "Documents"
+        ],
+        "status": [],
+        "reply": [
+          "Collections lagged revenue because 370 open invoices were already past their due date at the reference date. 1"
+        ],
+        "citations": 1,
+        "error": [],
+        "passages": 1,
+        "screenshot": "7e-revalidation-restored.png"
+      },
+      "problems": [],
+      "pass": true
+    },
+    "history": {
+      "chat": "54bc5d2a-56da-48ac-83b7-d5e8ff994ee3",
+      "recents_after_reload": [
+        "95cad485-3d19-44a3-9cba-32619b063c5e",
+        "664ecf8d-01f4-4ea4-bce8-7416a5c73186",
+        "ee97c8bb-cf4c-4677-9fe7-f8b032132ca1",
+        "038942ab-affe-4ba8-9552-4afcc14d6ed9",
+        "54bc5d2a-56da-48ac-83b7-d5e8ff994ee3",
+        "47579646-5958-4ce6-83b6-4e6d896a23f6",
+        "f0688f9b-e38b-45b5-aae5-2a8b00cec94d",
+        "63f4d78b-4ac7-47ee-8222-187779ec0744",
+        "cb31bcf6-6365-4fee-a1bb-4aba763fbb83",
+        "bfa01ad8-3236-4dec-8cb7-47a06c47ea5a",
+        "cd426b7e-88dc-4226-9592-2ecc92e68bdd",
+        "5aca662a-5ce0-4279-938c-4a50066023c1",
+        "e5aeaf8a-89d9-41f1-bae4-51e9d1cc0225",
+        "6631d465-039b-43b1-bf54-4d63d7f18a69",
+        "5f5f1f1a-8c2b-47e1-8510-85e85788ff7e",
+        "07b6f89e-12e4-470d-b612-d02b1f85b1d5",
+        "01ebbc40-86d2-440c-8563-0b0008a88c03",
+        "888e33d9-ad43-4a8f-ae8f-6612c6ced0f8",
+        "993a911b-8011-4e9c-8a08-2bafed54d8ad",
+        "8dce1ba2-d731-4258-85fc-759c86d7dc73",
+        "efb2f3fe-41d7-4a0f-9a59-b638a95a8a2f",
+        "443ca6d2-d5d9-4332-971a-e18ed4fafeb0",
+        "169b158a-bcc1-42ff-91a1-18f9a2a8c4a0",
+        "d72dfe61-8249-4adc-bc47-1470fb6d8477",
+        "9a46c454-9e3b-4bf8-83de-f4ac64b36aeb",
+        "9af3b280-140f-410d-945c-ee90d82be881"
+      ],
+      "reopened": {
+        "questions": [
+          "hello",
+          "Suggest a simple agenda for a 30-minute weekly team retrospective."
+        ],
+        "labels": [
+          "General",
+          "General"
+        ],
+        "replies": [
+          [
+            "FAKE general reply (deterministic development double, not model output). You asked: hello"
+          ],
+          [
+            "FAKE general reply (deterministic development double, not model output). You asked: Suggest a simple agenda for a 30-minute weekly team retrospective."
+          ]
+        ],
+        "screenshot": "8-history-reopened.png"
+      },
+      "second_employee": {
+        "listed": false,
+        "open": 404,
+        "delete": 404
+      },
+      "deleted": {
+        "api": true,
+        "after_reload": true
+      },
+      "second_employee_recents": [
+        "7b6102f6-570b-4a65-9543-9b161627c6f5",
+        "8695acf9-a450-4103-b3da-fef014fcd7f0",
+        "2683d3fe-7704-4500-817b-305c7940dadc",
+        "a74a1ae6-ab74-409c-80a3-01da4c1adcad",
+        "39078542-cf8b-41fb-b6de-e2e34a36ac20"
+      ],
+      "problems": [],
+      "pass": true
+    },
+    "sales_refusal": {
+      "question": "Why did collections lag revenue in Q1 2026?",
+      "ui": {
+        "run_id": "a880fe9a-d7c8-47ea-b924-a003c61c029a",
+        "handler_header": "documents",
+        "conversation_id": "43f1d172-437b-4423-8ad9-7d2e55908715",
+        "label": [
+          "Documents"
+        ],
+        "text": "N\nDocuments\nRequest accepted\nChecked your access\nSearched documents you can access\n\nI couldn't find information in documents you can access that answers this.\n\nNo sources used\nFAKE inference — not a model",
+        "reply": [],
+        "pills": [
+          "No sources used",
+          "FAKE inference — not a model"
+        ],
+        "error": [],
+        "citations": 0,
+        "screenshot": "10-sales-refusal.png"
+      },
+      "run": {
+        "run_id": "a880fe9a-d7c8-47ea-b924-a003c61c029a",
+        "status": "abstained",
+        "inference_mode": "fake",
+        "outcome_code": "no_sources",
+        "served_chat": null,
+        "model_calls": [
+          {
+            "ttft": 0.0,
+            "tokens": null,
+            "purpose": "answer",
+            "seconds": 0.0
+          }
+        ]
+      },
+      "problems": [],
+      "pass": true
+    }
+  },
+  "model_chip": [
+    "Finance · up to Confidential",
+    "FAKE model (test build)"
+  ],
+  "finished_at": "2026-11-28T14:11:21.556049+00:00",
+  "pass": true,
+  "exit_status": 0,
+  "ui_build": "VITE_API_BASE_URL='' VITE_TEST_ALLOW_FAKE_MODEL=true (automated-test build) behind preview_proxy.py :13101 -> API :18000"
+}

@@ -102,6 +102,8 @@ export interface Verification {
 
 export interface DonePayload {
   message_id: string | null;
+  /** M8: a clarifying question (no run) names its handler here. */
+  handler?: string;
   outcome: "published" | "abstained" | "failed" | "cancelled";
   verification: Verification | null;
   abstention: { code: string; message: string } | null;
@@ -193,6 +195,13 @@ function headers(token: string): HeadersInit {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
 
+/** What the server decided before the first event: run, handler and conversation (M8). */
+export interface ChatStart {
+  runId: string | null;
+  conversationId: string | null;
+  handler: string | null;
+}
+
 export async function startReport(
   token: string,
   question: string,
@@ -200,16 +209,30 @@ export async function startReport(
   onEvent: (event: ReportEvent) => void,
   signal: AbortSignal,
   mode: AskMode = "auto",
+  conversationId: string | null = null,
+  onStart?: (start: ChatStart) => void,
 ): Promise<{ runId: string | null; ended: "done" | "dropped" }> {
   const response = await fetch(`${API_BASE_URL}/api/v1/chat`, {
     method: "POST",
     headers: headers(token),
-    body: JSON.stringify({ question, client_request_id: clientRequestId, mode }),
+    body: JSON.stringify({
+      question,
+      client_request_id: clientRequestId,
+      mode,
+      ...(conversationId ? { conversation_id: conversationId } : {}),
+    }),
     credentials: FETCH_CREDENTIALS,
     cache: "no-store",
     signal,
   });
   const runId = response.headers.get("X-Run-ID");
+  if (response.ok) {
+    onStart?.({
+      runId,
+      conversationId: response.headers.get("X-Conversation-ID"),
+      handler: response.headers.get("X-Handler"),
+    });
+  }
   return { runId, ended: await readStream(response, onEvent) };
 }
 

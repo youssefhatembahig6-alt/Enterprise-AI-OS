@@ -32,6 +32,9 @@ export interface RunView {
   error: { code: string; message: string; detail?: string } | null;
   fakeLabel: string | null;
   reconnecting: boolean;
+  /** M8: the handler the server's orchestrator chose (from the run's first event). */
+  handler: string | null;
+  handlerLabel: string | null;
 }
 
 export const EMPTY_RUN: RunView = {
@@ -47,6 +50,8 @@ export const EMPTY_RUN: RunView = {
   error: null,
   fakeLabel: null,
   reconnecting: false,
+  handler: null,
+  handlerLabel: null,
 };
 
 export function newRequestId(): string {
@@ -60,6 +65,8 @@ export function applyEvent(view: RunView, event: ReportEvent): RunView {
   const d = event.data;
   if (typeof d.inference_label === "string") next.fakeLabel = d.inference_label;
   if (!next.runId && typeof d.run_id === "string") next.runId = d.run_id;
+  if (!next.handler && typeof d.handler === "string") next.handler = d.handler;
+  if (!next.handlerLabel && typeof d.handler_label === "string") next.handlerLabel = d.handler_label;
   switch (event.event) {
     case "status": {
       const step: Step = {
@@ -105,11 +112,12 @@ export function applyEvent(view: RunView, event: ReportEvent): RunView {
 }
 
 /** What kind of answer a finished run is, for rendering. */
-export type RunKind = "running" | "report" | "answer" | "refusal" | "error" | "empty";
+export type RunKind = "running" | "report" | "answer" | "clarify" | "refusal" | "error" | "empty";
 
 export function runKind(view: RunView, failure: string | null): RunKind {
   if (failure || view.error) return "error";
   if (!view.done) return "running";
+  if (view.done.abstention?.code === "clarification_needed") return "clarify";
   if (view.done.abstention) return "refusal";
   if (view.done.outcome === "published" && view.table) return "report";
   if (view.done.outcome === "published" && view.sentences.length > 0) return "answer";
@@ -124,4 +132,31 @@ export function citationNumber(view: RunView, id: string): number {
 /** A citation either opens a document passage (document_id) or SQL evidence. */
 export function citationKind(c: Citation): "document" | "evidence" {
   return c.document_id ? "document" : "evidence";
+}
+
+/** Labels for the handlers (also used when a saved clarifying question is reopened). */
+export const HANDLER_LABELS: Record<string, string> = {
+  general: "General",
+  documents: "Documents",
+  report: "Sales report (SQL)",
+  legal: "Contracts",
+  code: "Code repositories",
+  clarify: "Clarifying question",
+};
+
+/** A saved clarifying question has no run: rebuild the view the live stream showed. */
+export function clarifyView(message: string): RunView {
+  return {
+    ...EMPTY_RUN,
+    handler: "clarify",
+    handlerLabel: HANDLER_LABELS.clarify ?? "Clarifying question",
+    done: {
+      message_id: null,
+      handler: "clarify",
+      outcome: "abstained",
+      verification: null,
+      abstention: { code: "clarification_needed", message },
+      inference: null,
+    },
+  };
 }

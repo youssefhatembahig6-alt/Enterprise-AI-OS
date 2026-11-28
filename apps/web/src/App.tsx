@@ -7,7 +7,7 @@ import { AdminPanel } from "./AdminPanel";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { useAppearance } from "./useAppearance";
 import { ChatPage, type ShellView } from "./ChatPage";
-import { api, ApiError, type Identity } from "./api";
+import { api, ApiError, TEST_ALLOW_FAKE_MODEL, type Identity } from "./api";
 import { desktop } from "./desktop";
 import { DocumentsPanel } from "./DocumentsPanel";
 import { LocalFoldersPanel } from "./LocalFoldersPanel";
@@ -54,7 +54,9 @@ function ApiStatusBar({ status }: { status: ApiStatus }) {
           {model === "not_configured"
             ? "not configured"
             : model === "fake"
-              ? "FAKE (development double, not a model)"
+              ? TEST_ALLOW_FAKE_MODEL
+                ? "FAKE (test build: development double, not a model)"
+                : "real model not connected"
               : "external (unchecked)"}
         </span>
       ) : null}
@@ -258,7 +260,6 @@ export function App() {
       key={session.token}
       token={session.token}
       identity={session.identity}
-      packs={settings?.enabled_packs ?? null}
       modelLabel={status.kind === "unreachable" ? "API unreachable" : null}
       canEmail={Boolean(settings?.enabled_packs.includes("actions"))}
       showActivity={showActivity}

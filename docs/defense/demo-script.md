@@ -1,12 +1,14 @@
 # Defense demo script (10–15 minutes)
 
+> **Real-model only (M8, PR #23).** The employee-facing chat now sends questions only while the real Qwen model is connected; on the fake-model presentation stack the normal UI shows **Real model offline** and Send is disabled. To run this script live, either use the real model (the private Colab chat preview, notebook cells 1–3 and 7) or a UI built for automated tests with `VITE_TEST_ALLOW_FAKE_MODEL=true` (runbook, "Real-model only"), which shows **FAKE model (test build)** wherever this script says **FAKE model**.
+
 The demo runs on the **presentation stack** ([setup Path A](setup-clean-checkout.md#path-a--presentation-stack-recommended-for-the-defense)): app at http://localhost:13000, Mailpit at http://localhost:18025, organization `niletech` for every sign-in. Every run is labelled **FAKE INFERENCE**. Say this once at the start: *"The live demo uses a labelled stand-in model so it is deterministic and needs no GPU. The same workflows were run with the real Qwen model in Colab; I'll show that evidence at the end."*
 
 Priorities, in order: **(1)** document permissions and citations, **(2)** a verified sales report, **(3)** approval followed by exactly one Mailpit delivery. Sections 4 and 5 are optional and can be dropped to fit the time.
 
-Rehearsed on 27 November 2026 on commit `491dfba` with the earlier single-page dashboard ([rehearsal.md](rehearsal.md)). **Updated for the NileTech Assistant layout** (PR #21): after sign-in the app opens on the chat (**Ask**), and the icon rail on the left holds **Files and sources**, **Approvals**, **Activity log** (administrators) and **Settings**. The figures, refusals and Mailpit behaviour are the same; only where you click has changed.
+Rehearsed on 27 November 2026 on commit `491dfba` with the earlier single-page dashboard ([rehearsal.md](rehearsal.md)). **Updated for the NileTech Assistant layout** (PR #21): after sign-in the app opens on the chat (**Ask**), and the icon rail on the left holds **Files and sources**, **Approvals**, **Activity log** (administrators) and **Settings**. The figures, refusals and Mailpit behaviour are the same; only where you click has changed. **Updated for automatic routing** (M8): there is no source picker; the server routes each question and every answer carries a small label naming the handler that replied (**Documents**, **Sales report (SQL)**, **Contracts**, **Code repositories**, **General**). Chats are saved per employee under **Recents**.
 
-**Layout cheat sheet.** The composer has a **Source** menu inside it, next to the round send button. **Enter** sends the question. The small teal numbers in an answer are citations: clicking one opens the **Sources** panel on the right and asks the server for that passage again. The top bar says *"Limited to what <name> can open"* and shows the orange **FAKE model** chip. Sign out from the avatar at the bottom of the rail.
+**Layout cheat sheet.** Type in the composer and press **Enter**; there is nothing to choose. The small label at the top of each answer names the handler that replied. The small teal numbers in an answer are citations: clicking one opens the **Sources** panel on the right and asks the server for that passage again. The top bar says *"Limited to what <name> can open"* and shows the orange **FAKE model** chip. Sign out from the avatar at the bottom of the rail.
 
 ## Before the audience arrives (10 minutes)
 
@@ -26,10 +28,10 @@ Show the architecture slide ([architecture-and-evidence.md](architecture-and-evi
 | --- | --- | --- |
 | 1.1 | Sign in: Organization `niletech`, Email `sales.reader@niletech.example`, password → **Sign in** | Chat opens: *"What can I find for you today, Sales Reader?"*; top bar *"Limited to what Sales Reader can open: Sales · up to Internal"* |
 | 1.2 | Rail → **Files and sources** | The document list has **no** *Q1 2026 finance commentary* and **no** *Board minutes, March 2026* |
-| 1.3 | Rail → **Ask**. In the composer, **Source** → **Documents you can access**. Type `Why did collections lag revenue in Q1 2026?` → **Enter** | *"I couldn't find information in documents you can access that answers this."* with the pill **No sources used**. Nothing hints that a finance document exists |
-| 1.4 | Avatar (bottom of the rail) → **Sign out** | Sign-in card; the chat history is gone |
+| 1.3 | Rail → **Ask**. Type `Why did collections lag revenue in Q1 2026?` → **Enter** | Label **Documents**; *"I couldn't find information in documents you can access that answers this."* with the pill **No sources used**. Nothing hints that a finance document exists |
+| 1.4 | Avatar (bottom of the rail) → **Sign out** | Sign-in card. Sales Reader's chat stays saved for Sales Reader only |
 | 1.5 | Sign in as `finance.reader@niletech.example` → rail **Files and sources** | The list now includes *Q1 2026 finance commentary* (confidential · finance) |
-| 1.6 | Rail → **Ask**. **Source** → **Documents you can access**, same question → **Enter** | Steps ✓, then *"Collections lagged revenue because 370 open invoices were already past their due date at the reference date."* with citation **1**; pills **Every sentence quotes a source you can open** · **Claims checked (development checker)** |
+| 1.6 | Rail → **Ask**. Same question → **Enter**. **Recents** shows none of Sales Reader's chats | Steps ✓, then *"Collections lagged revenue because 370 open invoices were already past their due date at the reference date."* with citation **1**; pills **Every sentence quotes a source you can open** · **Claims checked (development checker)** |
 | 1.7 | Click the teal **1** | **Sources** panel opens: *Q1 2026 finance commentary · finance-q1-commentary.md · version 1*, the sentence highlighted, badge **text hash verified** |
 
 Talking point: retrieval is filtered by the reader's current permissions on every search, and opening a citation asks the server again, so the refusal looks the same whether a document is forbidden or does not exist (ADR 0303, 0304).
@@ -40,7 +42,7 @@ Still signed in as `finance.reader`. Optionally click **New chat** in the sideba
 
 | # | Click / type | Expected result |
 | --- | --- | --- |
-| 2.1 | **Source** → **Sales report (SQL)**. Type `What were net (tax-exclusive) fulfilled sales for Q1 2026, in USD?` → **Enter** | Ten steps (*Drafted a read-only query … Verified figures and claims … Published the verified result*) |
+| 2.1 | Type `What were net (tax-exclusive) fulfilled sales for Q1 2026, in USD?` → **Enter** | Label **Sales report (SQL)**; ten steps (*Drafted a read-only query … Verified figures and claims … Published the verified result*) |
 | 2.2 | Read the answer | **Fulfilled sales, Q1 2026** table: Fulfilled orders **291**, Net **USD 80,934,385.00**, Tax **USD 11,330,813.90**, Gross **USD 92,265,198.90**; pills **Numbers match query rows** · **Summary checked (development checker)**; definition line: order-date basis, FULFILLED only, net is tax-exclusive |
 | 2.3 | Click **2** next to Net sales | Sources panel: the stored result row (net_sales highlighted), the read-only `SELECT count(*) AS order_count, sum(o.subtotal) AS net_sales …` query, badge **hash verified** |
 | 2.4 | Close the panel (✕) | — |
@@ -70,7 +72,7 @@ Do steps 3.3 to 3.7 within 15 minutes, because approvals expire. Talking point: 
 
 | # | Click / type | Expected result |
 | --- | --- | --- |
-| 4.1 | Rail → **Ask**. **Source** → **Contracts (clauses and expiry)**, type `When do our contracts expire?` → **Enter** | Red Sea: *expires on 30 June 2026*; Aswan: initial term ends *31 March 2027*, renewal notice *by 31 December 2026*. The restricted NileCloud licence is not mentioned |
+| 4.1 | Rail → **Ask**. Type `When do our contracts expire?` → **Enter** | Label **Contracts**; Red Sea: *expires on 30 June 2026*; Aswan: initial term ends *31 March 2027*, renewal notice *by 31 December 2026*. The restricted NileCloud licence is not mentioned |
 | 4.2 | Read the pills and the note under them | **Exact contract passages** · **Dates re-derived by fixed rules · no model**; *"… Dates, terms and notice periods were re-derived from those passages by fixed rules; no model was used."* |
 | 4.3 | Click **2** | The Aswan contract passage in the Sources panel, **text hash verified** |
 

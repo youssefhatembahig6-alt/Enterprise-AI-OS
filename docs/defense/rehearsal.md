@@ -28,7 +28,7 @@ Use this list for every rehearsal and on the defense day. Steps refer to [demo-s
 
 - [ ] Say "FAKE INFERENCE is a labelled stand-in; real-model evidence comes at the end."
 - [ ] Sign in fresh at each section. Never reload the page (a reload signs you out).
-- [ ] Pick the **Source** inside the composer before sending (Automatic sends period questions to the SQL report); **Enter** sends.
+- [ ] Type and press **Enter**; the server routes the question. Check the label on the answer (**Documents**, **Sales report (SQL)**, **Contracts**, **General**).
 - [ ] Open citations from the small teal numbers in the answer; they open the **Sources** panel.
 - [ ] Use **Email this report for approval** under the report you want to send; it opens **Approvals** for that report.
 - [ ] Approve and send within 15 minutes.
