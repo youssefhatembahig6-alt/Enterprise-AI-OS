@@ -24,6 +24,9 @@ x-backend-env: &backend-env
   LLM_BASE_URL: ${LLM_BASE_URL:-}
   MODEL_MODE: ${MODEL_MODE:-gateway}
   MODEL_GATEWAY_TOKEN: ${MODEL_GATEWAY_TOKEN:-}
+  # M8: a remote (Colab) gateway needs longer waits than the 60 s / 240 s defaults.
+  MODEL_READ_TIMEOUT_SECONDS: ${MODEL_READ_TIMEOUT_SECONDS:-60}
+  MODEL_CALL_DEADLINE_SECONDS: ${MODEL_CALL_DEADLINE_SECONDS:-240}
   # Separate read-only report query role (M2); see infra/postgres/report-role.sql.
   REPORT_DATABASE_URL: postgresql+psycopg://eaios_report:${EAIOS_REPORT_DB_PASSWORD:?set in .env (scripts/dev.py add-report-role)}@postgres:5432/eaios
   REPORT_DISPATCH: celery

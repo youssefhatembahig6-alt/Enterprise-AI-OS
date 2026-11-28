@@ -905,16 +905,13 @@ class ReportWorkflow:
                 outcome = Outcome.CANCELLED if kind == "cancel" else Outcome.FAILED
                 abstention = None
                 assert isinstance(code, ErrorCode)  # noqa: S101 - narrowed above
-                store.append_event(
-                    conn,
-                    rid,
-                    tid,
-                    EventType.ERROR,
-                    {
-                        "code": code.value,
-                        "message": ERROR_MESSAGES[code],
-                    },
-                )
+                error: dict[str, Any] = {"code": code.value, "message": ERROR_MESSAGES[code]}
+                # M8: say which kind of model failure it was (a fixed class name such as
+                # "unavailable" or "revision_mismatch"; never a message, URL or token).
+                private = terminal.get("private")
+                if code is ErrorCode.MODEL_UNAVAILABLE and private in MODEL_FAILURE_DETAILS:
+                    error["detail"] = private
+                store.append_event(conn, rid, tid, EventType.ERROR, error)
             store.append_event(
                 conn,
                 rid,
@@ -990,3 +987,17 @@ class ReportWorkflow:
 
 
 Kind = Literal["abstain", "fail", "cancel", "published", "noop"]
+
+# Public model-failure classes (ModelError.code values plus the general mode's empty reply).
+MODEL_FAILURE_DETAILS = frozenset(
+    {
+        "not_configured",
+        "unavailable",
+        "timeout",
+        "auth_failed",
+        "protocol_error",
+        "revision_mismatch",
+        "chat_server_down",
+        "empty_reply",
+    }
+)

@@ -3,6 +3,7 @@
 One root URL, four routes (docs/contracts/model-gateway.md):
 
     GET  /health                 served models, pinned revisions and engine settings
+    GET  /ready                  (token) the chat server itself: vLLM /health and /v1/models
     POST /v1/chat/completions    streamed proxy to the local vLLM (Qwen3-8B-AWQ)
     POST /v1/embeddings          BGE-M3 dense query embeddings (not used by M2 reports)
     POST /check                  NLI claim checker (public DeBERTa baseline, development only)
@@ -172,6 +173,29 @@ def create_app(
             "models": models,
             "engine": {**config.engine, "vllm_version": config.vllm_version},
         }
+
+    @app.get("/ready")
+    async def ready() -> Any:
+        """Authenticated (the guard above): is the actual chat server up and serving the
+        pinned Qwen model? Asks vLLM itself rather than reporting this process's view."""
+
+        chat = config.served["chat"]
+        try:
+            engine = await upstream.get("/health", timeout=5.0)
+            listed = await upstream.get("/v1/models", timeout=5.0)
+        except httpx.HTTPError:
+            return _error(503, "chat_server_unreachable")
+        if engine.status_code != 200:
+            return _error(503, "chat_server_unhealthy")
+        if listed.status_code != 200:
+            return _error(503, "chat_server_error")
+        try:
+            ids = {m.get("id") for m in listed.json().get("data", [])}
+        except ValueError:
+            return _error(503, "chat_server_error")
+        if chat["model"] not in ids:
+            return _error(503, "chat_model_not_served")
+        return {"status": "ready", "chat": {**chat, "ready": True}}
 
     @app.post("/v1/chat/completions")
     async def chat(request: Request) -> Any:

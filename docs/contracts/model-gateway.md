@@ -8,6 +8,7 @@ The backend knows one gateway **root** (`LLM_BASE_URL`, for example `https://<tu
 | `POST` | `MODEL_EMBED_PATH` (`/v1/embeddings`) | BGE-M3 dense | `embed(texts, cancel)` (not called by M2) |
 | `POST` | `MODEL_CHECK_PATH` (`/check`) | NLI checker | `check(pairs, cancel)` |
 | `GET` | `MODEL_HEALTH_PATH` (`/health`) | gateway | `served_models()` |
+| `GET` | `MODEL_READY_PATH` (`/ready`) | gateway → vLLM `/health` + `/v1/models` (token required) | `ready()` (M8 model status) |
 
 Implementation: `backend/app/reporting/model_client.py`; gateway: `ml/model-gateway/gateway.py`.
 
@@ -17,6 +18,10 @@ Implementation: `backend/app/reporting/model_client.py`; gateway: `ml/model-gate
 - **Check**: `{"model", "pairs": [{"premise", "hypothesis"}]}` → `{"results": [{"entailment", "neutral", "contradiction"}], "model", "revision", "status"}`. Over-long pairs (> 512 checker tokens) are refused with HTTP 422, never truncated.
 - **Embed**: `{"model", "input": [...]}` → OpenAI embedding list.
 - **Health**: `{"models": {"chat": {"model", "revision"}, "embed": {...}, "checker": {...}}, "engine": {"gpu_memory_utilization", "max_model_len", ...}}`. The backend refuses to run unless the chat model and revision equal `MODEL_CHAT_NAME`/`MODEL_CHAT_REVISION` and the engine reports utilization `0.75` and context `4096` when present; a checker, if listed, must be the pinned one. The served payload is recorded in the run's diagnostics.
+
+## Transport (M8)
+
+`LLM_BASE_URL` must use `https` unless its host is loopback (`localhost`, `127.0.0.0/8`, `::1`) or a private-network address. The bearer token goes with every request, and settings refuse plain HTTP to anything else. The client never follows redirects (`follow_redirects=False`), and any 3xx is a `GatewayProtocolError`, so a redirect cannot carry the token to another host. `GET /ready` (token required) answers 200 with `{"chat": {"model", "revision", "ready": true}}` only when vLLM itself is up and serving the pinned chat model. Otherwise it answers 503 and the backend raises `GatewayChatServerDown` (`chat_server_down`).
 
 ## Service authentication and limits
 

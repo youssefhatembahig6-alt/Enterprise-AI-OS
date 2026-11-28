@@ -260,3 +260,41 @@ def test_fake_client_is_labelled_and_scriptable() -> None:
     assert fake.chat([{"role": "user", "content": "x"}], purpose="sql", max_tokens=1).text == (
         '{"sql": "SELECT 1"}'
     )
+
+
+def test_redirects_are_refused_on_token_requests() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(307, headers={"location": "https://elsewhere.example/steal"})
+
+    client = client_with(handler)
+    with pytest.raises(GatewayProtocolError):
+        client.served_models()
+    with pytest.raises(GatewayProtocolError):
+        client.chat([{"role": "user", "content": "x"}], purpose="general", max_tokens=5)
+    with pytest.raises(GatewayProtocolError):
+        client.ready()
+    assert all("elsewhere" not in u for u in seen)  # the redirect target was never contacted
+
+
+@pytest.mark.parametrize(
+    ("url", "ok"),
+    [
+        ("https://gateway.example.org", True),
+        ("http://127.0.0.1:8100", True),
+        ("http://localhost:8100", True),
+        ("http://172.19.0.1:18100", True),  # private network (container bridge)
+        ("http://gateway.example.org", False),  # external host over plain HTTP
+        ("http://8.8.8.8:8100", False),
+        ("https://user:pw@gateway.example.org", False),
+        ("https://gateway.example.org/?x=1", False),
+    ],
+)
+def test_external_gateway_urls_must_use_https(url: str, ok: bool) -> None:
+    if ok:
+        assert settings(LLM_BASE_URL=url).model_gateway_url == url
+    else:
+        with pytest.raises(ValueError):
+            settings(LLM_BASE_URL=url)

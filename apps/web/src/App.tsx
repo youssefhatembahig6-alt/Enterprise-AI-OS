@@ -251,8 +251,6 @@ export function App() {
   const showActivity = ["resource.admin", "identity.admin", "audit.read", "tenant.config"].some((c) =>
     caps.includes(c),
   );
-  const fake =
-    (status.kind === "ready" || status.kind === "degraded") && status.readiness.model_inference === "fake";
 
   return (
     // Keyed by session: a new sign-in starts with an empty, memory-only chat history.
@@ -261,13 +259,7 @@ export function App() {
       token={session.token}
       identity={session.identity}
       packs={settings?.enabled_packs ?? null}
-      modelLabel={
-        status.kind === "unreachable"
-          ? "API unreachable"
-          : fake
-            ? "FAKE model (development double)"
-            : null
-      }
+      modelLabel={status.kind === "unreachable" ? "API unreachable" : null}
       canEmail={Boolean(settings?.enabled_packs.includes("actions"))}
       showActivity={showActivity}
       view={view}

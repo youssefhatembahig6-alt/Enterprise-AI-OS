@@ -40,6 +40,13 @@ class VersionIn(StrictModel):
     content_base64: str = Field(min_length=1, max_length=14_000_000)
 
 
+class ReindexIn(StrictModel):
+    """M8: optional preconditions for a reindex (both refer to the current version)."""
+
+    expected_version: int | None = Field(default=None, ge=1)
+    expected_byte_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+
 class UploadOut(StrictModel):
     document_id: str
     status: str

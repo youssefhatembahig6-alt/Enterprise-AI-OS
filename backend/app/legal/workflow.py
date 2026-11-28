@@ -137,6 +137,7 @@ def named_contracts(question: str, titles: dict[str, str]) -> tuple[list[str], b
 
 class LegalAnswerWorkflow(DocumentAnswerWorkflow):
     kind = "legal"
+    uses_model = False  # deterministic extraction; needs no gateway
 
     # -- retrieve: authorized contract texts only ------------------------------------------
 

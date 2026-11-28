@@ -6,7 +6,7 @@
  * caller replays from GET /api/v1/runs/{id}/events?after=<last id>.
  */
 
-import { API_BASE_URL, ApiError, type ApiErrorBody } from "./api.js";
+import { API_BASE_URL, ApiError, type ApiErrorBody, FETCH_CREDENTIALS } from "./api.js";
 
 export type ReportEventType =
   | "status"
@@ -82,13 +82,15 @@ export interface DocumentCitation {
   url?: string | null;
 }
 
-export type AskMode = "auto" | "documents" | "report" | "legal" | "code";
+export type AskMode = "auto" | "documents" | "report" | "legal" | "code" | "general";
 
 export interface Verification {
   label: string;
   narrative: string;
   inference_mode: "gateway" | "fake";
   inference_label?: string;
+  /** M8 general replies: the served chat model that produced it (gateway mode). */
+  model?: { name: string | null; revision: string | null };
   checker: null | {
     model: string;
     revision: string;
@@ -203,7 +205,7 @@ export async function startReport(
     method: "POST",
     headers: headers(token),
     body: JSON.stringify({ question, client_request_id: clientRequestId, mode }),
-    credentials: "omit",
+    credentials: FETCH_CREDENTIALS,
     cache: "no-store",
     signal,
   });
@@ -220,7 +222,7 @@ export async function resumeReport(
 ): Promise<"done" | "dropped"> {
   const response = await fetch(
     `${API_BASE_URL}/api/v1/runs/${encodeURIComponent(runId)}/events?after=${after}`,
-    { headers: headers(token), credentials: "omit", cache: "no-store", signal },
+    { headers: headers(token), credentials: FETCH_CREDENTIALS, cache: "no-store", signal },
   );
   return readStream(response, onEvent);
 }
@@ -229,7 +231,7 @@ export async function cancelReport(token: string, runId: string): Promise<void> 
   const response = await fetch(`${API_BASE_URL}/api/v1/runs/${encodeURIComponent(runId)}/cancel`, {
     method: "POST",
     headers: headers(token),
-    credentials: "omit",
+    credentials: FETCH_CREDENTIALS,
     cache: "no-store",
   });
   if (!response.ok) throw await errorFrom(response);
@@ -238,7 +240,7 @@ export async function cancelReport(token: string, runId: string): Promise<void> 
 export async function fetchEvidence(token: string, evidenceId: string): Promise<Evidence> {
   const response = await fetch(`${API_BASE_URL}/api/v1/evidence/${encodeURIComponent(evidenceId)}`, {
     headers: headers(token),
-    credentials: "omit",
+    credentials: FETCH_CREDENTIALS,
     cache: "no-store",
   });
   if (!response.ok) throw await errorFrom(response);
@@ -253,7 +255,7 @@ export async function fetchDocumentCitation(
 ): Promise<DocumentCitation> {
   const response = await fetch(
     `${API_BASE_URL}/api/v1/runs/${encodeURIComponent(runId)}/citations/${encodeURIComponent(citationId)}`,
-    { headers: headers(token), credentials: "omit", cache: "no-store" },
+    { headers: headers(token), credentials: FETCH_CREDENTIALS, cache: "no-store" },
   );
   if (!response.ok) throw await errorFrom(response);
   return (await response.json()) as DocumentCitation;
@@ -276,7 +278,7 @@ export interface DocumentSummary {
 export async function listDocuments(token: string): Promise<DocumentSummary[]> {
   const response = await fetch(`${API_BASE_URL}/api/v1/documents`, {
     headers: headers(token),
-    credentials: "omit",
+    credentials: FETCH_CREDENTIALS,
     cache: "no-store",
   });
   if (!response.ok) throw await errorFrom(response);
@@ -311,7 +313,7 @@ export async function uploadDocument(token: string, req: UploadRequest): Promise
     method: "POST",
     headers: headers(token),
     body: JSON.stringify(body),
-    credentials: "omit",
+    credentials: FETCH_CREDENTIALS,
     cache: "no-store",
   });
   if (!response.ok) throw await errorFrom(response);

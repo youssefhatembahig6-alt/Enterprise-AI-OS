@@ -19,7 +19,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.reporting.model_client import GatewayAuthError, GatewayModelClient, GatewayProtocolError
+from app.reporting.model_client import (
+    GatewayAuthError,
+    GatewayChatServerDown,
+    GatewayModelClient,
+    GatewayProtocolError,
+)
 
 GATEWAY_FILE = Path(__file__).resolve().parents[3] / "ml" / "model-gateway" / "gateway.py"
 pytestmark = pytest.mark.skipif(not GATEWAY_FILE.exists(), reason="ml/ not in this build")
@@ -56,8 +61,19 @@ class StubChecker:
         }
 
 
+VLLM = {"up": True}  # the stub chat server's state (tests switch it off and on)
+
+
 def vllm_stub(request: httpx.Request) -> httpx.Response:
     assert request.headers["authorization"] == "Bearer vllm-local-key"
+    if not VLLM["up"]:
+        raise httpx.ConnectError("vLLM is down", request=request)
+    if request.method == "GET" and request.url.path == "/health":
+        return httpx.Response(200)
+    if request.method == "GET" and request.url.path == "/v1/models":
+        return httpx.Response(
+            200, json={"data": [{"id": "Qwen/Qwen3-8B-AWQ", "root": "/models/qwen"}]}
+        )
     body = json.loads(request.content)
     assert body["chat_template_kwargs"] == {"enable_thinking": False}
     chunks = [
@@ -72,6 +88,7 @@ def vllm_stub(request: httpx.Request) -> httpx.Response:
 
 @pytest.fixture
 def gateway_client() -> Any:
+    VLLM["up"] = True
     gateway = load_gateway()
     app = gateway.create_app(
         gateway.GatewayConfig(token=TOKEN, vllm_api_key="vllm-local-key"),
@@ -226,3 +243,27 @@ def test_docling_subprocess_runs_the_worker_in_its_own_interpreter(tmp_path: Pat
     worker.write_text("import sys\nsys.exit('boom')\n")
     with pytest.raises(gateway.ParseError, match="boom"):
         runner.parse("x.pdf", b"1")
+
+
+def test_ready_asks_the_chat_server_behind_the_gateway(gateway_client: Any) -> None:
+    gateway, client = gateway_client
+    backend = backend_client(client)
+    ready = backend.ready()
+    assert ready["chat"] == {**gateway.PINNED["chat"], "ready": True}
+    # /ready carries the bearer token requirement; /health does not.
+    assert client.get("/ready").status_code == 401
+    with pytest.raises(GatewayAuthError):
+        backend_client(client, token="wrong-token-0000000000").ready()
+
+
+def test_qwen_down_while_gateway_up_is_not_ready_and_recovers(gateway_client: Any) -> None:
+    _, client = gateway_client
+    backend = backend_client(client)
+    VLLM["up"] = False  # only the chat server stops; the gateway process keeps running
+    assert client.get("/health").status_code == 200
+    backend.served_models()  # the public health view still looks fine
+    with pytest.raises(GatewayChatServerDown) as stopped:
+        backend.ready()
+    assert stopped.value.detail == "chat_server_unreachable"
+    VLLM["up"] = True
+    assert backend.ready()["chat"]["ready"] is True

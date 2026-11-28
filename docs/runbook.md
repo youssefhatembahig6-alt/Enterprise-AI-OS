@@ -159,6 +159,97 @@ Clean-checkout setup, the defense demo script, the architecture and evidence ind
 
 Every question is a separate `POST /api/v1/chat` run with your token: earlier messages are not sent to the backend. Clicking a numbered citation opens the passage or SQL evidence in the **Sources** panel through the same endpoints as before, so access is checked again. Chat history lives in memory only and is cleared on sign-out or reload. **Automatic** routes sales and period questions (for example anything naming "Q1 2026") to the SQL sales report; choose **Documents you can access** under the composer to ask the documents. A verified sales report has **Email this report for approval**, which opens **Approvals** with that report selected. The defense demo script (`defense/demo-script.md`) still describes the earlier single-page dashboard; its steps map to **Ask** and **Approvals**.
 
+## Real-model chat: General mode and the Colab browser test (M8)
+
+**General mode.** The chat composer's **Source** menu has **General (no company data)**. The backend sends the question alone to the same chat model, with no documents, SQL results, email or briefing tools and no earlier turns. The reply is published as `general_model_reply_unverified` and labelled in the UI as a general reply that was not checked against sources. Only its owner can replay it, and it can never be emailed. **Automatic** never chooses General. The tenant pack `general` switches it on. The NileTech seed enables it; the isolation tenant keeps documents only. Applying migration `0016_general_chat` and re-running `seed` enables it on an existing stack.
+
+**Model status and failures.** `GET /api/v1/model/status` (signed-in users) runs the same check as every real run: the gateway's `/health` must report the pinned `Qwen/Qwen3-8B-AWQ@4da05a8edb55c6046cce958586c33b61da07bb79`. The chat top bar shows the result:
+- **Real model · Qwen3-8B-AWQ @4da05a8 · verified**;
+- **Model gateway: <reason>** (not configured, unreachable, timeout, credentials rejected, revision mismatch);
+- **FAKE model**.
+
+A run that fails on the model ends with `model_unavailable` plus a `detail` class, and the answer shows the reason in words. Document answers now also verify the served model and revision before calling it (SQL reports already did; the legal pack uses no model). The gateway token stays server-side (`MODEL_GATEWAY_TOKEN`).
+
+**Browser test on the real gateway (Colab T4, loopback only).** Open [`ml/colab-m8-chat/m8_real_model_chat.ipynb` in Colab](https://colab.research.google.com/github/youssefhatembahig6-alt/Enterprise-AI-OS/blob/feature/m8-real-model-chat/ml/colab-m8-chat/m8_real_model_chat.ipynb). Choose **Runtime → Change runtime type → T4 GPU**, then run the cells in order:
+
+| Cell | Does | Time |
+| --- | --- | --- |
+| 1 | Clone the branch, show the commit and the GPU | < 1 min |
+| 2 | Install the pinned vLLM environment | about 5 min |
+| 3 | Launch the gateway on 127.0.0.1:8100 (pinned Qwen3-8B-AWQ, BGE-M3, development checker; utilization 0.75, context 4096) | 10–20 min first time |
+| 4 | `run_m8_chat_colab.py all`. Starts PostgreSQL/Redis/Qdrant, migrates and seeds the synthetic NileTech data, starts the API (`MODEL_MODE=gateway`) on 127.0.0.1:18000, seeds the document corpus with real BGE-M3 embeddings, builds the web UI with Node 20.19.2 (checksum-verified) and serves it on 127.0.0.1:13000, then runs `scripts/m8_chat_ui_check.py --expect-inference gateway` in headless Chromium (Playwright 1.55.0) | 20–30 min |
+| 5 | Download **`m8-chat-evidence-<UTC stamp>.zip`** | — |
+
+Every browser check writes into a new folder `ui/<run id>/` (the check script refuses a folder that is not empty). The runner accepts a check only when the script **exits 0 and** the report in that folder carries the same run id and says pass; a report left by an earlier run never counts. `versions.json` names the accepted run under `steps.ui_check`. The bundle holds that folder's `m8-chat-ui-check.json`, three screenshots, `gateway-health.json`, `versions.json` (commit, clean worktree, GPU, settings) and the service logs. It is secret-scanned (database, Redis and JWT secrets, the gateway token and fixture passwords) before it is written. It passes only if all three browser checks pass:
+
+1. **Documents:** finance.reader asks *"If I don't use all my vacation this year, how many days can I roll over, and until when?"*. The reply is published with a citation; clicking it opens the passage with **text hash verified** (`GET …/citations/{id}` returns 200).
+2. **Refusal:** sales.reader asks *"Why did collections lag revenue in Q1 2026?"* with **Documents**. The reply is the no-sources refusal, and the page shows none of the restricted figures.
+3. **General:** finance.reader asks an open-ended question with **General**. The reply is non-empty, has no citations and no FAKE label, and is labelled as general.
+
+For 1 and 3, the run record (`GET /api/v1/runs/{id}` with the user's own token) must show:
+- `inference_mode = gateway`;
+- the pinned chat model and revision in `served_models`;
+- an actual model call (purpose `answer` / `general`, with a measured duration and a token count).
+
+The same script runs locally against the disposable stack with `--expect-inference fake`. That run checks the UI only and is never model evidence:
+
+```bash
+PLAYWRIGHT_BROWSERS_PATH=<browsers> <venv>/bin/python scripts/m8_chat_ui_check.py --web http://localhost:13000 --api http://localhost:18000 --credentials var/m7-acceptance/dev-credentials.json --out var/m8-ui-fake --expect-inference fake
+```
+
+**Model status button.** The chat header's status is a button. It checks on sign-in, every 30 s, and when clicked (a click skips the backend's 15 s cache):
+
+| Shows | Means |
+| --- | --- |
+| **Checking…** | A check is in flight |
+| **Connected · Qwen3-8B-AWQ** | The backend confirmed the pinned `Qwen/Qwen3-8B-AWQ@4da05a8…` in the gateway's `/health` **and** the gateway's authenticated `/ready`, which asks the actual Qwen chat server (vLLM `/health` and `/v1/models`) behind it. So the token was accepted and Qwen itself is up; a gateway whose vLLM stopped shows Model offline |
+| **Model offline** | Gateway mode, but the gateway is unreachable, timed out, rejected the token, serves another revision, or its Qwen chat server is not ready; the tooltip says which |
+| **Backend offline** | The API itself does not answer |
+| **FAKE model** | The server runs the labelled development double |
+
+**Using the real model from the laptop chat UI.** This needs the laptop backend to reach the Colab gateway, which is blocked on a decision (next paragraph). Once that is decided:
+1. In Colab, create the Secrets `EAIOS_GATEWAY_TOKEN` (a long random string you also keep on the laptop) and `NGROK_AUTHTOKEN`. Run cells 1–3 of `ml/colab-m8-chat/m8_real_model_chat.ipynb`, set `TUNNEL_PERMITTED_BY_OWNER = True` in cell 6, and run it. It prints the gateway URL and the laptop command.
+2. On the laptop, in the repository, with the disposable stack up (`python3 scripts/m7_acceptance.py up`):
+
+   ```bash
+   python3 scripts/m8_connect_gateway.py connect --url https://<printed gateway URL>
+   python3 scripts/m8_connect_gateway.py reindex    # first time only: re-embeds the synthetic fixtures with BGE-M3
+   ```
+
+   The gateway URL must be `https` (plain `http` only for loopback or a private network). No request that carries the token follows a redirect. `reindex` re-embeds only the synthetic demo fixtures (the NileTech documents in `backend/fixtures/documents/corpus.toml` and the contracts in `backend/fixtures/legal/legal.toml`). A document is sent only if every check passes:
+   - its title, department and permission state (and classification, where the fixture has permissions) match a fixture;
+   - its **current** version holds that fixture file's exact bytes (same filename, same SHA-256 from the admin document view);
+   - exactly one document matches.
+
+   Same-title uploads and fixtures replaced by an edited version are listed as "NOT sent" with the reason. Each reindex request carries `expected_version` and `expected_byte_sha256`, and the backend re-checks them under a row lock (`409 document_changed` otherwise). So nothing but the verified fixture bytes reaches the gateway.
+
+   It then waits for the exact jobs it queued (`GET /api/v1/documents/{id}/jobs/{job_id}`), not for the document list: while a worker is slow, the old generation keeps documents looking searchable. A fixture counts only when its job ended `active` in the current model's embedding space with chunks, and the document is searchable. The exit status is 1 for any rejected request (409, 503, unreachable), a failed or superseded job, a generation in another embedding space, or a timeout (`--timeout`, default 1800 s). It reports each one's status and whether it is searchable: 13 are expected to be. The draft strategy memo (no permissions) and the scanned delivery note (needs Docling OCR) are expected not to be. It exits 1 if an expected one is not searchable.
+   `connect` asks for the token without echo (or reads `EAIOS_GATEWAY_TOKEN`). It checks the gateway's pinned model and the token, then writes `MODEL_MODE=gateway`, `LLM_BASE_URL`, `MODEL_GATEWAY_TOKEN` and the remote timeouts (read 180 s, deadline 360 s) into `var/m7-acceptance/.env` (0600). It restarts only the disposable API, worker and scheduler, and prints the backend's own status. The token stays server-side. The normal `eaios` stack is never touched.
+3. Open http://localhost:13000, sign in (organization `niletech`, for example `finance.reader@niletech.example`, password from `var/m7-acceptance/dev-credentials.json`). The header should read **Connected · Qwen3-8B-AWQ**. Choose **Documents you can access** or **General (no company data)** in the composer and ask.
+4. **After Colab restarts:** run cells 1–3 and 6 again (cell 3 reuses the `EAIOS_GATEWAY_TOKEN` Secret), then `connect --url <new URL>` again. No reindex is needed while the embedding model stays the same. Click the status button to recheck.
+5. **Back to the fake model:** run `python3 scripts/m8_connect_gateway.py disconnect`. Documents re-embedded with BGE-M3 are then not searchable with the fake model until `reindex` runs again.
+
+**Private chat preview in Colab (no tunnel).** This is how to type your own questions on the real Qwen today, without a laptop connection:
+1. Open [`ml/colab-m8-chat/m8_real_model_chat.ipynb` in Colab](https://colab.research.google.com/github/youssefhatembahig6-alt/Enterprise-AI-OS/blob/feature/m8-real-model-chat/ml/colab-m8-chat/m8_real_model_chat.ipynb) and choose **Runtime → Change runtime type → T4 GPU**.
+2. Run cells 1–3 (clone, vLLM environment, gateway). Cell 4, the full browser test, is optional.
+3. Run **cell 7**. It:
+   - builds the UI with a relative API base and `VITE_FETCH_CREDENTIALS=same-origin`. Colab's port window admits a request only with your Colab session cookie, so this build lets the browser send cookies to its own origin; every other build sends none. Sign-in is still the bearer token, and the proxy drops cookies before the API;
+   - starts `ml/colab-m8-chat/preview_proxy.py`, which serves the UI and the API together on 127.0.0.1:13100 (loopback only);
+   - starts the services and API itself if cell 4 did not run, and warms the gateway;
+   - checks in headless Chromium on that origin: the badge **Connected · Qwen3-8B-AWQ**, a fresh General question (reply, no citations), a fresh annual-leave question in Documents (cited answer whose citation opens the verified passage), and the sales-reader refusal. For both answers, the run records must show `gateway`, the pinned revision and an actual model call.
+
+   The check passes only on exit status 0 and a passing report from that run (`preview/<run id>/m8-chat-ui-check.json`); the cell stops otherwise.
+
+   It then prints the sign-in (organization `niletech`, `finance.reader@niletech.example` and that runtime's synthetic password) and opens the port with `serve_kernel_port_as_window`, visible only in your Colab session.
+4. Sign in in that window, choose **Documents you can access** or **General (no company data)** in the composer, and ask your own questions.
+5. **Cell 8** downloads `m8-chat-preview-evidence-<UTC stamp>.zip`. Results go in [`docs/evidence/m8-chat/README.md`](evidence/m8-chat/README.md).
+6. **After a runtime restart or disconnect:** run cells 1–3 and 7 again. The database, documents and password are recreated for that runtime.
+
+**Still required: the hosting decision.** The Colab browser test (cells 1–5) needs no tunnel: app, browser and gateway share one runtime on loopback. Interactive use from the laptop needs a URL that reaches the gateway, and that is a policy decision, not a technical one. Colab's FAQ lists *"connecting to remote proxies"* among the activities restricted on **all** managed runtimes, paid included. It restricts *"web service offerings not related to interactive compute with Colab"*. On free runtimes without a compute-unit balance, it also restricts *"bypassing the notebook UI to interact primarily via a web UI"*. It does not name tunnels or ngrok. The project roadmap already says a successful tunnel test does not settle acceptable use, and that changing hosts needs an explicit project decision. The options:
+- **Accept a tunnel from Colab.** The owner judges it permitted for their plan (for example Colab Pro or Pay As You Go with a positive compute-unit balance) and records that decision. Then use cell 6 and the steps above.
+- **Host the gateway elsewhere:** an approved GPU host, Colab Enterprise, a GCP VM, or a local runtime you control. Then run `connect --url https://<that host>` (the gateway code in `ml/model-gateway/` is the same).
+- **Colab's own port window:** implemented as the **private chat preview** below. It needs no tunnel and no decision about remote proxies, but it is reachable only from the notebook owner's Colab session.
+
 ## Restart
 
 ```bash

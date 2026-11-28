@@ -61,12 +61,19 @@ body { font-family: var(--font); font-size: 14px; line-height: 1.5; background: 
 .eaios-shell .side-empty { font-size: 12.5px; color: var(--muted); padding: 4px 10px; white-space: normal; }
 
 .eaios-shell main.canvas { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.eaios-shell .topbar { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 52px 6px; position: relative; min-height: 52px; }
+.eaios-shell .topbar { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 88px 6px; position: relative; min-height: 52px; }
 .eaios-shell .topbar .left { position: absolute; left: 10px; display: flex; gap: 4px; }
 .eaios-shell .topbar .right { position: absolute; right: 10px; display: flex; gap: 4px; }
 .eaios-shell .topbar .iconbtn[aria-pressed="true"] { background: var(--surface-2); color: var(--fg); }
 .eaios-shell .scope { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 6px; align-items: center; font-size: 12.5px; color: var(--muted); }
 .eaios-shell .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.eaios-shell .chip.ok { border-color: color-mix(in srgb, var(--ok) 45%, var(--bg)); color: var(--ok); background: var(--soft-ok); }
+.eaios-shell .chip.crit { border-color: color-mix(in srgb, var(--crit) 55%, var(--bg)); color: var(--crit); background: var(--soft-crit); }
+.eaios-shell button.chip.status { cursor: pointer; font: inherit; font-size: 12px; background: none; }
+.eaios-shell button.chip.status:hover { filter: brightness(1.08); }
+.eaios-shell .chip.status .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; display: inline-block; }
+.eaios-shell .chip.status.unknown .dot { animation: eaios-pulse 1s infinite; }
+@keyframes eaios-pulse { 50% { opacity: .35; } }
 .eaios-shell .chip.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--bg)); color: var(--warn); background: var(--soft-warn); }
 .eaios-shell .menu-btn { display: none !important; }
 

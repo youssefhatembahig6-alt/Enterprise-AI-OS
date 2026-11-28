@@ -5,6 +5,7 @@ reindex, versions, deletion tombstones and distinct identities."""
 from __future__ import annotations
 
 import base64
+import hashlib
 import threading
 import time
 import uuid
@@ -505,6 +506,102 @@ def test_new_version_activates_and_old_citations_open_the_cited_version(
     assert reopened["version"] == 1 and reopened["current_version"] == 2
     assert reopened["is_current_version"] is False
     assert "370 open invoices" in reopened["quote"] and reopened["integrity"] == "verified"
+
+
+def jobs_of(db: DbHarness, document_id: str) -> int:
+    return int(
+        owner_exec(
+            db, "SELECT count(*) FROM ingestion_jobs WHERE document_id = :d", {"d": document_id}
+        ).scalar_one()
+    )
+
+
+def test_conditional_reindex_sends_only_the_verified_current_bytes(
+    app_client: TestClient, ingest_db: DbHarness
+) -> None:
+    """M8: the connect script reindexes a fixture only if its current version still holds
+    the fixture's exact bytes; the backend re-checks that under the row lock."""
+
+    document_id = finance(ingest_db, app_client)
+    wait_status(ingest_db, document_id, {"ready"})
+    admin = login(app_client, ingest_db, "niletech/access-admin")
+    original = (FIXTURES / "files" / "finance-q1-commentary.md").read_bytes()
+    fixture_sha = hashlib.sha256(original).hexdigest()
+    described = app_client.get(f"/api/v1/documents/{document_id}", headers=auth(admin)).json()
+    assert [(v["version"], v["byte_sha256"]) for v in described["versions"]] == [(1, fixture_sha)]
+    expect_v1 = {"expected_version": 1, "expected_byte_sha256": fixture_sha}
+    url = f"/api/v1/documents/{document_id}/reindex"
+    before = jobs_of(ingest_db, document_id)
+    assert app_client.post(url, json=expect_v1, headers=auth(admin)).status_code == 202
+    assert jobs_of(ingest_db, document_id) == before + 1
+    wait_status(ingest_db, document_id, {"ready"})
+    # The fixture is replaced by a new version with different content.
+    revised = original.replace(b"370 open invoices", b"412 open invoices")
+    response = app_client.post(
+        f"/api/v1/documents/{document_id}/versions",
+        json={
+            "filename": "finance-q1-commentary.md",
+            "content_base64": base64.b64encode(revised).decode(),
+        },
+        headers=auth(admin),
+    )
+    assert response.status_code == 202
+    wait_status(ingest_db, document_id, {"ready"})
+    queued = jobs_of(ingest_db, document_id)
+    for stale in (
+        expect_v1,  # the old version is no longer current
+        {"expected_version": 2, "expected_byte_sha256": fixture_sha},  # content differs
+        {"expected_byte_sha256": fixture_sha},
+    ):
+        refused = app_client.post(url, json=stale, headers=auth(admin))
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["error"]["code"] == "document_changed"
+    assert jobs_of(ingest_db, document_id) == queued  # nothing was queued for embedding
+    # Unconditional reindex keeps working as before.
+    assert app_client.post(url, headers=auth(admin)).status_code == 202
+
+
+def test_job_outcome_stays_pending_while_a_delayed_worker_leaves_the_old_index_active(
+    app_client: TestClient, ingest_db: DbHarness
+) -> None:
+    """M8 regression: reindex must wait for ITS job. While the job is stalled before
+    activation, the current version reports ``indexing`` (the runner sets it before
+    building the new generation and sets ``ready`` only in the activation transaction)
+    but the document is still searchable through the OLD active generation; the job
+    outcome is pending. It turns active in the current embedding space only after that
+    exact job activates the new generation."""
+
+    document_id = finance(ingest_db, app_client)
+    wait_status(ingest_db, document_id, {"ready"})
+    admin = login(app_client, ingest_db, "niletech/access-admin")
+    crash_at(app_client, "before_activate")
+    queued = app_client.post(f"/api/v1/documents/{document_id}/reindex", headers=auth(admin))
+    assert queued.status_code == 202
+    job_id = queued.json()["job_id"]
+    wait_crashed(ingest_db, uuid.UUID(job_id))
+    described = app_client.get(f"/api/v1/documents/{document_id}", headers=auth(admin)).json()
+    # Status describes the current version's ingestion; searchability the active generation.
+    assert (described["status"], described["searchable"]) == ("indexing", True)  # old index serves
+    job_url = f"/api/v1/documents/{document_id}/jobs/{job_id}"
+    stalled = app_client.get(job_url, headers=auth(admin)).json()
+    assert stalled["outcome"] == "pending"
+    assert stalled["in_current_space"] is False
+    assert stalled["active_generation"] == 1 and stalled["generation"] == 2
+    assert stalled["active_in_current_space"] is True  # the OLD generation is what serves
+    # The worker recovers and activates the new generation.
+    db_job, tenant_id = job_for(ingest_db, document_id)
+    assert str(db_job) == job_id
+    expire_lease(ingest_db, db_job)
+    runner(app_client).fault = None
+    assert runner(app_client).run_job(db_job, tenant_id) == "ready"
+    done = app_client.get(job_url, headers=auth(admin)).json()
+    assert (done["status"], done["outcome"], done["in_current_space"]) == ("done", "active", True)
+    assert done["active_generation"] == 2 and done["chunk_count"] > 0
+    after = app_client.get(f"/api/v1/documents/{document_id}", headers=auth(admin)).json()
+    assert (after["status"], after["searchable"]) == ("ready", True)
+    # Only administrators of the document can read job outcomes.
+    reader = login(app_client, ingest_db, "niletech/finance-reader")
+    assert app_client.get(job_url, headers=auth(reader)).status_code in (403, 404)
 
 
 # -- deletion tombstones -------------------------------------------------------------------

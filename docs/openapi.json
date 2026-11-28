@@ -125,13 +125,14 @@
           },
           "mode": {
             "default": "auto",
-            "description": "auto: sales/period questions go to the verified SQL report, contract clause and expiry questions to the legal pack, repository code questions to the code pack, everything else to authorized document answers (enabled packs only).",
+            "description": "auto: sales/period questions go to the verified SQL report, contract clause and expiry questions to the legal pack, repository code questions to the code pack, everything else to authorized document answers (enabled packs only). general (M8, explicit only): the model answers from general knowledge, without company documents, data or actions; never chosen by auto.",
             "enum": [
               "auto",
               "report",
               "documents",
               "legal",
-              "code"
+              "code",
+              "general"
             ],
             "title": "Mode",
             "type": "string"
@@ -1070,6 +1071,102 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "ModelStatus": {
+        "properties": {
+          "authenticated": {
+            "default": false,
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "chat": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServedModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checked_at": {
+            "title": "Checked At",
+            "type": "number"
+          },
+          "checker": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServedModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "embed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServedModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "mode": {
+            "enum": [
+              "fake",
+              "gateway"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mode",
+          "verified",
+          "checked_at"
+        ],
+        "title": "ModelStatus",
+        "type": "object"
+      },
       "OccurrenceOut": {
         "properties": {
           "action_id": {
@@ -1229,6 +1326,38 @@
           "email"
         ],
         "title": "RecipientOut",
+        "type": "object"
+      },
+      "ReindexIn": {
+        "additionalProperties": false,
+        "description": "M8: optional preconditions for a reindex (both refer to the current version).",
+        "properties": {
+          "expected_byte_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Byte Sha256"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          }
+        },
+        "title": "ReindexIn",
         "type": "object"
       },
       "RoleAssignmentIn": {
@@ -1497,6 +1626,34 @@
           "approval_token"
         ],
         "title": "SendRequest",
+        "type": "object"
+      },
+      "ServedModel": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          }
+        },
+        "title": "ServedModel",
         "type": "object"
       },
       "SharingIn": {
@@ -2059,7 +2216,7 @@
     }
   },
   "info": {
-    "description": "Identity, tenant isolation and health (M0); verified SQL reports (M2) and authorized document answers with exact citations (M3), streamed over Server-Sent Events; Google Drive sync, scoped administration and tenant configuration (M4); legal clause/expiry answers, GitHub repositories with code citations and desktop local folders (M5); human-approved email drafts from verified reports delivered through a durable outbox to Mailpit, and review-only scheduled briefings (M6).",
+    "description": "Identity, tenant isolation and health (M0); verified SQL reports (M2) and authorized document answers with exact citations (M3), streamed over Server-Sent Events; Google Drive sync, scoped administration and tenant configuration (M4); legal clause/expiry answers, GitHub repositories with code citations and desktop local folders (M5); human-approved email drafts from verified reports delivered through a durable outbox to Mailpit, and review-only scheduled briefings (M6); a General chat mode answered by the model alone and a model status check (M8).",
     "title": "Enterprise AI OS API",
     "version": "0.6.0-m6"
   },
@@ -4680,6 +4837,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -4755,6 +4922,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -4825,6 +5002,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
@@ -4904,6 +5091,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -4921,6 +5118,107 @@
           }
         ],
         "summary": "Get Document",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{document_id}/jobs/{job_id}": {
+      "get": {
+        "description": "M8: one ingestion job's outcome, for administrators of the document. ``outcome``:\n``pending`` (queued or running, even while an older generation still serves),\n``active`` (its generation is now active), ``failed``, ``needs_ocr`` or\n``superseded``; ``in_current_space`` says the active generation is in the embedding\nspace of the model the server uses now.",
+        "operationId": "ingestion_job_api_v1_documents__document_id__jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Ingestion Job Api V1 Documents  Document Id  Jobs  Job Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ingestion Job",
         "tags": [
           "documents"
         ]
@@ -4985,6 +5283,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5009,6 +5317,7 @@
     },
     "/api/v1/documents/{document_id}/reindex": {
       "post": {
+        "description": "Queue re-ingestion of the current version. M8: optional ``expected_version`` and\n``expected_byte_sha256`` make it conditional (409 ``document_changed`` otherwise), so\na client can be sure exactly the bytes it verified are sent for embedding.",
         "operationId": "reindex_api_v1_documents__document_id__reindex_post",
         "parameters": [
           {
@@ -5022,6 +5331,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ReindexIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "content": {
@@ -5064,6 +5390,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
@@ -5154,6 +5490,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
@@ -5768,6 +6114,57 @@
         ]
       }
     },
+    "/api/v1/model/status": {
+      "get": {
+        "description": "The inference mode and, for the real gateway, the verified served chat model.",
+        "operationId": "model_status_api_v1_model_status_get",
+        "parameters": [
+          {
+            "description": "Skip the 15 s cache (explicit recheck).",
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Skip the 15 s cache (explicit recheck).",
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Model Status",
+        "tags": [
+          "model"
+        ]
+      }
+    },
     "/api/v1/runs/{run_id}": {
       "get": {
         "operationId": "get_run_api_v1_runs__run_id__get",
@@ -5970,6 +6367,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {

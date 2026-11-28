@@ -7,10 +7,25 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
+from ipaddress import ip_address
 from typing import Annotated
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+def _local_host(host: str) -> bool:
+    """Loopback or a private-network address (plain HTTP to the gateway is allowed there)."""
+
+    if host == "localhost":
+        return True
+    try:
+        address = ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private
+
 
 _PLACEHOLDER_MARKERS = ("change-me", "changeme", "example")
 
@@ -75,6 +90,8 @@ class Settings(BaseSettings):
     model_embed_path: str = Field(default="/v1/embeddings", alias="MODEL_EMBED_PATH")
     model_check_path: str = Field(default="/check", alias="MODEL_CHECK_PATH")
     model_health_path: str = Field(default="/health", alias="MODEL_HEALTH_PATH")
+    # M8: authenticated readiness of the actual chat server (vLLM) behind the gateway.
+    model_ready_path: str = Field(default="/ready", alias="MODEL_READY_PATH")
     # M3: Docling (M1 parser choice for PDFs) runs behind the gateway.
     model_parse_path: str = Field(default="/parse", alias="MODEL_PARSE_PATH")
     docling_timeout_seconds: float = Field(
@@ -258,6 +275,15 @@ class Settings(BaseSettings):
         root = value.strip().rstrip("/")
         if not root.startswith(("http://", "https://")):
             raise ValueError("LLM_BASE_URL must be an http(s) gateway root")
+        parts = urlsplit(root)
+        if parts.username or parts.password or parts.query or parts.fragment or not parts.hostname:
+            raise ValueError("LLM_BASE_URL must be a plain gateway root (no credentials or query)")
+        if parts.scheme == "http" and not _local_host(parts.hostname):
+            # The bearer token travels with every request: only loopback or a private
+            # network may use plain HTTP (Colab loopback runs, a local container bridge).
+            raise ValueError(
+                "LLM_BASE_URL must use https for a gateway outside this machine or network"
+            )
         if root.endswith("/v1"):
             raise ValueError(
                 "LLM_BASE_URL is the gateway root; remove the trailing /v1 "
@@ -270,6 +296,7 @@ class Settings(BaseSettings):
         "model_embed_path",
         "model_check_path",
         "model_health_path",
+        "model_ready_path",
         "model_parse_path",
     )
     @classmethod

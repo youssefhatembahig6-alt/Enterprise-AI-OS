@@ -138,6 +138,8 @@ class Step(StrEnum):
     RETRIEVAL = "retrieval"
     ANSWER_DRAFTING = "answer_drafting"
     ANSWER_VERIFICATION = "answer_verification"
+    # M8: General mode (model only; no documents, data or actions).
+    GENERAL_ANSWER = "general_answer"
     PUBLICATION = "publication"
 
 
@@ -154,6 +156,7 @@ STEP_LABELS: dict[Step, str] = {
     Step.RETRIEVAL: "Searched documents you can access",
     Step.ANSWER_DRAFTING: "Drafted the answer",
     Step.ANSWER_VERIFICATION: "Checked the answer against its sources",
+    Step.GENERAL_ANSWER: "Asked the model (general knowledge, no company data)",
     Step.PUBLICATION: "Published the verified result",
 }
 
@@ -231,6 +234,9 @@ class VerificationLabel(StrEnum):
     # M3 document answers: every sentence quotes an exact span of a cited, currently
     # authorized document version, and passed the development NLI checker.
     ANSWER_VERIFIED_DEV_CHECKER = "answer_quotes_verified_dev_checked"
+    # M8 General mode: the model's own reply. It used no company documents, data or
+    # actions and is not checked against sources; the UI labels it as general.
+    GENERAL_UNVERIFIED = "general_model_reply_unverified"
 
 
 class EvidenceRef(BaseModel):

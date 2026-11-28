@@ -63,6 +63,10 @@ class DocumentForbidden(Exception):
     """Caller may see the document but may not administer it."""
 
 
+class DocumentChanged(Exception):
+    """M8: a conditional reindex found a different current version or content."""
+
+
 class InvalidRequest(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(code)
@@ -327,12 +331,81 @@ class DocumentService:
         except QdrantError:
             logger.warning("qdrant_delete_failed", extra={"document_id": str(document_id)})
 
-    def reindex(self, ctx: AccessContext, document_id: UUID) -> None:
+    def reindex(
+        self,
+        ctx: AccessContext,
+        document_id: UUID,
+        *,
+        expected_version: int | None = None,
+        expected_byte_sha256: str | None = None,
+    ) -> UUID:
         with tenant_transaction(self._engine, ctx.tenant_id, ctx.user_id) as conn:
             self._require_admin(conn, ctx, document_id)
-            job_id = store.reindex(conn, ctx.tenant_id, document_id)
+            try:
+                job_id = store.reindex(
+                    conn,
+                    ctx.tenant_id,
+                    document_id,
+                    expected_version=expected_version,
+                    expected_byte_sha256=expected_byte_sha256,
+                )
+            except store.VersionChanged as exc:
+                raise DocumentChanged(str(exc)) from exc
         if self._dispatch is not None:
             self._dispatch(job_id, ctx.tenant_id)
+        return job_id
+
+    def job(self, ctx: AccessContext, document_id: UUID, job_id: UUID) -> dict[str, Any]:
+        """M8: where one ingestion job stands (administrators). ``outcome`` is ``active``
+        only when the job is done, its generation is the document's active one, and that
+        generation is in the CURRENT model's embedding space (``in_current_space``);
+        ``pending`` while queued or running, even if an older generation still serves."""
+
+        with tenant_transaction(self._engine, ctx.tenant_id, ctx.user_id, snapshot=True) as conn:
+            self._require_admin(conn, ctx, document_id)
+            row = store.job_state(conn, document_id, job_id)
+        if row is None:
+            raise DocumentNotFound
+        current = collection_name(self._settings, self._model)
+        active = (
+            row["status"] == "done"
+            and row["generation"] is not None
+            and (
+                row["generation"] == row["active_generation"]
+                and row["generation_status"] == "active"
+            )
+        )
+        if row["status"] != "done":
+            outcome = "pending"
+        elif active:
+            outcome = "active"
+        elif row["version_status"] == "needs_ocr":
+            outcome = "needs_ocr"
+        elif row["generation_status"] == "failed" or row["version_status"] == "failed":
+            outcome = "failed"
+        else:
+            outcome = "superseded"
+        return {
+            "job_id": str(row["id"]),
+            "document_id": str(document_id),
+            "kind": row["kind"],
+            "version": row["version"],
+            "status": row["status"],
+            "attempts": row["attempts"],
+            "generation": row["generation"],
+            "generation_status": row["generation_status"],
+            "chunk_count": row["chunk_count"],
+            "outcome": outcome,
+            "embedding_space": current,
+            "in_current_space": bool(active and row["collection"] == current),
+            "active_generation": row["active_generation"],
+            "active_in_current_space": row["active_collection"] == current,
+            "error": (
+                {"code": row["error_code"], "message": row["error_message"]}
+                if outcome in ("failed", "needs_ocr") and row["error_code"]
+                else None
+            ),
+        }
 
     # Listing reads the document row, the access checks and the versions in separate
     # statements. They share one snapshot so an ingestion commit can never be seen half
@@ -391,6 +464,8 @@ class DocumentService:
                     "status": v.status,
                     "error_code": v.error_code,
                     "byte_size": v.byte_size,
+                    # M8: lets an administrator verify which bytes a version holds.
+                    "byte_sha256": v.byte_sha256,
                     "created_at": v.created_at.isoformat(),
                     "parser": v.parser,
                     "parse_notes": v.parse_notes or {},

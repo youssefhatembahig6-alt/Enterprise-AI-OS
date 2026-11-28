@@ -18,9 +18,10 @@ slug = "niletech"
 name = "NileTech Solutions"
 
   # M4 tenant configuration (15-minute demo sync), extended in M5 with the legal and
-  # code packs and the GitHub and desktop local-folder connectors.
+  # code packs and the GitHub and desktop local-folder connectors, and in M8 with the
+  # general chat mode (the model alone, no company data).
   [tenants.settings]
-  enabled_packs = ["documents", "sales_reports", "legal", "code", "actions"]
+  enabled_packs = ["documents", "sales_reports", "legal", "code", "actions", "general"]
   enabled_connectors = ["upload", "google_drive", "github", "local_folder", "mailpit"]
   sync_mode = "demo"
 

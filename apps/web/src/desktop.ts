@@ -4,7 +4,7 @@
  * is handed to the main process in memory, never persisted.
  */
 
-import { API_BASE_URL, ApiError, type ApiErrorBody } from "./api";
+import { API_BASE_URL, ApiError, type ApiErrorBody, FETCH_CREDENTIALS } from "./api";
 
 export interface DesktopSyncStatus {
   folderId: string;
@@ -68,7 +68,7 @@ async function call<T>(token: string, path: string, init: RequestInit = {}): Pro
   const response = await fetch(`${API_BASE_URL}/api/v1/local-folders${path}`, {
     ...init,
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    credentials: "omit",
+    credentials: FETCH_CREDENTIALS,
     cache: "no-store",
   });
   if (response.status === 204) return undefined as T;

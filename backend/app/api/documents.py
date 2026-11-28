@@ -9,13 +9,14 @@ import binascii
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Request, status
+from fastapi import APIRouter, Body, Depends, Path, Request, status
 from fastapi.responses import Response
 
 from app.api.admin import capability_disabled
 from app.api.deps import CurrentContext
 from app.api.errors import ApiError
 from app.documents.ingest import (
+    DocumentChanged,
     DocumentForbidden,
     DocumentNotFound,
     DocumentService,
@@ -24,7 +25,14 @@ from app.documents.ingest import (
 )
 from app.reporting.service import ReportService, RunNotFound
 from app.schemas.auth import ErrorResponse
-from app.schemas.documents import CitationOut, PermissionsIn, UploadIn, UploadOut, VersionIn
+from app.schemas.documents import (
+    CitationOut,
+    PermissionsIn,
+    ReindexIn,
+    UploadIn,
+    UploadOut,
+    VersionIn,
+)
 from app.tenancy.config import CapabilityDisabled
 
 router = APIRouter(prefix="/api/v1", tags=["documents"])
@@ -32,6 +40,7 @@ _ERRORS: dict[int | str, dict[str, Any]] = {
     401: {"model": ErrorResponse},
     403: {"model": ErrorResponse},
     404: {"model": ErrorResponse},
+    409: {"model": ErrorResponse},
     422: {"model": ErrorResponse},
 }
 
@@ -77,6 +86,10 @@ def _errors(exc: Exception) -> ApiError:
         return ApiError(403, "forbidden", "You cannot manage documents for this department.")
     if isinstance(exc, InvalidRequest):
         return ApiError(422, exc.code, exc.message)
+    if isinstance(exc, DocumentChanged):
+        return ApiError(
+            409, "document_changed", "The document's current version is not the expected one."
+        )
     raise exc
 
 
@@ -148,12 +161,42 @@ def new_version(
 
 
 @router.post("/documents/{document_id}/reindex", status_code=202, responses=_ERRORS)
-def reindex(document_id: UUID, ctx: CurrentContext, docs: Documents) -> dict[str, Any]:
+def reindex(
+    document_id: UUID,
+    ctx: CurrentContext,
+    docs: Documents,
+    body: Annotated[ReindexIn | None, Body()] = None,
+) -> dict[str, Any]:
+    """Queue re-ingestion of the current version. M8: optional ``expected_version`` and
+    ``expected_byte_sha256`` make it conditional (409 ``document_changed`` otherwise), so
+    a client can be sure exactly the bytes it verified are sent for embedding."""
+
     try:
-        docs.reindex(ctx, document_id)
+        job_id = docs.reindex(
+            ctx,
+            document_id,
+            expected_version=body.expected_version if body else None,
+            expected_byte_sha256=body.expected_byte_sha256 if body else None,
+        )
+    except (DocumentNotFound, DocumentForbidden, DocumentChanged) as exc:
+        raise _errors(exc) from exc
+    return {"document_id": str(document_id), "status": "queued", "job_id": str(job_id)}
+
+
+@router.get("/documents/{document_id}/jobs/{job_id}", responses=_ERRORS)
+def ingestion_job(
+    document_id: UUID, job_id: UUID, ctx: CurrentContext, docs: Documents
+) -> dict[str, Any]:
+    """M8: one ingestion job's outcome, for administrators of the document. ``outcome``:
+    ``pending`` (queued or running, even while an older generation still serves),
+    ``active`` (its generation is now active), ``failed``, ``needs_ocr`` or
+    ``superseded``; ``in_current_space`` says the active generation is in the embedding
+    space of the model the server uses now."""
+
+    try:
+        return docs.job(ctx, document_id, job_id)
     except (DocumentNotFound, DocumentForbidden) as exc:
         raise _errors(exc) from exc
-    return {"document_id": str(document_id), "status": "queued"}
 
 
 @router.delete(

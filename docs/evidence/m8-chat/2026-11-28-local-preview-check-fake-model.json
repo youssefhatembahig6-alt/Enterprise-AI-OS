@@ -1,0 +1,143 @@
+{
+  "started_at": "2026-11-28T13:46:58.702136+00:00",
+  "web": "http://127.0.0.1:13100",
+  "api": "http://127.0.0.1:13100",
+  "expect_inference": "fake",
+  "model_status": {
+    "mode": "fake",
+    "verified": false,
+    "authenticated": false,
+    "chat": null,
+    "embed": null,
+    "checker": null,
+    "engine": null,
+    "error": null,
+    "label": "FAKE INFERENCE (deterministic development double, not model output)",
+    "checked_at": 1795873618.7008822
+  },
+  "checks": {
+    "status_badge": {
+      "label": "FAKE model",
+      "title": "The server uses the labelled development double, not a model. Click to check again.",
+      "screenshot": "0-status-badge.png",
+      "problems": [],
+      "pass": true
+    },
+    "documents_leave": {
+      "question": "Are public holidays that fall during my approved leave deducted from my allowance?",
+      "ui": {
+        "run_id": "6bb5abed-6473-4b8d-b977-9554943467a0",
+        "text": "N\nRequest accepted\nChecked your access\nSearched documents you can access\nDrafted the answer\nChecked the answer against its sources\nPublished the verified result\n\nHolidays that fall during approved leave are not deducted. 1\n\nEvery sentence quotes a source you can open\nClaims checked (development checker)\n1 source allowed\nFAKE inference — not a model\n\nEvery sentence quotes an exact passage of a document you can access (re-checked at publication); claims checked by the development baseline checker (not the final trained checker).\n\nAnnual leave policy 2026",
+        "pills": [
+          "Every sentence quotes a source you can open",
+          "Claims checked (development checker)",
+          "1 source allowed",
+          "FAKE inference — not a model"
+        ],
+        "error": [],
+        "citations": 1,
+        "screenshot": "1-documents-leave.png"
+      },
+      "opened": {
+        "passage": "…rter of the next year. Carried days expire on 31 March. Requests must be approved by the line manager.\n\nPublic holidays 🏖️\n\nPublic holidays follow the official calendar of each country, including Sham el-Nessim and Eid al-Fitr (عيد الفطر). Holidays that fall during approved leave are not deducted.\n\nFamily leave 👨‍👩‍👧\n\nParents may take ten days of family leave per year for school events and caregiving. Contact Hélène Dubois or Yasmin El-Sayed in HR for questions.…",
+        "badge": "text hash verified"
+      },
+      "citation_requests": [
+        [
+          "/runs/6bb5abed-6473-4b8d-b977-9554943467a0/citations/c1",
+          200
+        ]
+      ],
+      "run": {
+        "run_id": "6bb5abed-6473-4b8d-b977-9554943467a0",
+        "status": "published",
+        "inference_mode": "fake",
+        "outcome_code": "answer_quotes_verified_dev_checked",
+        "served_chat": null,
+        "model_calls": [
+          {
+            "ttft": 0.0,
+            "tokens": null,
+            "purpose": "answer",
+            "seconds": 0.0
+          }
+        ]
+      },
+      "problems": [],
+      "pass": true
+    },
+    "general": {
+      "question": "Explain in plain words what a confusion matrix is.",
+      "ui": {
+        "run_id": "63268725-7b25-4008-83e5-cd198aa283af",
+        "text": "N\nRequest accepted\nChecked your access\nAsked the model (general knowledge, no company data)\nPublished the general reply\n\nFAKE general reply (deterministic development double, not model output). You asked: Explain in plain words what a confusion matrix is.\n\nGeneral reply · no company data\nNot checked against sources\nFAKE inference — not a model\n\nGeneral reply from the model. It did not use your organization's documents, data or email, and it was not checked against any source.",
+        "pills": [
+          "General reply · no company data",
+          "Not checked against sources",
+          "FAKE inference — not a model"
+        ],
+        "error": [],
+        "citations": 0,
+        "screenshot": "3-general.png",
+        "reply": [
+          "FAKE general reply (deterministic development double, not model output). You asked: Explain in plain words what a confusion matrix is."
+        ]
+      },
+      "run": {
+        "run_id": "63268725-7b25-4008-83e5-cd198aa283af",
+        "status": "published",
+        "inference_mode": "fake",
+        "outcome_code": "general_model_reply_unverified",
+        "served_chat": null,
+        "model_calls": [
+          {
+            "ttft": 0.0,
+            "tokens": null,
+            "purpose": "general",
+            "seconds": 0.0,
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      "problems": [],
+      "pass": true
+    },
+    "sales_refusal": {
+      "question": "Why did collections lag revenue in Q1 2026?",
+      "ui": {
+        "run_id": "7437733d-af51-4d1d-9234-f6b90dd90e29",
+        "text": "N\nRequest accepted\nChecked your access\nSearched documents you can access\n\nI couldn't find information in documents you can access that answers this.\n\nNo sources used\nFAKE inference — not a model",
+        "pills": [
+          "No sources used",
+          "FAKE inference — not a model"
+        ],
+        "error": [],
+        "citations": 0,
+        "screenshot": "2-sales-refusal.png"
+      },
+      "run": {
+        "run_id": "7437733d-af51-4d1d-9234-f6b90dd90e29",
+        "status": "abstained",
+        "inference_mode": "fake",
+        "outcome_code": "no_sources",
+        "served_chat": null,
+        "model_calls": [
+          {
+            "ttft": 0.0,
+            "tokens": null,
+            "purpose": "answer",
+            "seconds": 0.0
+          }
+        ]
+      },
+      "problems": [],
+      "pass": true
+    }
+  },
+  "model_chip": [
+    "Finance · up to Confidential",
+    "FAKE model"
+  ],
+  "finished_at": "2026-11-28T13:47:04.184322+00:00",
+  "pass": true
+}

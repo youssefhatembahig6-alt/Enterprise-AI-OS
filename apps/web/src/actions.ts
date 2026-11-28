@@ -3,7 +3,7 @@
  * review-only scheduled briefings. Approval tokens are kept in memory only.
  */
 
-import { API_BASE_URL, ApiError, type ApiErrorBody } from "./api.js";
+import { API_BASE_URL, ApiError, type ApiErrorBody, FETCH_CREDENTIALS } from "./api.js";
 
 export interface Recipient {
   user_id: string;
@@ -78,7 +78,7 @@ async function call<T>(token: string, path: string, method = "GET", body?: unkno
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
-    credentials: "omit",
+    credentials: FETCH_CREDENTIALS,
     cache: "no-store",
   });
   const data: unknown = await response.json().catch(() => null);
