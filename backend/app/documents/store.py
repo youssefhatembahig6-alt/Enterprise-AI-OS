@@ -291,6 +291,33 @@ def add_version(
     return version, _insert_job(conn, tenant_id, document_id, version, "ingest"), key
 
 
+def job_state(conn: Connection, document_id: UUID, job_id: UUID) -> dict[str, Any] | None:
+    """M8: one ingestion job of a document with its generation, the version's status and
+    the document's active generation (and that generation's collection)."""
+
+    row = conn.execute(
+        text(
+            """
+            SELECT j.id, j.version, j.generation, j.status, j.attempts, j.kind,
+                   g.status AS generation_status, g.collection, g.chunk_count,
+                   d.active_generation,
+                   (SELECT a.collection FROM document_generations a
+                     WHERE a.document_id = d.id AND a.generation = d.active_generation)
+                       AS active_collection,
+                   v.status AS version_status, v.error_code, v.error_message
+              FROM ingestion_jobs j
+              JOIN documents d ON d.id = j.document_id
+              JOIN document_versions v ON v.document_id = j.document_id AND v.version = j.version
+              LEFT JOIN document_generations g
+                     ON g.document_id = j.document_id AND g.generation = j.generation
+             WHERE j.id = :j AND j.document_id = :d AND d.deleted_at IS NULL
+            """
+        ),
+        {"j": job_id, "d": document_id},
+    ).one_or_none()
+    return dict(row._mapping) if row is not None else None
+
+
 class VersionChanged(Exception):
     """M8: the document's current version is not the one the caller expected."""
 

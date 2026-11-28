@@ -172,7 +172,7 @@ def reindex(
     a client can be sure exactly the bytes it verified are sent for embedding."""
 
     try:
-        docs.reindex(
+        job_id = docs.reindex(
             ctx,
             document_id,
             expected_version=body.expected_version if body else None,
@@ -180,7 +180,23 @@ def reindex(
         )
     except (DocumentNotFound, DocumentForbidden, DocumentChanged) as exc:
         raise _errors(exc) from exc
-    return {"document_id": str(document_id), "status": "queued"}
+    return {"document_id": str(document_id), "status": "queued", "job_id": str(job_id)}
+
+
+@router.get("/documents/{document_id}/jobs/{job_id}", responses=_ERRORS)
+def ingestion_job(
+    document_id: UUID, job_id: UUID, ctx: CurrentContext, docs: Documents
+) -> dict[str, Any]:
+    """M8: one ingestion job's outcome, for administrators of the document. ``outcome``:
+    ``pending`` (queued or running, even while an older generation still serves),
+    ``active`` (its generation is now active), ``failed``, ``needs_ocr`` or
+    ``superseded``; ``in_current_space`` says the active generation is in the embedding
+    space of the model the server uses now."""
+
+    try:
+        return docs.job(ctx, document_id, job_id)
+    except (DocumentNotFound, DocumentForbidden) as exc:
+        raise _errors(exc) from exc
 
 
 @router.delete(

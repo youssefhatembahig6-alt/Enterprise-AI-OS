@@ -351,7 +351,50 @@ def select_fixtures(
     return targets, rejected, missing
 
 
-def reindex(timeout: float = 1800) -> None:
+# Patched by tests to simulate slow workers without waiting.
+_sleep = time.sleep
+_now = time.monotonic
+
+
+def judge(
+    spec: dict[str, Any], job: dict[str, Any] | None, doc: dict[str, Any] | None
+) -> str | None:
+    """Why a queued fixture is NOT in the expected end state (None: it is). Expected
+    searchable: its job ended ``active`` in the current embedding space with chunks, and
+    the document is searchable. Expected not searchable: the scanned note ends
+    ``needs_ocr``; the no-permission memo is indexed but never searchable."""
+
+    if job is None:
+        return "job outcome unknown"
+    outcome = job.get("outcome")
+    if outcome == "pending":
+        return f"job still {job.get('status')} (timed out)"
+    reason = spec["reason"]
+    if reason is not None:
+        if doc is not None and doc.get("searchable"):
+            return "searchable although it should not be"
+        if spec["permission_state"] == "verified" and outcome != "needs_ocr":
+            return f"expected needs_ocr, job outcome {outcome}"
+        return None
+    if outcome != "active":
+        error = (job.get("error") or {}).get("code")
+        return f"job outcome {outcome}" + (f" ({error})" if error else "")
+    if not job.get("in_current_space"):
+        return (
+            f"active generation is not in the current embedding space {job.get('embedding_space')}"
+        )
+    if not job.get("chunk_count"):
+        return "active generation has no chunks"
+    if doc is None or not doc.get("searchable"):
+        return "document is not searchable"
+    return None
+
+
+def reindex(timeout: float = 1800, poll: float = 5.0) -> None:  # noqa: PLR0915 - one linear procedure
+    """Queue the verified fixtures, wait for THOSE jobs, then confirm each fixture's end
+    state. Exit status 1 on any rejected request, failed job, wrong embedding space or
+    timeout; a document that only looks searchable (old generation) is not enough."""
+
     token = admin_token()
     status, docs = http("GET", f"{API}/api/v1/documents", token)
     if status != 200:
@@ -365,64 +408,81 @@ def reindex(timeout: float = 1800) -> None:
     )
     for label, reason in rejected:
         print(f"  NOT sent: {label}: {reason}")
-    queued = []
+    problems = [f"fixture not reindexed: {t}" for t in sorted(set(missing))]
+    jobs: dict[str, dict[str, Any]] = {}  # job id -> {"doc", "spec", "state"}
     for doc, spec in targets:
-        code, _ = http(
-            "POST",
-            f"{API}/api/v1/documents/{doc['document_id']}/reindex",
-            token,
-            {"expected_version": doc["current_version"], "expected_byte_sha256": spec["sha256"]},
-        )
-        if code == 409:
-            print(f"  NOT sent: {doc['title']}: changed after the check (backend refused)")
-            missing.append(doc["title"])
-            continue
-        print(f"  reindex {doc['title']} (version {doc['current_version']}): HTTP {code}")
-        if code == 202:
-            queued.append(doc["document_id"])
-    wanted = set(queued)
-    deadline = time.monotonic() + timeout
-    while wanted and time.monotonic() < deadline:
-        _, docs = http("GET", f"{API}/api/v1/documents", token)
-        pending = [
-            d
-            for d in docs
-            if d["document_id"] in wanted
-            and (
-                d["status"] in ("queued", "parsing", "indexing")
-                or (
-                    d["status"] == "ready"
-                    and not d["searchable"]
-                    and manifest[d["title"]]["reason"] is None
-                )
+        try:
+            code, body = http(
+                "POST",
+                f"{API}/api/v1/documents/{doc['document_id']}/reindex",
+                token,
+                {
+                    "expected_version": doc["current_version"],
+                    "expected_byte_sha256": spec["sha256"],
+                },
             )
-        ]
+        except OSError as exc:
+            code, body = 0, {"error": type(exc).__name__}
+        job_id = (body or {}).get("job_id") if code == 202 else None
+        if not job_id:
+            why = "changed after the check" if code == 409 else f"HTTP {code or 'unreachable'}"
+            print(f"  REJECTED: {doc['title']}: {why}")
+            problems.append(f"reindex request rejected for {doc['title']}: {why}")
+            continue
+        print(f"  queued {doc['title']} (version {doc['current_version']}): job {job_id[:8]}")
+        jobs[job_id] = {"doc": doc, "spec": spec, "state": None}
+    deadline = _now() + timeout
+    while True:
+        pending = 0
+        for job_id, entry in jobs.items():
+            if entry["state"] and entry["state"].get("outcome") != "pending":
+                continue
+            url = f"{API}/api/v1/documents/{entry['doc']['document_id']}/jobs/{job_id}"
+            try:
+                code, state = http("GET", url, token)
+            except OSError:
+                code, state = 0, None
+            if code == 200:
+                entry["state"] = state
+            if not entry["state"] or entry["state"].get("outcome") == "pending":
+                pending += 1
         if not pending:
             break
-        print(f"waiting for {len(pending)} document(s)…", flush=True)
-        time.sleep(5)
-    _, docs = http("GET", f"{API}/api/v1/documents", token)
-    problems = [f"fixture not reindexed: {t}" for t in sorted(set(missing))]
+        if _now() >= deadline:
+            problems.append(f"timed out after {timeout:.0f} s with {pending} job(s) unfinished")
+            break
+        print(f"waiting for {pending} job(s)…", flush=True)
+        _sleep(poll)
+    try:
+        _, docs = http("GET", f"{API}/api/v1/documents", token)
+    except OSError:
+        docs = []
+    by_id = {d["document_id"]: d for d in docs or []}
     print("\nsynthetic fixtures after reindex:")
-    for d in sorted((d for d in docs if d["document_id"] in wanted), key=lambda d: d["title"]):
-        reason = manifest[d["title"]]["reason"]
-        ok = d["searchable"] if reason is None else not d["searchable"]
-        note = "" if reason is None else f"  (expected not searchable: {reason})"
+    searchable = 0
+    for _job_id, entry in sorted(jobs.items(), key=lambda kv: kv[1]["doc"]["title"]):
+        doc, spec, state = entry["doc"], entry["spec"], entry["state"]
+        now_doc = by_id.get(doc["document_id"])
+        why = judge(spec, state, now_doc)
+        outcome = (state or {}).get("outcome", "unknown")
+        space = "current space" if (state or {}).get("in_current_space") else "-"
+        note = "" if spec["reason"] is None else f"  (expected not searchable: {spec['reason']})"
         print(
-            f"  {'OK ' if ok else 'BAD'} {d['status']:<10} searchable={d['searchable']!s:<5}"
-            f" {d['title']}{note}"
+            f"  {'OK ' if why is None else 'BAD'} job {outcome:<10} {space:<13}"
+            f" searchable={bool(now_doc and now_doc.get('searchable'))!s:<5} {doc['title']}{note}"
+            + (f"  <- {why}" if why else "")
         )
-        if not ok:
-            problems.append(f"{d['title']}: status {d['status']}, searchable {d['searchable']}")
-    searchable = sum(
-        1
-        for d in docs
-        if d["document_id"] in wanted and d["searchable"] and manifest[d["title"]]["reason"] is None
-    )
+        if why:
+            problems.append(f"{doc['title']}: {why}")
+        elif spec["reason"] is None:
+            searchable += 1
     expected = sum(1 for spec in manifest.values() if spec["reason"] is None)
-    print(f"\n{searchable} of {expected} expected-searchable synthetic fixtures are searchable")
+    print(
+        f"\n{searchable} of {expected} expected-searchable synthetic fixtures are searchable "
+        "in the active model's embedding space"
+    )
     if problems:
-        sys.exit("reindex problems:\n  " + "\n  ".join(problems))
+        sys.exit("reindex FAILED:\n  " + "\n  ".join(problems))
 
 
 def main() -> None:
@@ -434,14 +494,15 @@ def main() -> None:
     c.add_argument("--url", required=True, help="gateway root, e.g. https://<host> (no /v1)")
     sub.add_parser("disconnect")
     sub.add_parser("status")
-    sub.add_parser("reindex")
+    r = sub.add_parser("reindex")
+    r.add_argument("--timeout", type=float, default=1800, help="seconds to wait for the jobs")
     args = ap.parse_args()
     if args.cmd == "connect":
         connect(args.url)
     elif args.cmd == "disconnect":
         disconnect()
     elif args.cmd == "reindex":
-        reindex()
+        reindex(timeout=args.timeout)
     else:
         print(describe(backend_status()))
 

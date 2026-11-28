@@ -561,6 +561,44 @@ def test_conditional_reindex_sends_only_the_verified_current_bytes(
     assert app_client.post(url, headers=auth(admin)).status_code == 202
 
 
+def test_job_outcome_stays_pending_while_a_delayed_worker_leaves_the_old_index_active(
+    app_client: TestClient, ingest_db: DbHarness
+) -> None:
+    """M8 regression: reindex must wait for ITS job. While the job is stalled before
+    activation, the document still looks ready and searchable (old generation), but the
+    job outcome is pending; it turns active (current embedding space) only after the new
+    generation is activated."""
+
+    document_id = finance(ingest_db, app_client)
+    wait_status(ingest_db, document_id, {"ready"})
+    admin = login(app_client, ingest_db, "niletech/access-admin")
+    crash_at(app_client, "before_activate")
+    queued = app_client.post(f"/api/v1/documents/{document_id}/reindex", headers=auth(admin))
+    assert queued.status_code == 202
+    job_id = queued.json()["job_id"]
+    wait_crashed(ingest_db, uuid.UUID(job_id))
+    described = app_client.get(f"/api/v1/documents/{document_id}", headers=auth(admin)).json()
+    assert (described["status"], described["searchable"]) == ("ready", True)  # old index serves
+    job_url = f"/api/v1/documents/{document_id}/jobs/{job_id}"
+    stalled = app_client.get(job_url, headers=auth(admin)).json()
+    assert stalled["outcome"] == "pending"
+    assert stalled["in_current_space"] is False
+    assert stalled["active_generation"] == 1 and stalled["generation"] == 2
+    assert stalled["active_in_current_space"] is True  # the OLD generation is what serves
+    # The worker recovers and activates the new generation.
+    db_job, tenant_id = job_for(ingest_db, document_id)
+    assert str(db_job) == job_id
+    expire_lease(ingest_db, db_job)
+    runner(app_client).fault = None
+    assert runner(app_client).run_job(db_job, tenant_id) == "ready"
+    done = app_client.get(job_url, headers=auth(admin)).json()
+    assert (done["status"], done["outcome"], done["in_current_space"]) == ("done", "active", True)
+    assert done["active_generation"] == 2 and done["chunk_count"] > 0
+    # Only administrators of the document can read job outcomes.
+    reader = login(app_client, ingest_db, "niletech/finance-reader")
+    assert app_client.get(job_url, headers=auth(reader)).status_code in (403, 404)
+
+
 # -- deletion tombstones -------------------------------------------------------------------
 
 

@@ -152,3 +152,138 @@ def test_fixture_without_permissions_matches_by_state_not_classification(
     shared = doc(spec, document_id="l" * 36, title=title, permission_state="verified")
     targets, rejected, _ = connect.select_fixtures([shared], {title: spec})
     assert targets == [] and "permission state" in rejected[0][1]
+
+
+# -- reindex waits for ITS jobs and fails loudly ---------------------------------------------
+
+SPACE = "eaios__baai_bge_m3_5617a9f61b02_1024"
+
+
+class FakeApi:
+    """The documents API as the connect script sees it. Every fixture is genuine; each
+    queued job reports ``pending`` for ``delay`` polls, then its scripted final state.
+    The document list always says ready/searchable (the OLD generation keeps serving)."""
+
+    def __init__(self, connect: ModuleType, delay: int = 0) -> None:
+        self.manifest = connect.fixture_manifest()
+        self.docs = []
+        for n, (title, spec) in enumerate(self.manifest.items()):
+            d = doc(spec, document_id=f"{n:08d}-0000-0000-0000-000000000000", title=title)
+            d.update(status="ready", searchable=spec["reason"] is None)
+            self.docs.append(d)
+        self.delay = delay
+        self.post_status: dict[str, int] = {}  # title -> HTTP status for its reindex POST
+        self.final: dict[str, dict[str, Any]] = {}  # title -> final job state overrides
+        self.polls: dict[str, int] = {}
+        self.posted: list[str] = []
+
+    def title_of(self, document_id: str) -> str:
+        return str(next(d["title"] for d in self.docs if d["document_id"] == document_id))
+
+    def __call__(
+        self, method: str, url: str, token: str | None = None, body: Any = None, timeout: float = 30
+    ) -> tuple[int, Any]:
+        path = url.split("/api/v1", 1)[1]
+        if method == "GET" and path == "/documents":
+            return 200, self.docs
+        parts = path.strip("/").split("/")
+        title = self.title_of(parts[1])
+        if method == "POST" and parts[2] == "reindex":
+            self.posted.append(title)
+            code = self.post_status.get(title, 202)
+            return code, ({"job_id": f"job-{parts[1]}"} if code == 202 else None)
+        if method == "GET" and parts[2] == "jobs":
+            self.polls[title] = self.polls.get(title, 0) + 1
+            if self.polls[title] <= self.delay:
+                return 200, {"status": "claimed", "outcome": "pending", "in_current_space": False}
+            spec = self.manifest[title]
+            state = {
+                "status": "done",
+                "outcome": "needs_ocr"
+                if spec["reason"] and spec["permission_state"] == "verified"
+                else "active",
+                "in_current_space": True,
+                "embedding_space": SPACE,
+                "chunk_count": 4,
+                "error": None,
+            }
+            state.update(self.final.get(title, {}))
+            return 200, state
+        raise AssertionError(f"unexpected {method} {url}")
+
+
+@pytest.fixture
+def api(connect: ModuleType, monkeypatch: pytest.MonkeyPatch) -> Any:
+    clock = {"t": 0.0}
+    sleeps: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        clock["t"] += seconds
+
+    monkeypatch.setattr(connect, "admin_token", lambda: "admin-token")
+    monkeypatch.setattr(connect, "_sleep", sleep)
+    monkeypatch.setattr(connect, "_now", lambda: clock["t"])
+
+    def make(delay: int = 0) -> FakeApi:
+        fake = FakeApi(connect, delay)
+        monkeypatch.setattr(connect, "http", fake)
+        fake.sleeps = sleeps  # type: ignore[attr-defined]
+        return fake
+
+    return make
+
+
+def test_reindex_waits_for_its_jobs_while_the_old_index_still_looks_searchable(
+    connect: ModuleType, api: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = api(delay=3)  # a slow worker: three polls of pending per job
+    connect.reindex(timeout=600, poll=5)
+    assert set(fake.posted) == set(fake.manifest)
+    assert all(n == 4 for n in fake.polls.values())  # polled until each job finished
+    assert len(fake.sleeps) == 3
+    out = capsys.readouterr().out
+    assert "13 of 13 expected-searchable synthetic fixtures are searchable" in out
+
+
+def test_reindex_times_out_nonzero_even_though_documents_look_searchable(
+    connect: ModuleType, api: Any
+) -> None:
+    api(delay=10_000)  # the worker never gets to the jobs; the old index keeps serving
+    with pytest.raises(SystemExit) as stopped:
+        connect.reindex(timeout=30, poll=5)
+    assert stopped.value.code not in (0, None)
+    assert "timed out after 30 s with 15 job(s) unfinished" in str(stopped.value)
+    assert "job still claimed (timed out)" in str(stopped.value)
+
+
+def test_http_503_on_a_reindex_request_is_a_failure(connect: ModuleType, api: Any) -> None:
+    fake = api()
+    fake.post_status[LEAVE] = 503
+    with pytest.raises(SystemExit) as stopped:
+        connect.reindex(timeout=60, poll=5)
+    assert stopped.value.code not in (0, None)
+    assert f"reindex request rejected for {LEAVE}: HTTP 503" in str(stopped.value)
+    assert LEAVE not in fake.polls  # no job to wait for; the others were still checked
+    assert len(fake.polls) == len(fake.manifest) - 1
+
+
+def test_failed_job_and_wrong_embedding_space_are_failures(connect: ModuleType, api: Any) -> None:
+    fake = api()
+    fake.final[LEAVE] = {"outcome": "failed", "error": {"code": "ingestion_failed"}}
+    fake.final["IT security handbook"] = {"in_current_space": False}
+    with pytest.raises(SystemExit) as stopped:
+        connect.reindex(timeout=60, poll=5)
+    message = str(stopped.value)
+    assert f"{LEAVE}: job outcome failed (ingestion_failed)" in message
+    assert (
+        "IT security handbook: active generation is not in the current embedding space" in message
+    )
+
+
+def test_conflict_409_is_reported_as_a_rejected_request(connect: ModuleType, api: Any) -> None:
+    fake = api()
+    fake.post_status[LEAVE] = 409
+    with pytest.raises(SystemExit) as stopped:
+        connect.reindex(timeout=60, poll=5)
+    assert f"reindex request rejected for {LEAVE}: changed after the check" in str(stopped.value)
